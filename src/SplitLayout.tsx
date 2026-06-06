@@ -1,0 +1,162 @@
+import { useState } from "react";
+import { Allotment } from "allotment";
+import "allotment/dist/style.css";
+import { getPanel } from "./panelRegistry";
+import "./SplitLayout.css";
+import "./ContextMenu.css";
+
+interface SplitData {
+  direction: "vertical" | "horizontal";
+  ratio: number;
+  children: LayoutNode[];
+}
+
+interface PanelData {
+  panel_type: string;
+}
+
+type LayoutNode =
+  | { split: SplitData }
+  | { panel: PanelData };
+
+export interface LayoutTree {
+  tree: LayoutNode;
+}
+
+export interface Layout {
+  id: string;
+  name: string;
+  tree: LayoutTree;
+}
+
+interface SplitLayoutProps {
+  tree: LayoutTree;
+  onLayoutChange?: (tree: LayoutTree) => void;
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  path: number[];
+}
+
+function updateRatio(node: LayoutNode, path: number[], newRatio: number): LayoutNode {
+  if (path.length === 0 && "split" in node) {
+    return { split: { ...node.split, ratio: newRatio } };
+  }
+  if ("split" in node) {
+    const [idx, ...rest] = path;
+    return {
+      split: {
+        ...node.split,
+        children: node.split.children.map((child, i) =>
+          i === idx ? updateRatio(child, rest, newRatio) : child
+        ),
+      },
+    };
+  }
+  return node;
+}
+
+function replaceNode(node: LayoutNode, path: number[], newNode: LayoutNode): LayoutNode {
+  if (path.length === 0 || !("split" in node)) return newNode;
+  const [idx, ...rest] = path;
+  return {
+    split: {
+      ...node.split,
+      children: node.split.children.map((child, i) =>
+        i === idx ? replaceNode(child, rest, newNode) : child
+      ),
+    },
+  };
+}
+
+export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) {
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  function renderNode(node: LayoutNode, path: number[] = []): React.ReactNode {
+    if ("split" in node) {
+      const { direction, ratio, children } = node.split;
+      const firstSize = Math.round(ratio * 100);
+      const sizes = [firstSize, 100 - firstSize];
+      const panes = children.slice(0, 2);
+      function handleDragEnd(sizes: number[]) {
+        if (!onLayoutChange) return;
+        const newRatio = sizes[0] / (sizes[0] + sizes[1]);
+        const updatedTree: LayoutTree = {
+          tree: updateRatio(tree.tree, path, newRatio),
+        };
+        onLayoutChange(updatedTree);
+      }
+
+      return (
+        <Allotment vertical={direction === "horizontal"} defaultSizes={sizes} onDragEnd={handleDragEnd} minSize={50}>
+          {panes.map((child, i) => (
+            <div key={i} className="split-layout-pane">
+              {renderNode(child, [...path, i])}
+            </div>
+          ))}
+        </Allotment>
+      );
+    }
+
+    const { panel_type } = node.panel;
+    const PanelComponent = getPanel(panel_type);
+    if (PanelComponent) {
+      return (
+        <div
+          className="split-layout-panel-wrapper"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setContextMenu({ x: e.clientX, y: e.clientY, path });
+          }}
+        >
+          <PanelComponent panelType={panel_type} />
+        </div>
+      );
+    }
+    return <div className="split-layout-unknown">{panel_type}</div>;
+  }
+
+  function handleSplit(direction: "vertical" | "horizontal") {
+    if (!contextMenu || !onLayoutChange) return;
+
+    const newNode: LayoutNode = {
+      split: {
+        direction,
+        ratio: 0.5,
+        children: [
+          { panel: { panel_type: "blank" } },
+          { panel: { panel_type: "blank" } },
+        ],
+      },
+    };
+
+    const newTree: LayoutTree = {
+      tree: replaceNode(tree.tree, contextMenu.path, newNode),
+    };
+
+    onLayoutChange(newTree);
+    setContextMenu(null);
+  }
+
+  return (
+    <div className="split-layout">
+      {renderNode(tree.tree)}
+      {contextMenu && (
+        <>
+          <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
+          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            <div className="context-menu-item" onClick={() => handleSplit("vertical")}>
+              Split Vertical
+            </div>
+            <div className="context-menu-item" onClick={() => handleSplit("horizontal")}>
+              Split Horizontal
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
