@@ -27,7 +27,7 @@
     ],
     "effort": "medium",
     "blocked_by": [1],
-    "passes": false
+    "passes": true
   },
   {
     "id": 3,
@@ -43,7 +43,7 @@
     ],
     "effort": "medium",
     "blocked_by": [2],
-    "passes": false
+    "passes": true
   },
   {
     "id": 4,
@@ -59,7 +59,7 @@
     ],
     "effort": "medium",
     "blocked_by": [1],
-    "passes": false
+    "passes": true
   },
   {
     "id": 5,
@@ -75,7 +75,7 @@
     ],
     "effort": "medium",
     "blocked_by": [4],
-    "passes": false
+    "passes": true
   },
   {
     "id": 6,
@@ -91,58 +91,25 @@
     ],
     "effort": "medium",
     "blocked_by": [3, 5],
-    "passes": false
+    "passes": true
   },
   {
     "id": 7,
     "type": "AFK",
-    "category": "engine",
-    "description": "Implement Task Store backend that reads and writes a tasks file in the active Session's workingDirectory, with IPC commands for listing, adding, and updating tasks",
-    "acceptance_criteria": [
-      "Tasks can be listed from the workingDirectory's tasks file via an IPC command",
-      "A new task can be added with description, status, type, and effort, and is persisted immediately",
-      "An existing task's description and status can be updated and the change persists immediately",
-      "A missing tasks file returns an empty list without error",
-      "Unit tests pass for read, add, and update operations including missing-file and malformed-file cases"
-    ],
-    "effort": "medium",
-    "blocked_by": [6],
-    "passes": false
-  },
-  {
-    "id": 8,
-    "type": "AFK",
     "category": "ui",
-    "description": "Build the Tasks Panel that displays tasks in a table with inline editing and an add-task form, registering as panel type 'tasks'",
+    "description": "Add split interactions to the SplitLayout via context menus on each Panel region",
     "acceptance_criteria": [
-      "Adding a Panel of type 'tasks' renders a table with columns for id, description, status, type, and effort",
-      "An add-task form creates a new task and it appears in the table immediately",
-      "Clicking a task's description or status allows inline editing, and the change persists on save",
-      "When no tasks file exists, the panel shows an empty-state message with an 'Add Task' button",
-      "The Tasks Panel registers in the panel registry so it can be placed in any Layout alongside blank Panels"
-    ],
-    "effort": "medium",
-    "blocked_by": [7],
-    "passes": false
-  },
-  {
-    "id": 9,
-    "type": "AFK",
-    "category": "ui",
-    "description": "Add split and add-panel interactions to the SplitLayout via context menus on each Panel region",
-    "acceptance_criteria": [
-      "Right-clicking a Panel region shows context menu with 'Split Vertical', 'Split Horizontal', and 'Add Panel' options",
+      "Right-clicking a Panel region shows context menu with 'Split Vertical' and 'Split Horizontal' options",
       "Choosing 'Split Vertical' replaces the Panel with a vertical split containing two blank Panels",
       "Choosing 'Split Horizontal' replaces the Panel with a horizontal split containing two blank Panels",
-      "Choosing 'Add Panel' allows selecting a Panel type (blank or tasks) and adds it alongside the current Panel",
       "Splitting a Panel inside an already-split region produces a nested split that renders correctly"
     ],
     "effort": "medium",
     "blocked_by": [5],
-    "passes": false
+    "passes": true
   },
   {
-    "id": 10,
+    "id": 8,
     "type": "AFK",
     "category": "ui",
     "description": "Implement draggable resize dividers between split Panels that persist the ratio on drag-end",
@@ -153,11 +120,11 @@
       "Resizing is constrained to minimum Panel dimensions (no collapsing to zero)"
     ],
     "effort": "medium",
-    "blocked_by": [9],
-    "passes": false
+    "blocked_by": [7],
+    "passes": true
   },
   {
-    "id": 11,
+    "id": 9,
     "type": "AFK",
     "category": "ui",
     "description": "Add Layout preset management — save current arrangement as a named preset, list presets, switch between presets, and delete presets",
@@ -169,10 +136,10 @@
     ],
     "effort": "medium",
     "blocked_by": [5],
-    "passes": false
+    "passes": true
   },
   {
-    "id": 12,
+    "id": 10,
     "type": "AFK",
     "category": "engine",
     "description": "Implement Session reachability checking so missing workingDirectories produce dimmed rows in the sidebar",
@@ -183,10 +150,10 @@
     ],
     "effort": "low",
     "blocked_by": [3],
-    "passes": false
+    "passes": true
   },
   {
-    "id": 13,
+    "id": 11,
     "type": "AFK",
     "category": "engine",
     "description": "Implement startup crash safety by demoting all running Sessions to paused when the app launches",
@@ -197,6 +164,6 @@
     ],
     "effort": "low",
     "blocked_by": [2],
-    "passes": false
+    "passes": true
   }
 ]

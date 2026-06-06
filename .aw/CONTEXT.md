@@ -24,7 +24,6 @@
 | **event-log.jsonl** | The append-only JSONL file in App Support Dir where all Events are persisted. Used to reconstruct workspace state and provide an audit trail. | Event Store, Event log |
 | **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. | Dispatcher, Mediator |
 | **App Support Dir** | `~/Library/Application Support/AI Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
-| **Tasks Panel** | A Panel type that reads, displays, and edits the task backlog (from a tasks file in the workingDirectory) within the Layout system. Supports adding tasks and inline editing of description and status. | Task list, Backlog panel |
 
 ## Relationships
 
