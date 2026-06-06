@@ -119,6 +119,16 @@ impl LayoutStore {
         Ok(())
     }
 
+    pub fn rename_layout(&mut self, id: &str, new_name: &str) -> Result<()> {
+        let layout = self
+            .layouts
+            .iter_mut()
+            .find(|l| l.id == id)
+            .ok_or_else(|| LayoutError::NotFound(id.to_string()))?;
+        layout.name = new_name.to_string();
+        Ok(())
+    }
+
     pub fn default_layout() -> LayoutTree {
         LayoutTree {
             tree: LayoutNode::Panel {

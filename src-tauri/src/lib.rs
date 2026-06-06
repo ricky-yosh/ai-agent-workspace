@@ -123,25 +123,35 @@ fn set_active_layout(
 ) -> Result<(), String> {
     let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
     let store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    // Verify the layout exists
     store.get_layout(&layout_id).map_err(|e| e.to_string())?;
     drop(store);
     registry
         .set_active_layout_id(&session_id, Some(layout_id))
         .map_err(|e| e.to_string())?;
+    registry.clear_active_layout_tree(&session_id).map_err(|e| e.to_string())?;
     registry.save().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn update_layout_tree(
     state: tauri::State<AppState>,
-    layout_id: String,
+    session_id: String,
     tree: LayoutTree,
 ) -> Result<(), String> {
+    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
+    registry.update_active_layout_tree(&session_id, tree).map_err(|e| e.to_string())?;
+    registry.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_layout(
+    state: tauri::State<AppState>,
+    layout_id: String,
+    new_name: String,
+) -> Result<(), String> {
     let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    store.update_tree(&layout_id, tree).map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
-    Ok(())
+    store.rename_layout(&layout_id, &new_name).map_err(|e| e.to_string())?;
+    store.save().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -149,22 +159,65 @@ fn get_active_layout(
     state: tauri::State<AppState>,
     session_id: String,
 ) -> Result<Option<Layout>, String> {
-    let registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let session = registry
-        .list()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|s| s.id == session_id)
-        .ok_or_else(|| "Session not found".to_string())?;
-    let layout_id = match session.active_layout_id {
-        Some(id) => id,
-        None => return Ok(None),
+    let (layout_id, active_tree) = {
+        let registry = state.registry.lock().map_err(|e| e.to_string())?;
+        let session = registry.get_by_id(&session_id).map_err(|e| e.to_string())?;
+        match session.active_layout_id {
+            Some(id) => (id, session.active_layout_tree),
+            None => return Ok(None),
+        }
     };
+
     let store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    match store.get_layout(&layout_id) {
-        Ok(layout) => Ok(Some(layout)),
-        Err(_) => Ok(None),
+    let mut layout = store.get_layout(&layout_id).map_err(|e| e.to_string())?;
+    drop(store);
+
+    if let Some(active_tree) = active_tree {
+        layout.tree = active_tree;
     }
+
+    Ok(Some(layout))
+}
+
+#[tauri::command]
+fn override_layout_template(
+    state: tauri::State<AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let (layout_id, active_tree) = {
+        let registry = state.registry.lock().map_err(|e| e.to_string())?;
+        let session = registry.get_by_id(&session_id).map_err(|e| e.to_string())?;
+        let tree = session.active_layout_tree.clone().ok_or_else(|| "No unsaved changes".to_string())?;
+        let layout_id = session.active_layout_id.clone().ok_or_else(|| "No active layout".to_string())?;
+        (layout_id, tree)
+    };
+
+    let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
+    store.update_tree(&layout_id, active_tree).map_err(|e| e.to_string())?;
+    store.save().map_err(|e| e.to_string())?;
+    drop(store);
+
+    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
+    registry.clear_active_layout_tree(&session_id).map_err(|e| e.to_string())?;
+    registry.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reset_layout_to_template(
+    state: tauri::State<AppState>,
+    session_id: String,
+) -> Result<Layout, String> {
+    let layout_id = {
+        let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
+        registry.clear_active_layout_tree(&session_id).map_err(|e| e.to_string())?;
+        registry.save().map_err(|e| e.to_string())?;
+        registry.get_by_id(&session_id).map_err(|e| e.to_string())?
+            .active_layout_id
+            .ok_or_else(|| "No active layout".to_string())?
+    };
+
+    let store = state.layout_store.lock().map_err(|e| e.to_string())?;
+    store.get_layout(&layout_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -221,6 +274,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -233,9 +287,12 @@ pub fn run() {
             list_layouts,
             save_layout,
             delete_layout,
+            rename_layout,
             set_active_layout,
             get_active_layout,
             update_layout_tree,
+            override_layout_template,
+            reset_layout_to_template,
             get_tasks,
             add_task,
             update_task,

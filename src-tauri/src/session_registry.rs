@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use thiserror::Error;
 
+use crate::layout_store::LayoutTree;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum SessionState {
@@ -19,6 +21,8 @@ pub struct Session {
     pub working_directory: String,
     pub state: SessionState,
     pub active_layout_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_layout_tree: Option<LayoutTree>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -94,6 +98,7 @@ impl SessionRegistry {
             working_directory: working_dir.to_string(),
             state: SessionState::Paused,
             active_layout_id: None,
+            active_layout_tree: None,
             created_at: now.clone(),
             updated_at: now,
         };
@@ -169,6 +174,24 @@ impl SessionRegistry {
         self.sessions[idx].active_layout_id = layout_id;
         self.sessions[idx].updated_at = now_iso();
         Ok(self.sessions[idx].clone())
+    }
+
+    pub fn update_active_layout_tree(&mut self, id: &str, tree: LayoutTree) -> Result<()> {
+        let idx = self
+            .find_index(id)
+            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        self.sessions[idx].active_layout_tree = Some(tree);
+        self.sessions[idx].updated_at = now_iso();
+        Ok(())
+    }
+
+    pub fn clear_active_layout_tree(&mut self, id: &str) -> Result<()> {
+        let idx = self
+            .find_index(id)
+            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        self.sessions[idx].active_layout_tree = None;
+        self.sessions[idx].updated_at = now_iso();
+        Ok(())
     }
 
     pub fn get_by_id(&self, id: &str) -> Result<Session> {
