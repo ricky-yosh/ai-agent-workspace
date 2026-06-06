@@ -1,0 +1,202 @@
+[
+  {
+    "id": 1,
+    "type": "AFK",
+    "category": "infrastructure",
+    "description": "Scaffold a Tauri + React project with a dev server and a visible window",
+    "acceptance_criteria": [
+      "Running the dev command opens a native desktop window",
+      "The window renders a React component (any visible text or element)",
+      "The Rust backend compiles and the IPC bridge is functional (any invoke round-trip succeeds)"
+    ],
+    "effort": "medium",
+    "blocked_by": [],
+    "passes": true
+  },
+  {
+    "id": 2,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement Session Registry backend with CRUD operations and IPC commands for creating, listing, renaming, and deleting Sessions",
+    "acceptance_criteria": [
+      "A Session can be created with a workingDirectory and name, and is persisted to the Session Registry in the App Support Dir",
+      "Listing Sessions returns all Sessions grouped by workingDirectory",
+      "A Session can be renamed and the change persists across restarts",
+      "A Session can be deleted and is removed from the Registry",
+      "Unit tests pass for all CRUD operations"
+    ],
+    "effort": "medium",
+    "blocked_by": [1],
+    "passes": false
+  },
+  {
+    "id": 3,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the Session Sidebar that renders Sessions grouped by workingDirectory with create, rename, and delete actions wired to the backend",
+    "acceptance_criteria": [
+      "The left sidebar shows Sessions grouped under workingDirectory headers",
+      "Clicking 'New Session' opens a dialog with workingDirectory and name fields, and creates a Session on submit",
+      "Renaming a Session inline updates the sidebar and persists to the backend",
+      "Deleting a Session removes it from the sidebar after confirmation",
+      "The sidebar shows an empty state when no Sessions exist"
+    ],
+    "effort": "medium",
+    "blocked_by": [2],
+    "passes": false
+  },
+  {
+    "id": 4,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement Layout Store backend that persists Layout presets as recursive trees, produces a default single-panel Layout, and maps active Layouts to Sessions",
+    "acceptance_criteria": [
+      "A Layout can be saved with a name and recursive tree of splits and panels",
+      "Listing Layouts returns all saved presets",
+      "A Layout can be deleted",
+      "A default single-panel Layout is returned when no Layout is assigned to a Session",
+      "Unit tests pass for save, list, delete, default production, and active Layout assignment"
+    ],
+    "effort": "medium",
+    "blocked_by": [1],
+    "passes": false
+  },
+  {
+    "id": 5,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the SplitLayout component that recursively renders a Layout tree with a blank Panel at each leaf, using a panel registry to resolve panel types to components",
+    "acceptance_criteria": [
+      "A Layout tree with a single panel renders a full-area blank Panel with its type label visible",
+      "A Layout tree with a vertical split renders two blank Panels side by side separated by a divider",
+      "A Layout tree with a horizontal split renders two blank Panels stacked with a divider",
+      "A deeply nested Layout tree renders all Panels in the correct positions",
+      "The panel registry maps panel_type strings to React components so new Panel types can be added without touching SplitLayout"
+    ],
+    "effort": "medium",
+    "blocked_by": [4],
+    "passes": false
+  },
+  {
+    "id": 6,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Wire Session open and close to the main Layout area so clicking a Session renders its active Layout and closing returns to empty state",
+    "acceptance_criteria": [
+      "Clicking a Session in the sidebar loads its active Layout and renders it in the main area",
+      "The active Session is highlighted in the sidebar",
+      "A newly created Session renders the default single-panel Layout on first open",
+      "Closing a Session clears the main area and deselects the sidebar item",
+      "The active Session and its Layout persist across app restarts"
+    ],
+    "effort": "medium",
+    "blocked_by": [3, 5],
+    "passes": false
+  },
+  {
+    "id": 7,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement Task Store backend that reads and writes a tasks file in the active Session's workingDirectory, with IPC commands for listing, adding, and updating tasks",
+    "acceptance_criteria": [
+      "Tasks can be listed from the workingDirectory's tasks file via an IPC command",
+      "A new task can be added with description, status, type, and effort, and is persisted immediately",
+      "An existing task's description and status can be updated and the change persists immediately",
+      "A missing tasks file returns an empty list without error",
+      "Unit tests pass for read, add, and update operations including missing-file and malformed-file cases"
+    ],
+    "effort": "medium",
+    "blocked_by": [6],
+    "passes": false
+  },
+  {
+    "id": 8,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the Tasks Panel that displays tasks in a table with inline editing and an add-task form, registering as panel type 'tasks'",
+    "acceptance_criteria": [
+      "Adding a Panel of type 'tasks' renders a table with columns for id, description, status, type, and effort",
+      "An add-task form creates a new task and it appears in the table immediately",
+      "Clicking a task's description or status allows inline editing, and the change persists on save",
+      "When no tasks file exists, the panel shows an empty-state message with an 'Add Task' button",
+      "The Tasks Panel registers in the panel registry so it can be placed in any Layout alongside blank Panels"
+    ],
+    "effort": "medium",
+    "blocked_by": [7],
+    "passes": false
+  },
+  {
+    "id": 9,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Add split and add-panel interactions to the SplitLayout via context menus on each Panel region",
+    "acceptance_criteria": [
+      "Right-clicking a Panel region shows context menu with 'Split Vertical', 'Split Horizontal', and 'Add Panel' options",
+      "Choosing 'Split Vertical' replaces the Panel with a vertical split containing two blank Panels",
+      "Choosing 'Split Horizontal' replaces the Panel with a horizontal split containing two blank Panels",
+      "Choosing 'Add Panel' allows selecting a Panel type (blank or tasks) and adds it alongside the current Panel",
+      "Splitting a Panel inside an already-split region produces a nested split that renders correctly"
+    ],
+    "effort": "medium",
+    "blocked_by": [5],
+    "passes": false
+  },
+  {
+    "id": 10,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Implement draggable resize dividers between split Panels that persist the ratio on drag-end",
+    "acceptance_criteria": [
+      "Dragging a divider between two Panels resizes both regions in real time",
+      "The split ratio persists to the Layout tree on drag-end",
+      "Resizing a parent split does not affect child split ratios",
+      "Resizing is constrained to minimum Panel dimensions (no collapsing to zero)"
+    ],
+    "effort": "medium",
+    "blocked_by": [9],
+    "passes": false
+  },
+  {
+    "id": 11,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Add Layout preset management — save current arrangement as a named preset, list presets, switch between presets, and delete presets",
+    "acceptance_criteria": [
+      "The current Layout arrangement can be saved as a named preset from the UI",
+      "All saved presets appear in a dropdown or list in the toolbar or sidebar",
+      "Selecting a different preset replaces the current Layout and persists the active Layout on the Session",
+      "Deleting a preset removes it from the list; Sessions referencing it fall back to the default Layout on next open"
+    ],
+    "effort": "medium",
+    "blocked_by": [5],
+    "passes": false
+  },
+  {
+    "id": 12,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement Session reachability checking so missing workingDirectories produce dimmed rows in the sidebar",
+    "acceptance_criteria": [
+      "Sessions whose workingDirectory no longer exists on disk appear dimmed in the sidebar",
+      "Sessions whose workingDirectory exists appear normally",
+      "Reachability is checked on each sidebar render (no file watchers)"
+    ],
+    "effort": "low",
+    "blocked_by": [3],
+    "passes": false
+  },
+  {
+    "id": 13,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement startup crash safety by demoting all running Sessions to paused when the app launches",
+    "acceptance_criteria": [
+      "Creating a Session and marking it running, then restarting the app, shows it as paused in the sidebar",
+      "Sessions already in paused state remain paused after restart",
+      "Unit test verifies the demotion logic"
+    ],
+    "effort": "low",
+    "blocked_by": [2],
+    "passes": false
+  }
+]
