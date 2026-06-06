@@ -5,11 +5,12 @@ mod task_store;
 use std::sync::Mutex;
 use session_registry::{Session, SessionRegistry, SessionSummary};
 use layout_store::{Layout, LayoutStore, LayoutTree};
-use task_store::{Task, TaskInput};
+use task_store::{Task, TaskInput, TaskStore};
 
 pub struct AppState {
     registry: Mutex<SessionRegistry>,
     layout_store: Mutex<LayoutStore>,
+    task_store: Mutex<TaskStore>,
 }
 
 #[tauri::command]
@@ -172,7 +173,8 @@ fn get_tasks(state: tauri::State<AppState>, session_id: String) -> Result<Vec<Ta
     let session = registry.get_by_id(&session_id).map_err(|e| e.to_string())?;
     drop(registry);
     let tasks_path = std::path::Path::new(&session.working_directory).join("tasks.json");
-    task_store::read_tasks(&tasks_path)
+    let store = state.task_store.lock().map_err(|e| e.to_string())?;
+    store.read_tasks(&tasks_path)
 }
 
 #[tauri::command]
@@ -185,7 +187,8 @@ fn add_task(
     let session = registry.get_by_id(&session_id).map_err(|e| e.to_string())?;
     drop(registry);
     let tasks_path = std::path::Path::new(&session.working_directory).join("tasks.json");
-    task_store::add_task(&tasks_path, task)
+    let store = state.task_store.lock().map_err(|e| e.to_string())?;
+    store.add_task(&tasks_path, task)
 }
 
 #[tauri::command]
@@ -200,7 +203,8 @@ fn update_task(
     let session = registry.get_by_id(&session_id).map_err(|e| e.to_string())?;
     drop(registry);
     let tasks_path = std::path::Path::new(&session.working_directory).join("tasks.json");
-    task_store::update_task(&tasks_path, task_id, description, status)
+    let store = state.task_store.lock().map_err(|e| e.to_string())?;
+    store.update_task(&tasks_path, task_id, description, status)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -208,9 +212,11 @@ pub fn run() {
     let mut registry = SessionRegistry::new().expect("Failed to initialize session registry");
     registry.demote_running_to_paused().expect("Failed to demote running sessions");
     let layout_store = LayoutStore::new().expect("Failed to initialize layout store");
+    let task_store = TaskStore::new();
     let app_state = AppState {
         registry: Mutex::new(registry),
         layout_store: Mutex::new(layout_store),
+        task_store: Mutex::new(task_store),
     };
 
     tauri::Builder::default()

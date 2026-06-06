@@ -102,6 +102,13 @@ export default function SessionSidebar() {
   }
 
   useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleResizeMouseMove);
+      document.removeEventListener("mouseup", handleResizeMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       if (deleteConfirmId) {

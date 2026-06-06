@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Allotment } from "allotment";
+import { useState, useRef, useEffect } from "react";
+import { Allotment, type AllotmentHandle } from "allotment";
 import "allotment/dist/style.css";
 import { getPanel } from "./panelRegistry";
 import "./SplitLayout.css";
@@ -73,6 +73,13 @@ function replaceNode(node: LayoutNode, path: number[], newNode: LayoutNode): Lay
 
 export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const allotmentRef = useRef<AllotmentHandle>(null);
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+
+  useEffect(() => {
+    allotmentRef.current?.reset();
+  }, [tree]);
 
   function renderNode(node: LayoutNode, path: number[] = []): React.ReactNode {
     if ("split" in node) {
@@ -90,7 +97,7 @@ export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) 
       }
 
       return (
-        <Allotment vertical={direction === "horizontal"} defaultSizes={sizes} onDragEnd={handleDragEnd} minSize={50}>
+        <Allotment ref={allotmentRef} vertical={direction === "horizontal"} defaultSizes={sizes} onDragEnd={handleDragEnd} minSize={50}>
           {panes.map((child, i) => (
             <div key={i} className="split-layout-pane">
               {renderNode(child, [...path, i])}
@@ -134,7 +141,7 @@ export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) 
     };
 
     const newTree: LayoutTree = {
-      tree: replaceNode(tree.tree, contextMenu.path, newNode),
+      tree: replaceNode(treeRef.current.tree, contextMenu.path, newNode),
     };
 
     onLayoutChange(newTree);

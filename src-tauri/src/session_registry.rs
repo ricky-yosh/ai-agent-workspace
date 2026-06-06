@@ -5,7 +5,7 @@ use uuid::Uuid;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "PascalCase")]
 pub enum SessionState {
     Running,
     Paused,
