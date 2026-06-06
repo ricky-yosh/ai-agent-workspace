@@ -3,10 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import SplitLayout from "./SplitLayout";
+import LayoutTabs from "./LayoutTabs";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./BlankPanel";
 import "./App.css";
-import "./LayoutToolbar.css";
 
 function MainArea() {
   const { activeSessionId } = useSessions();
@@ -38,7 +38,7 @@ function MainArea() {
   const handleLayoutChange = (newTree: LayoutTree) => {
     if (!layout) return;
     setLayout({ ...layout, tree: newTree });
-    invoke("update_layout_tree", { layoutId: layout.id, tree: newTree }).catch(console.error);
+    invoke("update_layout_tree", { sessionId: activeSessionId, tree: newTree }).catch(console.error);
   };
 
   const handlePresetSwitch = useCallback((presetId: string) => {
@@ -49,11 +49,17 @@ function MainArea() {
       .catch(console.error);
   }, [activeSessionId]);
 
-  const handleSavePreset = useCallback(() => {
-    if (!layout || !activeSessionId) return;
-    const name = window.prompt("Layout name:");
-    if (!name || !name.trim()) return;
-    invoke<Layout>("save_layout", { name: name.trim(), tree: layout.tree })
+  const handleOverrideTemplate = useCallback(() => {
+    if (!activeSessionId) return;
+    invoke("override_layout_template", { sessionId: activeSessionId })
+      .then(() => invoke<Layout | null>("get_active_layout", { sessionId: activeSessionId }))
+      .then((resolved) => { if (resolved) setLayout(resolved); })
+      .catch(console.error);
+  }, [activeSessionId]);
+
+  const handleSaveAsTemplate = useCallback((name: string, tree: LayoutTree) => {
+    if (!activeSessionId) return;
+    invoke<Layout>("save_layout", { name, tree })
       .then((saved) => {
         refreshPresets();
         return invoke("set_active_layout", { sessionId: activeSessionId, layoutId: saved.id })
@@ -61,7 +67,25 @@ function MainArea() {
       })
       .then((saved) => setLayout(saved))
       .catch(console.error);
-  }, [layout, activeSessionId, refreshPresets]);
+  }, [activeSessionId, refreshPresets]);
+
+  const handleResetToTemplate = useCallback(() => {
+    if (!activeSessionId) return;
+    invoke<Layout>("reset_layout_to_template", { sessionId: activeSessionId })
+      .then(setLayout)
+      .catch(console.error);
+  }, [activeSessionId]);
+
+  const handleRename = useCallback((layoutId: string, newName: string) => {
+    invoke("rename_layout", { layoutId, newName })
+      .then(() => {
+        refreshPresets();
+        if (layout && layout.id === layoutId) {
+          setLayout({ ...layout, name: newName });
+        }
+      })
+      .catch(console.error);
+  }, [layout, refreshPresets]);
 
   const handleDeletePreset = useCallback((layoutId: string) => {
     invoke("delete_layout", { layoutId })
@@ -109,24 +133,16 @@ function MainArea() {
 
   return (
     <main className="main-content">
-      <div className="layout-toolbar">
-        <select
-          value={layout.id}
-          onChange={(e) => handlePresetSwitch(e.target.value)}
-        >
-          {presets.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <div className="layout-toolbar-separator" />
-        <button onClick={handleSavePreset}>Save As...</button>
-        <button
-          onClick={() => handleDeletePreset(layout.id)}
-          disabled={presets.length <= 1}
-        >
-          Delete
-        </button>
-      </div>
+      <LayoutTabs
+        layout={layout}
+        presets={presets}
+        onLayoutSwitch={handlePresetSwitch}
+        onOverrideTemplate={handleOverrideTemplate}
+        onSaveAsTemplate={handleSaveAsTemplate}
+        onResetToTemplate={handleResetToTemplate}
+        onRename={handleRename}
+        onDelete={handleDeletePreset}
+      />
       <SplitLayout tree={layout.tree} onLayoutChange={handleLayoutChange} />
     </main>
   );
