@@ -52,7 +52,9 @@ export default function SessionSidebar() {
       setNewName("");
       setNewWorkingDir("");
       refreshSessions();
-      setActiveSessionId(session.id);
+      return invoke("open_session", { sessionId: session.id }).then(() => session.id);
+    }).then((id) => {
+      setActiveSessionId(id);
     });
   }
 

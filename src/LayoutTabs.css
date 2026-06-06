@@ -1,6 +1,7 @@
 .layout-tabs {
   display: flex;
   align-items: center;
+  justify-content: center;
   padding: 0 6px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);

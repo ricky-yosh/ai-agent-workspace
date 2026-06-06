@@ -15,14 +15,21 @@ pub enum SessionState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceInstance {
+    pub id: String,
+    pub name: String,
+    pub template_id: String,
+    pub current_tree: LayoutTree,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub name: String,
     pub working_directory: String,
     pub state: SessionState,
-    pub active_layout_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_layout_tree: Option<LayoutTree>,
+    pub active_workspace_id: Option<String>,
+    pub workspaces: Vec<WorkspaceInstance>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -33,7 +40,7 @@ pub struct SessionSummary {
     pub name: String,
     pub working_directory: String,
     pub state: SessionState,
-    pub active_layout_id: Option<String>,
+    pub active_workspace_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub reachable: bool,
@@ -97,8 +104,8 @@ impl SessionRegistry {
             name: name.to_string(),
             working_directory: working_dir.to_string(),
             state: SessionState::Paused,
-            active_layout_id: None,
-            active_layout_tree: None,
+            active_workspace_id: None,
+            workspaces: vec![],
             created_at: now.clone(),
             updated_at: now,
         };
@@ -117,7 +124,7 @@ impl SessionRegistry {
                     name: s.name.clone(),
                     working_directory: s.working_directory.clone(),
                     state: s.state.clone(),
-                    active_layout_id: s.active_layout_id.clone(),
+                    active_workspace_id: s.active_workspace_id.clone(),
                     created_at: s.created_at.clone(),
                     updated_at: s.updated_at.clone(),
                     reachable,
@@ -167,31 +174,122 @@ impl SessionRegistry {
         Ok(self.sessions[idx].clone())
     }
 
-    pub fn set_active_layout_id(&mut self, id: &str, layout_id: Option<String>) -> Result<Session> {
+    pub fn add_workspace(&mut self, session_id: &str, template_id: &str, default_tree: LayoutTree) -> Result<WorkspaceInstance> {
         let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
-        self.sessions[idx].active_layout_id = layout_id;
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let ws = WorkspaceInstance {
+            id: Uuid::new_v4().to_string(),
+            name: "Workspace".to_string(),
+            template_id: template_id.to_string(),
+            current_tree: default_tree,
+        };
+        let is_first = self.sessions[idx].workspaces.is_empty();
+        self.sessions[idx].workspaces.push(ws.clone());
+        if is_first {
+            self.sessions[idx].active_workspace_id = Some(ws.id.clone());
+        }
         self.sessions[idx].updated_at = now_iso();
-        Ok(self.sessions[idx].clone())
+        Ok(ws)
     }
 
-    pub fn update_active_layout_tree(&mut self, id: &str, tree: LayoutTree) -> Result<()> {
+    pub fn remove_workspace(&mut self, session_id: &str, workspace_id: &str) -> Result<()> {
         let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
-        self.sessions[idx].active_layout_tree = Some(tree);
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let session = &mut self.sessions[idx];
+        let pos = session
+            .workspaces
+            .iter()
+            .position(|w| w.id == workspace_id)
+            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
+        session.workspaces.remove(pos);
+        if session.active_workspace_id.as_deref() == Some(workspace_id) {
+            session.active_workspace_id = session.workspaces.first().map(|w| w.id.clone());
+        }
+        session.updated_at = now_iso();
+        Ok(())
+    }
+
+    pub fn rename_workspace(&mut self, session_id: &str, workspace_id: &str, new_name: &str) -> Result<()> {
+        let idx = self
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let ws = self.sessions[idx]
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
+        ws.name = new_name.to_string();
         self.sessions[idx].updated_at = now_iso();
         Ok(())
     }
 
-    pub fn clear_active_layout_tree(&mut self, id: &str) -> Result<()> {
+    pub fn set_active_workspace(&mut self, session_id: &str, workspace_id: &str) -> Result<()> {
         let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
-        self.sessions[idx].active_layout_tree = None;
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        if !self.sessions[idx].workspaces.iter().any(|w| w.id == workspace_id) {
+            return Err(RegistryError::NotFound(workspace_id.to_string()));
+        }
+        self.sessions[idx].active_workspace_id = Some(workspace_id.to_string());
         self.sessions[idx].updated_at = now_iso();
         Ok(())
+    }
+
+    pub fn update_workspace_tree(&mut self, session_id: &str, workspace_id: &str, tree: LayoutTree) -> Result<()> {
+        let idx = self
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let ws = self.sessions[idx]
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
+        ws.current_tree = tree;
+        self.sessions[idx].updated_at = now_iso();
+        Ok(())
+    }
+
+    pub fn reset_workspace_to_template(&mut self, session_id: &str, workspace_id: &str, default_tree: LayoutTree) -> Result<()> {
+        let idx = self
+            .find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let ws = self.sessions[idx]
+            .workspaces
+            .iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
+        ws.current_tree = default_tree;
+        self.sessions[idx].updated_at = now_iso();
+        Ok(())
+    }
+
+    pub fn get_workspaces(&self, session_id: &str) -> Result<&Vec<WorkspaceInstance>> {
+        let idx = self
+            .sessions
+            .iter()
+            .position(|s| s.id == session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        Ok(&self.sessions[idx].workspaces)
+    }
+
+    pub fn get_active_workspace(&self, session_id: &str) -> Result<WorkspaceInstance> {
+        let idx = self
+            .sessions
+            .iter()
+            .position(|s| s.id == session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let ws_id = self.sessions[idx]
+            .active_workspace_id
+            .as_ref()
+            .ok_or_else(|| RegistryError::NotFound("No active workspace".to_string()))?;
+        self.sessions[idx]
+            .workspaces
+            .iter()
+            .find(|w| w.id == *ws_id)
+            .cloned()
+            .ok_or_else(|| RegistryError::NotFound("Active workspace not found in workspaces list".to_string()))
     }
 
     pub fn get_by_id(&self, id: &str) -> Result<Session> {
@@ -245,7 +343,8 @@ mod tests {
         assert_eq!(session.name, "Test Session");
         assert_eq!(session.working_directory, "/tmp");
         assert!(matches!(session.state, SessionState::Paused));
-        assert!(session.active_layout_id.is_none());
+        assert!(session.active_workspace_id.is_none());
+        assert!(session.workspaces.is_empty());
         assert!(!session.id.is_empty());
         assert!(!session.created_at.is_empty());
         assert!(!session.updated_at.is_empty());
@@ -326,6 +425,138 @@ mod tests {
         let file_path = temp_dir.path().join("sessions.json");
         let registry = SessionRegistry::new_with_path(file_path).unwrap();
         assert!(registry.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_add_workspace() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws = registry
+            .add_workspace(&session.id, "tmpl_general", tree.clone())
+            .unwrap();
+        assert!(!ws.id.is_empty());
+        assert_eq!(ws.template_id, "tmpl_general");
+        assert_eq!(ws.current_tree, tree);
+
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.workspaces.len(), 1);
+        assert_eq!(session.active_workspace_id, Some(ws.id.clone()));
+    }
+
+    #[test]
+    fn test_remove_workspace() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws1 = registry
+            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .unwrap();
+        let ws2 = registry
+            .add_workspace(&session.id, "tmpl_b", tree.clone())
+            .unwrap();
+
+        registry.remove_workspace(&session.id, &ws1.id).unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.workspaces.len(), 1);
+        assert_eq!(session.active_workspace_id, Some(ws2.id.clone()));
+
+        registry.remove_workspace(&session.id, &ws2.id).unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert!(session.workspaces.is_empty());
+        assert!(session.active_workspace_id.is_none());
+    }
+
+    #[test]
+    fn test_rename_workspace() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws = registry
+            .add_workspace(&session.id, "tmpl_general", tree)
+            .unwrap();
+        registry
+            .rename_workspace(&session.id, &ws.id, "My Renamed Tab")
+            .unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.workspaces[0].name, "My Renamed Tab");
+    }
+
+    #[test]
+    fn test_set_active_workspace() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws1 = registry
+            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .unwrap();
+        let ws2 = registry
+            .add_workspace(&session.id, "tmpl_b", tree)
+            .unwrap();
+
+        registry.set_active_workspace(&session.id, &ws2.id).unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.active_workspace_id, Some(ws2.id));
+
+        registry.set_active_workspace(&session.id, &ws1.id).unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.active_workspace_id, Some(ws1.id));
+    }
+
+    #[test]
+    fn test_update_workspace_tree() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws = registry
+            .add_workspace(&session.id, "tmpl_general", tree)
+            .unwrap();
+
+        let new_tree = crate::layout_store::LayoutTree {
+            tree: crate::layout_store::LayoutNode::Panel {
+                panel_type: "tasks".into(),
+            },
+        };
+        registry
+            .update_workspace_tree(&session.id, &ws.id, new_tree.clone())
+            .unwrap();
+        let session = registry.get_by_id(&session.id).unwrap();
+        assert_eq!(session.workspaces[0].current_tree, new_tree);
+    }
+
+    #[test]
+    fn test_get_workspaces() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        registry
+            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .unwrap();
+        registry
+            .add_workspace(&session.id, "tmpl_b", tree)
+            .unwrap();
+        let workspaces = registry.get_workspaces(&session.id).unwrap();
+        assert_eq!(workspaces.len(), 2);
+    }
+
+    #[test]
+    fn test_get_active_workspace() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let tree = crate::layout_store::LayoutStore::default_layout();
+        let ws = registry
+            .add_workspace(&session.id, "tmpl_general", tree)
+            .unwrap();
+        let active = registry.get_active_workspace(&session.id).unwrap();
+        assert_eq!(active.id, ws.id);
+    }
+
+    #[test]
+    fn test_get_active_workspace_none() {
+        let (mut registry, _tmp) = setup();
+        let session = registry.create("/tmp", "Test").unwrap();
+        let result = registry.get_active_workspace(&session.id);
+        assert!(result.is_err());
     }
 
     #[test]

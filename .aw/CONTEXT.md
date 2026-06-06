@@ -17,7 +17,8 @@
 | **Session Reachability** | Whether a Session's workingDirectory exists on disk. Missing directories produce **missing Sessions** shown dimmed in the sidebar. | Stale, Orphaned |
 | **Artifact** | An AI-generated document (e.g. architecture plan) stored in App Support under the session. Editable through the app UI. | Document, File |
 | **Panel** | A UI region in the split-screen layout (e.g. whiteboard panel, log panel, terminal panel, diff viewer panel). | Pane, Window |
-| **Layout** | A named preset defining the split arrangement of Panels (e.g. "Debug Layout", "Planning Layout"). Stored globally in App Support Dir. Each Session stores which Layout is active. Users can split, resize, and add panels to any region within a Layout. | Workspace, View, Workbench |
+| **Layout Template** | A global blueprint/ preset defining the split arrangement of Panels (e.g. "General", "Modeling"). Stored in `layouts.json` — read-only during normal use. Users can explicitly save new templates here. | Layout, Preset, Blueprint |
+| **Workspace Instance** | An editable instance of a Layout Template owned by a Session. Contains its own `current_tree`, `name`, and `template_id` referencing the source template. Stored in the Session's `workspaces` array in `sessions.json`. Deleting it does not affect the source template. | Tab, Workspace, Layout Tab |
 | **Workspace MCP** | The MCP server that lets AI agents manipulate whiteboard state, sessions, panels, and artifacts. | App MCP, Control MCP |
 | **Codebase MCP** | The MCP server for raw code intelligence — file search, symbol lookup, references, semantic search. | Sourcegraph MCP, Code MCP |
 | **Codebase Viz MCP** | The MCP server that auto-generates whiteboard diagrams from code structure (dependency graphs, call hierarchies, module maps). Composes Codebase MCP data with Workspace MCP placement. | CodeSee MCP, Map MCP |
@@ -39,7 +40,10 @@
 - The **CLI** communicates with the app via Tauri IPC — it does not directly read or write state files.
 - **Codebase Viz MCP** composes **Codebase MCP** (for data) and **Workspace MCP** (for whiteboard placement).
 - **Window management** prevents the same Session from being open in two windows simultaneously.
-- **Layouts** are defined globally in App Support Dir. Each Session stores which Layout is active and per-panel context (scroll position, selected cards).
+- **Layout Templates** are defined globally in `layouts.json` (the global library). **Workspace Instances** are per-session editable copies of a template, stored in the Session's `workspaces` array in `sessions.json`.
+- A **Session** owns zero or more **Workspace Instances** (its tab bar). Each Workspace Instance references a **Layout Template** by `template_id`. Deleting an instance does not affect the source template.
+- A **Session** has one `active_workspace_id` pointing to the currently active **Workspace Instance**.
+- The **`+` dropdown** in the tab bar shows **Layout Templates** (global library). Clicking one creates a new **Workspace Instance** for the current Session.
 
 ## Decisions
 
@@ -48,7 +52,7 @@
 - Whiteboard primitives limited to **Card, Edge, Frame** — no additional node types for v1.
 - All session state, registry, and event-log.jsonl live in **App Support Dir** — nothing written to the repository (see ADR 0002).
 - **Session Sidebar** groups Sessions by workingDirectory, supports inline rename, CRUD, and reachability display.
-- Blender-style **Layout** system: global layout presets with per-session active layout. Users can split, resize, and add panels to any region.
+- Blender-style **Layout Template / Workspace Instance** system: global Layout Templates (`layouts.json`) are immutable blueprints. Each Session owns a `workspaces` array of editable Workspace Instances referencing a template by ID. Users can split, resize, and add panels to any region in an instance (see ADR 0004).
 - All writes to session state are atomic.
 - **Diff Viewer Panel** uses `git diff` against the repository — no independent versioning system.
 - **Terminal panel** uses a real PTY via xterm.js + Tauri's PTY backend — runs any interactive CLI tool (Claude Code, Codex, etc.).

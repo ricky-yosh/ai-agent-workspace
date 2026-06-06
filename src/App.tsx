@@ -8,104 +8,122 @@ import type { Layout, LayoutTree } from "./SplitLayout";
 import "./BlankPanel";
 import "./App.css";
 
+interface WorkspaceInstance {
+  id: string;
+  name: string;
+  template_id: string;
+  current_tree: LayoutTree;
+}
+
 function MainArea() {
   const { activeSessionId } = useSessions();
-  const [layout, setLayout] = useState<Layout | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceInstance[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
   const [loading, setLoading] = useState(false);
-  const [presets, setPresets] = useState<Layout[]>([]);
+  const [templates, setTemplates] = useState<Layout[]>([]);
 
-  const refreshPresets = useCallback(() => {
-    invoke<Layout[]>("list_layouts").then(setPresets).catch(console.error);
+  const refreshTemplates = useCallback(() => {
+    invoke<Layout[]>("list_layouts").then(setTemplates).catch(console.error);
   }, []);
 
   useEffect(() => {
-    refreshPresets();
-  }, [refreshPresets]);
+    refreshTemplates();
+  }, [refreshTemplates]);
 
   useEffect(() => {
     if (activeSessionId) {
       setLoading(true);
-      invoke<Layout | null>("get_active_layout", { sessionId: activeSessionId })
-        .then(setLayout)
-        .catch(() => setLayout(null))
-        .finally(() => setLoading(false));
+      Promise.all([
+        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }),
+        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }),
+      ]).then(([wsList, active]) => {
+        setWorkspaces(wsList);
+        setActiveWorkspace(active);
+      }).catch(() => {
+        setWorkspaces([]);
+        setActiveWorkspace(null);
+      }).finally(() => setLoading(false));
     } else {
-      setLayout(null);
+      setWorkspaces([]);
+      setActiveWorkspace(null);
       setLoading(false);
     }
   }, [activeSessionId]);
 
-  const handleLayoutChange = (newTree: LayoutTree) => {
-    if (!layout) return;
-    setLayout({ ...layout, tree: newTree });
-    invoke("update_layout_tree", { sessionId: activeSessionId, tree: newTree }).catch(console.error);
+  const handleWorkspaceTreeChange = (newTree: LayoutTree) => {
+    if (!activeWorkspace) return;
+    setActiveWorkspace({ ...activeWorkspace, current_tree: newTree });
+    invoke("update_workspace_tree", {
+      sessionId: activeSessionId,
+      workspaceId: activeWorkspace.id,
+      tree: newTree,
+    }).catch(console.error);
   };
 
-  const handlePresetSwitch = useCallback((presetId: string) => {
+  const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
-    invoke("set_active_layout", { sessionId: activeSessionId, layoutId: presetId })
-      .then(() => invoke<Layout | null>("get_active_layout", { sessionId: activeSessionId }))
-      .then(setLayout)
-      .catch(console.error);
-  }, [activeSessionId]);
-
-  const handleOverrideTemplate = useCallback(() => {
-    if (!activeSessionId) return;
-    invoke("override_layout_template", { sessionId: activeSessionId })
-      .then(() => invoke<Layout | null>("get_active_layout", { sessionId: activeSessionId }))
-      .then((resolved) => { if (resolved) setLayout(resolved); })
+    invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId })
+      .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }))
+      .then(setActiveWorkspace)
       .catch(console.error);
   }, [activeSessionId]);
 
   const handleSaveAsTemplate = useCallback((name: string, tree: LayoutTree) => {
-    if (!activeSessionId) return;
     invoke<Layout>("save_layout", { name, tree })
-      .then((saved) => {
-        refreshPresets();
-        return invoke("set_active_layout", { sessionId: activeSessionId, layoutId: saved.id })
-          .then(() => saved);
-      })
-      .then((saved) => setLayout(saved))
+      .then(() => refreshTemplates())
       .catch(console.error);
-  }, [activeSessionId, refreshPresets]);
+  }, [refreshTemplates]);
 
-  const handleResetToTemplate = useCallback(() => {
+  const handleResetToTemplate = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
-    invoke<Layout>("reset_layout_to_template", { sessionId: activeSessionId })
-      .then(setLayout)
-      .catch(console.error);
+    invoke<WorkspaceInstance>("reset_workspace_to_template", {
+      sessionId: activeSessionId,
+      workspaceId,
+    }).then((ws) => {
+      setActiveWorkspace(ws);
+      setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? ws : w)));
+    }).catch(console.error);
   }, [activeSessionId]);
 
-  const handleRename = useCallback((layoutId: string, newName: string) => {
-    invoke("rename_layout", { layoutId, newName })
+  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
+    if (!activeSessionId) return;
+    invoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName })
       .then(() => {
-        refreshPresets();
-        if (layout && layout.id === layoutId) {
-          setLayout({ ...layout, name: newName });
+        setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, name: newName } : w)));
+        if (activeWorkspace?.id === workspaceId) {
+          setActiveWorkspace((prev) => prev ? { ...prev, name: newName } : null);
         }
       })
       .catch(console.error);
-  }, [layout, refreshPresets]);
+  }, [activeSessionId, activeWorkspace]);
 
-  const handleDeletePreset = useCallback((layoutId: string) => {
-    invoke("delete_layout", { layoutId })
+  const handleCloseWorkspace = useCallback((workspaceId: string) => {
+    if (!activeSessionId) return;
+    invoke("remove_workspace", { sessionId: activeSessionId, workspaceId })
       .then(() => {
-        refreshPresets();
-        if (layout && layout.id === layoutId) {
-          return invoke<Layout[]>("list_layouts").then((updated) => {
-            if (updated.length > 0) {
-              const fallback = updated[0];
-              if (activeSessionId) {
-                return invoke("set_active_layout", { sessionId: activeSessionId, layoutId: fallback.id })
-                  .then(() => setLayout(fallback));
-              }
-            }
-            setLayout(null);
-          });
+        setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
+        if (activeWorkspace?.id === workspaceId) {
+          return invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId });
         }
+        return null;
+      })
+      .then((newActive) => {
+        if (newActive !== null) setActiveWorkspace(newActive as WorkspaceInstance | null);
       })
       .catch(console.error);
-  }, [layout, activeSessionId, refreshPresets]);
+  }, [activeSessionId, activeWorkspace]);
+
+  const handleAddWorkspace = useCallback((templateId: string) => {
+    if (!activeSessionId) return;
+    invoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId })
+      .then((ws) => {
+        setWorkspaces((prev) => [...prev, ws]);
+        return invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id })
+          .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }));
+      })
+      .then((active) => setActiveWorkspace(active))
+      .catch(console.error);
+  }, [activeSessionId]);
 
   if (!activeSessionId) {
     return (
@@ -123,27 +141,24 @@ function MainArea() {
     );
   }
 
-  if (!layout) {
-    return (
-      <main className="main-content">
-        <div className="empty-state">No layout found</div>
-      </main>
-    );
-  }
-
   return (
     <main className="main-content">
       <LayoutTabs
-        layout={layout}
-        presets={presets}
-        onLayoutSwitch={handlePresetSwitch}
-        onOverrideTemplate={handleOverrideTemplate}
-        onSaveAsTemplate={handleSaveAsTemplate}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspace?.id ?? null}
+        templates={templates}
+        onWorkspaceSwitch={handleWorkspaceSwitch}
+        onAddWorkspace={handleAddWorkspace}
+        onCloseWorkspace={handleCloseWorkspace}
+        onRenameWorkspace={handleRenameWorkspace}
         onResetToTemplate={handleResetToTemplate}
-        onRename={handleRename}
-        onDelete={handleDeletePreset}
+        onSaveAsTemplate={handleSaveAsTemplate}
       />
-      <SplitLayout tree={layout.tree} onLayoutChange={handleLayoutChange} />
+      {activeWorkspace ? (
+        <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
+      ) : (
+        <div className="empty-state">No active workspace</div>
+      )}
     </main>
   );
 }

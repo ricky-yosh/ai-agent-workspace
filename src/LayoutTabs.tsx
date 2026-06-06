@@ -2,28 +2,37 @@ import { useState, useRef, useEffect } from "react";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./LayoutTabs.css";
 
+interface WorkspaceInstance {
+  id: string;
+  name: string;
+  template_id: string;
+  current_tree: LayoutTree;
+}
+
 interface LayoutTabsProps {
-  layout: Layout;
-  presets: Layout[];
-  onLayoutSwitch: (layoutId: string) => void;
-  onOverrideTemplate: () => void;
+  workspaces: WorkspaceInstance[];
+  activeWorkspaceId: string | null;
+  templates: Layout[];
+  onWorkspaceSwitch: (workspaceId: string) => void;
+  onAddWorkspace: (templateId: string) => void;
+  onCloseWorkspace: (workspaceId: string) => void;
+  onRenameWorkspace: (workspaceId: string, newName: string) => void;
+  onResetToTemplate: (workspaceId: string) => void;
   onSaveAsTemplate: (name: string, tree: LayoutTree) => void;
-  onResetToTemplate: () => void;
-  onRename: (layoutId: string, newName: string) => void;
-  onDelete: (layoutId: string) => void;
 }
 
 export default function LayoutTabs({
-  layout,
-  presets,
-  onLayoutSwitch,
-  onOverrideTemplate,
-  onSaveAsTemplate,
+  workspaces,
+  activeWorkspaceId,
+  templates,
+  onWorkspaceSwitch,
+  onAddWorkspace,
+  onCloseWorkspace,
+  onRenameWorkspace,
   onResetToTemplate,
-  onRename,
-  onDelete,
+  onSaveAsTemplate,
 }: LayoutTabsProps) {
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wsId: string } | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -48,44 +57,52 @@ export default function LayoutTabs({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [dropdownOpen]);
 
-  function handleTabContextMenu(e: React.MouseEvent) {
+  function handleTabContextMenu(e: React.MouseEvent, wsId: string) {
     e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY });
+    setCtxMenu({ x: e.clientX, y: e.clientY, wsId });
   }
 
-  function handleOverride() {
-    onOverrideTemplate();
-    setCtxMenu(null);
-  }
-
-  function handleSaveAs() {
-    const name = window.prompt("Layout name:");
-    if (!name || !name.trim()) return;
-    onSaveAsTemplate(name.trim(), layout.tree);
-    setCtxMenu(null);
-  }
-
-  function handleRename() {
-    setRenamingId(layout.id);
-    setRenameValue(layout.name);
+  function handleRenameStart() {
+    if (!ctxMenu) return;
+    const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
+    if (ws) {
+      setRenamingId(ws.id);
+      setRenameValue(ws.name);
+    }
     setCtxMenu(null);
   }
 
   function commitRename() {
-    if (renameValue.trim()) {
-      onRename(layout.id, renameValue.trim());
+    if (renamingId && renameValue.trim()) {
+      onRenameWorkspace(renamingId, renameValue.trim());
     }
     setRenamingId(null);
   }
 
-  function handleDelete() {
-    onDelete(layout.id);
+  function handleClose() {
+    if (!ctxMenu) return;
+    onCloseWorkspace(ctxMenu.wsId);
     setCtxMenu(null);
   }
 
   function handleReset() {
-    onResetToTemplate();
+    if (!ctxMenu) return;
+    onResetToTemplate(ctxMenu.wsId);
     setCtxMenu(null);
+  }
+
+  function handleSaveAs() {
+    if (!ctxMenu) return;
+    const name = window.prompt("Template name:");
+    if (!name || !name.trim()) return;
+    const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
+    if (ws) onSaveAsTemplate(name.trim(), ws.current_tree);
+    setCtxMenu(null);
+  }
+
+  function handleDropdownSelect(templateId: string) {
+    onAddWorkspace(templateId);
+    setDropdownOpen(false);
   }
 
   function getDropdownStyle(): React.CSSProperties {
@@ -94,33 +111,19 @@ export default function LayoutTabs({
     return { left: rect.left, top: rect.bottom };
   }
 
-  function handleDropdownSelect(layoutId: string) {
-    onLayoutSwitch(layoutId);
-    setDropdownOpen(false);
-  }
-
-  function handleDropdownSaveAs(presetId: string) {
-    const preset = presets.find((p) => p.id === presetId);
-    if (!preset) return;
-    const name = window.prompt("Layout name:", preset.name);
-    if (!name || !name.trim()) return;
-    onSaveAsTemplate(name.trim(), preset.tree);
-    setDropdownOpen(false);
-  }
-
   return (
-    <div className="layout-tabs">
+    <div className="layout-tabs" onContextMenu={(e) => e.preventDefault()}>
       <div className="layout-tabs-bar">
-        {presets.map((p) => (
+        {workspaces.map((ws) => (
           <div
-            key={p.id}
-            className={`layout-tab${p.id === layout.id ? " layout-tab-active" : ""}`}
+            key={ws.id}
+            className={`layout-tab${ws.id === activeWorkspaceId ? " layout-tab-active" : ""}`}
             onClick={() => {
-              if (renamingId !== p.id) onLayoutSwitch(p.id);
+              if (renamingId !== ws.id) onWorkspaceSwitch(ws.id);
             }}
-            onContextMenu={p.id === layout.id ? handleTabContextMenu : undefined}
+            onContextMenu={(e) => handleTabContextMenu(e, ws.id)}
           >
-            {renamingId === p.id ? (
+            {renamingId === ws.id ? (
               <input
                 ref={renameInputRef}
                 className="layout-tab-rename-input"
@@ -133,7 +136,7 @@ export default function LayoutTabs({
                 }}
               />
             ) : (
-              <span className="layout-tab-name">{p.name}</span>
+              <span className="layout-tab-name">{ws.name}</span>
             )}
           </div>
         ))}
@@ -148,25 +151,20 @@ export default function LayoutTabs({
             <>
               <div className="context-menu-overlay" onClick={() => setDropdownOpen(false)} />
               <div className="context-menu layout-tabs-dropdown" style={getDropdownStyle()}>
-                {presets.map((p) => (
+                {templates.map((t) => (
                   <div
-                    key={p.id}
-                    className="context-menu-item layout-tabs-dropdown-item"
-                    onClick={() => handleDropdownSelect(p.id)}
+                    key={t.id}
+                    className="context-menu-item"
+                    onClick={() => handleDropdownSelect(t.id)}
                   >
-                    <span>{p.name}</span>
-                    <button
-                      className="layout-tabs-dropdown-saveas"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDropdownSaveAs(p.id);
-                      }}
-                      title="Duplicate as new layout"
-                    >
-                      ⧉
-                    </button>
+                    {t.name}
                   </div>
                 ))}
+                {templates.length === 0 && (
+                  <div className="context-menu-item context-menu-item-disabled">
+                    No templates
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -176,24 +174,17 @@ export default function LayoutTabs({
         <>
           <div className="context-menu-overlay" onClick={() => setCtxMenu(null)} />
           <div className="context-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
-            <div className="context-menu-item" onClick={handleOverride}>
-              Override Template
+            <div className="context-menu-item" onClick={handleClose}>
+              Close
             </div>
-            <div className="context-menu-item" onClick={handleSaveAs}>
-              Save as Template
-            </div>
-            <div className="context-menu-item" onClick={handleRename}>
+            <div className="context-menu-item" onClick={handleRenameStart}>
               Rename
             </div>
             <div className="context-menu-item" onClick={handleReset}>
               Reset to Template
             </div>
-            <div className="context-menu-separator" />
-            <div
-              className={`context-menu-item${presets.length <= 1 ? " context-menu-item-disabled" : ""}`}
-              onClick={presets.length > 1 ? handleDelete : undefined}
-            >
-              Delete
+            <div className="context-menu-item" onClick={handleSaveAs}>
+              Save as Template
             </div>
           </div>
         </>
