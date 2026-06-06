@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useSessions, type SessionSummary } from "./SessionContext";
 import "./SessionSidebar.css";
 
@@ -15,15 +16,18 @@ export default function SessionSidebar() {
   );
   const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isResizing = useRef(false);
+  const lastWidth = useRef(280);
 
   const grouped = sessions.reduce<Record<string, SessionSummary[]>>(
     (acc, s) => {
-      const dir = s.working_directory;
-      if (!acc[dir]) acc[dir] = [];
-      acc[dir].push(s);
+      const parts = s.working_directory.replace(/\/$/, "").split("/");
+      const folder = parts[parts.length - 1] || s.working_directory;
+      if (!acc[folder]) acc[folder] = [];
+      acc[folder].push(s);
       return acc;
     },
     {},
@@ -31,17 +35,11 @@ export default function SessionSidebar() {
   const groupKeys = Object.keys(grouped).sort();
 
   function handleSelect(id: string) {
-    if (id === activeSessionId) {
-      invoke("close_session", { sessionId: id }).then(() => {
-        setActiveSessionId(null);
-        refreshSessions();
-      });
-    } else {
-      invoke("open_session", { sessionId: id }).then(() => {
-        setActiveSessionId(id);
-        refreshSessions();
-      });
-    }
+    if (id === activeSessionId) return;
+    invoke("open_session", { sessionId: id }).then(() => {
+      setActiveSessionId(id);
+      refreshSessions();
+    });
   }
 
   function handleCreate() {
@@ -92,7 +90,15 @@ export default function SessionSidebar() {
 
   function handleResizeMouseMove(e: MouseEvent) {
     if (!isResizing.current) return;
-    setSidebarWidth(Math.max(200, Math.min(600, e.clientX)));
+    const w = e.clientX;
+    if (w < 60) {
+      lastWidth.current = sidebarWidth > 60 ? sidebarWidth : lastWidth.current;
+      setSidebarWidth(42);
+      setCollapsed(true);
+    } else {
+      setCollapsed(false);
+      setSidebarWidth(Math.max(200, Math.min(600, w)));
+    }
   }
 
   function handleResizeMouseUp() {
@@ -125,52 +131,103 @@ export default function SessionSidebar() {
 
   return (
     <>
-      <aside className="sidebar" style={{ width: sidebarWidth }}>
+      <aside className={`sidebar${collapsed ? " sidebar-collapsed" : ""}`} style={collapsed ? undefined : { width: sidebarWidth }}>
         <div className="sidebar-header">
-          <h2 className="sidebar-title">Sessions</h2>
           <button
-            className="new-session-btn"
-            onClick={() => setShowNewDialog(true)}
-            title="New Session"
+            className="sidebar-toggle-btn"
+            onClick={() => {
+              if (collapsed) {
+                setSidebarWidth(lastWidth.current);
+                setCollapsed(false);
+              } else {
+                lastWidth.current = sidebarWidth;
+                setSidebarWidth(42);
+                setCollapsed(true);
+              }
+            }}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            +
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="2" width="14" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+              <rect x="1" y="2" width="5" height="12" rx="1.5" fill="currentColor"/>
+            </svg>
           </button>
+          {!collapsed && (
+            <h2
+              className="sidebar-title sidebar-title-home"
+              onClick={() => {
+                if (activeSessionId) {
+                  invoke("close_session", { sessionId: activeSessionId }).then(() => {
+                    setActiveSessionId(null);
+                    refreshSessions();
+                  });
+                }
+              }}
+              title="Back to home"
+            >
+              Sessions
+            </h2>
+          )}
+          {!collapsed && (
+            <button
+              className="new-session-btn"
+              onClick={() => setShowNewDialog(true)}
+              title="New Session"
+            >
+              +
+            </button>
+          )}
         </div>
 
-        <div className="sidebar-list">
-          {sessions.length === 0 ? (
-            <div className="sidebar-empty">No sessions yet</div>
-          ) : (
-            groupKeys.map((dir) => (
-              <div key={dir} className="session-group">
-                <div className="session-group-header">{dir}</div>
-                {grouped[dir].map((s) => (
-                  <div
-                    key={s.id}
-                    className={`session-row${s.id === activeSessionId ? " active" : ""}${!s.reachable ? " unreachable" : ""}`}
-                    onClick={() => handleSelect(s.id)}
-                    title={!s.reachable ? "Directory not found" : undefined}
-                  >
+        {collapsed && (
+          <div className="sidebar-collapsed-sessions">
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
+                onClick={() => handleSelect(s.id)}
+                title={s.name}
+              >
+                {s.name.charAt(0).toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!collapsed && (
+          <div className="sidebar-list">
+            {sessions.length === 0 ? (
+              <div className="sidebar-empty">No sessions yet</div>
+            ) : (
+              groupKeys.map((dir) => (
+                <div key={dir} className="session-group">
+                  <div className="session-group-header">{dir}</div>
+                  {grouped[dir].map((s) => (
+                    <div
+                      key={s.id}
+                      className={`session-row${s.id === activeSessionId ? " active" : ""}${!s.reachable ? " unreachable" : ""}`}
+                      onClick={() => handleSelect(s.id)}
+                      title={!s.reachable ? "Directory not found" : undefined}
+                    >
                     <div className="session-info">
-                      <span className="session-state-dot" data-state={s.state} />
                       {renamingSessionId === s.id ? (
-                        <input
-                          ref={renameInputRef}
-                          className="rename-input"
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={() => handleSaveRename(s.id)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") handleSaveRename(s.id);
-                            if (e.key === "Escape") setRenamingSessionId(null);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <span className="session-name">{s.name}</span>
-                      )}
-                    </div>
-                    <div className="session-actions">
+                          <input
+                            ref={renameInputRef}
+                            className="rename-input"
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onBlur={() => handleSaveRename(s.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveRename(s.id);
+                              if (e.key === "Escape") setRenamingSessionId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span className="session-name">{s.name}</span>
+                        )}
+                      </div>
+                      <div className="session-actions">
                       <button
                         className="session-action-btn"
                         title="Rename"
@@ -196,10 +253,11 @@ export default function SessionSidebar() {
                 ))}
               </div>
             ))
-          )}
-        </div>
+           )}
+          </div>
+        )}
 
-        <div className="sidebar-resize" onMouseDown={handleResizeMouseDown} />
+        <div className={`sidebar-resize${collapsed ? " sidebar-resize-collapsed" : ""}`} onMouseDown={handleResizeMouseDown} />
       </aside>
 
       {showNewDialog && (
@@ -224,15 +282,23 @@ export default function SessionSidebar() {
               </label>
               <label className="dialog-label">
                 Working Directory
-                <input
-                  className="dialog-input"
-                  value={newWorkingDir}
-                  onChange={(e) => setNewWorkingDir(e.target.value)}
-                  placeholder="/path/to/project"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCreate();
-                  }}
-                />
+                <div className="dialog-dir-picker">
+                  <input
+                    className="dialog-input dialog-dir-input"
+                    value={newWorkingDir}
+                    readOnly
+                    placeholder="Select a directory"
+                  />
+                  <button
+                    className="dialog-dir-btn"
+                    onClick={async () => {
+                      const selected = await open({ directory: true });
+                      if (selected) setNewWorkingDir(selected);
+                    }}
+                  >
+                    Browse…
+                  </button>
+                </div>
               </label>
             </div>
             <div className="dialog-actions">
