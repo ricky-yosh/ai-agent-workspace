@@ -4,6 +4,7 @@ import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import SplitLayout from "./SplitLayout";
 import LayoutTabs from "./LayoutTabs";
+import ManageTemplatesModal from "./ManageTemplatesModal";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./BlankPanel";
 import "./App.css";
@@ -21,6 +22,7 @@ function MainArea() {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState<Layout[]>([]);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
 
   const refreshTemplates = useCallback(() => {
     invoke<Layout[]>("list_layouts").then(setTemplates).catch(console.error);
@@ -70,6 +72,18 @@ function MainArea() {
 
   const handleSaveAsTemplate = useCallback((name: string, tree: LayoutTree) => {
     invoke<Layout>("save_layout", { name, tree })
+      .then(() => refreshTemplates())
+      .catch(console.error);
+  }, [refreshTemplates]);
+
+  const handleDeleteTemplate = useCallback((layoutId: string) => {
+    invoke("delete_layout", { layoutId })
+      .then(() => refreshTemplates())
+      .catch(console.error);
+  }, [refreshTemplates]);
+
+  const handleRenameTemplate = useCallback((layoutId: string, newName: string) => {
+    invoke("rename_layout", { layoutId, newName })
       .then(() => refreshTemplates())
       .catch(console.error);
   }, [refreshTemplates]);
@@ -153,7 +167,16 @@ function MainArea() {
         onRenameWorkspace={handleRenameWorkspace}
         onResetToTemplate={handleResetToTemplate}
         onSaveAsTemplate={handleSaveAsTemplate}
+        onOpenTemplateManager={() => setTemplateManagerOpen(true)}
       />
+      {templateManagerOpen && (
+        <ManageTemplatesModal
+          templates={templates}
+          onRenameTemplate={handleRenameTemplate}
+          onDeleteTemplate={handleDeleteTemplate}
+          onClose={() => setTemplateManagerOpen(false)}
+        />
+      )}
       {activeWorkspace ? (
         <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
       ) : (

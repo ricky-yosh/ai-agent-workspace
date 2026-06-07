@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Plus } from "lucide-react";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./LayoutTabs.css";
 
@@ -19,6 +20,7 @@ interface LayoutTabsProps {
   onRenameWorkspace: (workspaceId: string, newName: string) => void;
   onResetToTemplate: (workspaceId: string) => void;
   onSaveAsTemplate: (name: string, tree: LayoutTree) => void;
+  onOpenTemplateManager: () => void;
 }
 
 export default function LayoutTabs({
@@ -31,6 +33,7 @@ export default function LayoutTabs({
   onRenameWorkspace,
   onResetToTemplate,
   onSaveAsTemplate,
+  onOpenTemplateManager,
 }: LayoutTabsProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wsId: string } | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -145,7 +148,7 @@ export default function LayoutTabs({
             className="layout-tabs-add"
             onClick={() => setDropdownOpen(!dropdownOpen)}
           >
-            +
+            <Plus size={14} />
           </button>
           {dropdownOpen && dropdownRef.current && (
             <>
@@ -165,6 +168,10 @@ export default function LayoutTabs({
                     No templates
                   </div>
                 )}
+                <div className="context-menu-separator" />
+                <div className="context-menu-item" onClick={() => { setDropdownOpen(false); onOpenTemplateManager(); }}>
+                  Manage Templates…
+                </div>
               </div>
             </>
           )}

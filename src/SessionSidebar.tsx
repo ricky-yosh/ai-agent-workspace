@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { PanelLeftClose, PanelLeft, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSessions, type SessionSummary } from "./SessionContext";
@@ -149,10 +150,7 @@ export default function SessionSidebar() {
             }}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1" y="2" width="14" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-              <rect x="1" y="2" width="5" height="12" rx="1.5" fill="currentColor"/>
-            </svg>
+            {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
           </button>
           {!collapsed && (
             <h2
@@ -176,7 +174,7 @@ export default function SessionSidebar() {
               onClick={() => setShowNewDialog(true)}
               title="New Session"
             >
-              +
+              <Plus size={16} />
             </button>
           )}
         </div>
