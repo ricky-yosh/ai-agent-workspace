@@ -158,6 +158,7 @@ export default function LayoutTabs({
                 ref={renameInputRef}
                 className="layout-tab-rename-input"
                 value={renameValue}
+                size={Math.max(renameValue.length, 8)}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onBlur={commitRename}
                 onKeyDown={(e) => {

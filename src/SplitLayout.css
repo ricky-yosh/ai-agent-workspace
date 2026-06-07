@@ -1,8 +1,8 @@
 .split-layout {
   width: 100%;
   height: 100%;
-  --separator-border: #3c3c3c;
-  --focus-border: #0078d4;
+  --separator-border: var(--border-color);
+  --focus-border: var(--accent-color);
 }
 
 .split-layout-pane {
@@ -16,16 +16,24 @@
   justify-content: center;
   height: 100%;
   color: var(--text-muted);
-  background: #1e1e1e;
+  background: var(--bg-primary);
 }
 
 .blank-panel {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   height: 100%;
-  background: #1e1e1e;
+  background: var(--bg-primary);
   color: var(--text-muted);
   font-size: 13px;
   user-select: none;
+}
+
+.blank-panel-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.6;
 }

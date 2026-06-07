@@ -4,7 +4,8 @@ import { registerPanel } from "./panelRegistry";
 function BlankPanel({ panelType }: PanelProps) {
   return (
     <div className="blank-panel">
-      {panelType}
+      <span className="blank-panel-type">{panelType}</span>
+      <span className="blank-panel-hint">Right-click to split this panel</span>
     </div>
   );
 }
