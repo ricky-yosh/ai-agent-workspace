@@ -1,4 +1,4 @@
-# PRD: AI Workspace — Shell & Layout System
+# PRD: AI Agent Workspace — Shell & Layout System
 
 ## Problem Statement
 

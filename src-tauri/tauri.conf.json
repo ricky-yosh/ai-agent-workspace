@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai-agent-workspace",
+  "productName": "AI Agent Workspace",
   "version": "0.1.0",
   "identifier": "com.rickyyoshioka.ai-agent-workspace",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "ai-agent-workspace",
+        "title": "AI Agent Workspace",
         "width": 800,
         "height": 600
       }

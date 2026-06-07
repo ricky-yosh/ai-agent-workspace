@@ -156,4 +156,4 @@ Refactor the data model to introduce **Workspace Instances** as a per-Session co
 
 ## Migration
 
-Existing users should delete their `sessions.json` and `layouts.json` from `~/Library/Application Support/AI Workspace/` and let the app recreate them on next launch.
+Existing users should delete their `sessions.json` and `layouts.json` from `~/Library/Application Support/AI Agent Workspace/` and let the app recreate them on next launch.

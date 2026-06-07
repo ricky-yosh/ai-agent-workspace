@@ -8,7 +8,7 @@ Accepted
 
 The initial design placed per-session state files (`state.json`, `board.json`, `events.jsonl`) in a `.ai-workspace-cache/` directory at the repository root. This required file watchers (kqueue/inotify) so the app could detect external writes from the CLI or other windows. It also introduced session reachability problems — if the working directory was deleted or moved, session state became orphaned.
 
-An alternative was considered: store all session state in `~/Library/Application Support/AI Workspace/` (macOS), with the CLI communicating via Tauri IPC (see ADR 0001) instead of writing files directly. This eliminates the file watcher layer, removes all repo-side artifacts, and makes the CLI a proper adapter over the Command Layer.
+An alternative was considered: store all session state in `~/Library/Application Support/AI Agent Workspace/` (macOS), with the CLI communicating via Tauri IPC (see ADR 0001) instead of writing files directly. This eliminates the file watcher layer, removes all repo-side artifacts, and makes the CLI a proper adapter over the Command Layer.
 
 ## Decision
 

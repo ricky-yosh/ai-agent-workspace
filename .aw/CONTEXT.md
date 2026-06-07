@@ -12,7 +12,7 @@
 | **Event** | A persisted record of a successfully executed Command, appended to event-log.jsonl. Powers replay and audit. Displayed in the Log Panel. | Record |
 | **Session** | A UUID-identified workspace instance tied to a workingDirectory. Has state (running, paused, missing), a whiteboard, event-log, and artifacts. All state stored in App Support Dir. | Project, Workspace |
 | **workingDirectory** | The filesystem path (typically a git repo root) that a Session is associated with. Used to group Sessions in the sidebar. | Repo root, Project dir |
-| **Session Registry** | A global JSON file at `~/Library/Application Support/AI Workspace/sessions.json` listing all known Sessions and their serialized state across all workingDirectories. | Session index, Master list |
+| **Session Registry** | A global JSON file at `~/Library/Application Support/AI Agent Workspace/sessions.json` listing all known Sessions and their serialized state across all workingDirectories. | Session index, Master list |
 | **Session Sidebar** | The left-hand UI panel that lists all Sessions grouped by workingDirectory, with inline rename, CRUD, and context menu actions. | Session picker, Session list |
 | **Session Reachability** | Whether a Session's workingDirectory exists on disk. Missing directories produce **missing Sessions** shown dimmed in the sidebar. | Stale, Orphaned |
 | **Artifact** | An AI-generated document (e.g. architecture plan) stored in App Support under the session. Editable through the app UI. | Document, File |
@@ -24,7 +24,7 @@
 | **Codebase Viz MCP** | The MCP server that auto-generates whiteboard diagrams from code structure (dependency graphs, call hierarchies, module maps). Composes Codebase MCP data with Workspace MCP placement. | CodeSee MCP, Map MCP |
 | **event-log.jsonl** | The append-only JSONL file in App Support Dir where all Events are persisted. Used to reconstruct workspace state and provide an audit trail. | Event Store, Event log |
 | **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. | Dispatcher, Mediator |
-| **App Support Dir** | `~/Library/Application Support/AI Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
+| **App Support Dir** | `~/Library/Application Support/AI Agent Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
 
 ## Relationships
 

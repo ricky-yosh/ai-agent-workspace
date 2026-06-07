@@ -58,7 +58,7 @@ pub struct LayoutStore {
 impl LayoutStore {
     pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().ok_or(LayoutError::NoDataDir)?;
-        let file_path = data_dir.join("AI Workspace").join("layouts.json");
+        let file_path = data_dir.join("AI Agent Workspace").join("layouts.json");
         Self::new_with_path(file_path)
     }
 

@@ -77,7 +77,7 @@ fn now_iso() -> String {
 impl SessionRegistry {
     pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().ok_or(RegistryError::NoDataDir)?;
-        let file_path = data_dir.join("AI Workspace").join("sessions.json");
+        let file_path = data_dir.join("AI Agent Workspace").join("sessions.json");
         Self::new_with_path(file_path)
     }
 
