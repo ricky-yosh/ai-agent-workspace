@@ -63,7 +63,10 @@
 - **CLI prefix** is `aiaws` (short for AI Agent Workspace).
 - **CLI subcommands** use `template` (not `layout`) for global presets to avoid confusion with Workspace Instances.
 - **--tree** accepts inline JSON; **--tree-file** reads from a file. Both supported for `template save` and `workspace update-tree`.
+- **Session orientation for MCP**: each Terminal Panel's PTY is spawned scoped to exactly one Session (never shared across Sessions). At spawn time, the app injects an `AIAW_SESSION_ID` environment variable into the PTY's shell. Any stdio-based MCP server launched from within that shell inherits the variable and uses it to attribute Commands (e.g. future `CreateTask`) to the correct Session — no filesystem lookups or explicit session arguments required from the agent (see ADR 0009).
+- **Terminal restoration** is left to the underlying CLI tool's own resumption feature (e.g. `claude --resume`). The app does not attempt to keep the PTY process alive across restarts or reattach via a multiplexer — it's a thin convenience layer (remember last command/cwd, offer a "Resume" relaunch), not a guarantee.
 
 ## Open Questions
 
 - Decide whether external issue trackers are in scope.
+- Decide what metadata (last command, cwd) the app should remember per Session to power a "Resume terminal" relaunch affordance.

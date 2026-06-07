@@ -111,5 +111,21 @@
     "effort": "medium",
     "blocked_by": [3],
     "passes": false
+  },
+  {
+    "id": 8,
+    "type": "AFK",
+    "category": "infrastructure",
+    "description": "Add file watcher to Tauri app so CLI changes update the GUI live",
+    "acceptance_criteria": [
+      "Tauri app watches sessions.json and layouts.json for external changes",
+      "When a file changes, Tauri reloads state into the Mutex",
+      "Tauri emits a state-changed event to the frontend after reload",
+      "Frontend listens for state-changed events and refreshes session list and workspace data",
+      "Running aiaws session create while the GUI is open shows the new session in the sidebar without restart"
+    ],
+    "effort": "medium",
+    "blocked_by": [7],
+    "passes": false
   }
 ]
