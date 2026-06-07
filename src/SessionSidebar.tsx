@@ -1,9 +1,15 @@
 import { useState, useRef, useEffect } from "react";
-import { PanelLeftClose, PanelLeft, Plus, ArrowLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
 import "./SessionSidebar.css";
+
+function folderNameOf(path: string): string {
+  const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
 
 export default function SessionSidebar() {
   const { sessions, activeSessionId, setActiveSessionId, refreshSessions } =
@@ -12,6 +18,8 @@ export default function SessionSidebar() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWorkingDir, setNewWorkingDir] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const newNameEditedRef = useRef(false);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
     null,
   );
@@ -35,6 +43,38 @@ export default function SessionSidebar() {
   );
   const groupKeys = Object.keys(grouped).sort();
 
+  function applyWorkingDir(path: string) {
+    setNewWorkingDir(path);
+    if (!newNameEditedRef.current) {
+      setNewName(folderNameOf(path));
+    }
+  }
+
+  useEffect(() => {
+    if (!showNewDialog) return;
+    let unlisten: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "over") {
+          setIsDragOver(true);
+        } else if (event.payload.type === "drop") {
+          setIsDragOver(false);
+          const path = event.payload.paths[0];
+          if (path) applyWorkingDir(path);
+        } else if (event.payload.type === "leave") {
+          setIsDragOver(false);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+      setIsDragOver(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNewDialog]);
+
   function handleSelect(id: string) {
     if (id === activeSessionId) return;
     invoke("open_session", { sessionId: id }).then(() => {
@@ -52,6 +92,7 @@ export default function SessionSidebar() {
       setShowNewDialog(false);
       setNewName("");
       setNewWorkingDir("");
+      newNameEditedRef.current = false;
       refreshSessions();
       return invoke("open_session", { sessionId: session.id }).then(() => session.id);
     }).then((id) => {
@@ -175,7 +216,12 @@ export default function SessionSidebar() {
           {!collapsed && (
             <button
               className="new-session-btn"
-              onClick={() => setShowNewDialog(true)}
+              onClick={() => {
+                setNewName("");
+                setNewWorkingDir("");
+                newNameEditedRef.current = false;
+                setShowNewDialog(true);
+              }}
               title="New Session"
             >
               <Plus size={16} />
@@ -288,34 +334,43 @@ export default function SessionSidebar() {
             <h3 className="dialog-title">New Session</h3>
             <div className="dialog-fields">
               <label className="dialog-label">
+                Working Directory
+                <button
+                  type="button"
+                  className={`dialog-dropzone${newWorkingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
+                  autoFocus
+                  onClick={async () => {
+                    const selected = await open({ directory: true });
+                    if (selected) applyWorkingDir(selected);
+                  }}
+                >
+                  {newWorkingDir ? (
+                    <>
+                      <FolderOpen size={28} className="dialog-dropzone-icon" aria-hidden="true" />
+                      <span className="dialog-dropzone-name">{folderNameOf(newWorkingDir)}</span>
+                      <span className="dialog-dropzone-path" title={newWorkingDir}>{newWorkingDir}</span>
+                      <span className="dialog-dropzone-hint">Drop a different folder, or click to change</span>
+                    </>
+                  ) : (
+                    <>
+                      <FolderInput size={28} className="dialog-dropzone-icon" aria-hidden="true" />
+                      <span className="dialog-dropzone-title">Drag a folder here</span>
+                      <span className="dialog-dropzone-hint">or click to browse</span>
+                    </>
+                  )}
+                </button>
+              </label>
+              <label className="dialog-label">
                 Name
                 <input
                   className="dialog-input"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  onChange={(e) => {
+                    newNameEditedRef.current = true;
+                    setNewName(e.target.value);
+                  }}
                   placeholder="Session name"
-                  autoFocus
                 />
-              </label>
-              <label className="dialog-label">
-                Working Directory
-                <div className="dialog-dir-picker">
-                  <input
-                    className="dialog-input dialog-dir-input"
-                    value={newWorkingDir}
-                    readOnly
-                    placeholder="Select a directory"
-                  />
-                  <button
-                    className="dialog-dir-btn"
-                    onClick={async () => {
-                      const selected = await open({ directory: true });
-                      if (selected) setNewWorkingDir(selected);
-                    }}
-                  >
-                    Browse…
-                  </button>
-                </div>
               </label>
             </div>
             <div className="dialog-actions">
