@@ -257,63 +257,28 @@
   color: var(--danger-color);
 }
 
-.template-confirm-delete {
-  position: absolute;
-  right: 8px;
-  top: 4px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  animation: template-confirm-enter 0.15s ease-out;
+.template-item-btn-delete-confirm {
+  opacity: 1;
+  color: #fff;
+  background: var(--danger-color);
+  animation: template-confirm-pulse 1.4s ease-in-out infinite;
 }
 
-@keyframes template-confirm-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.template-confirm-delete-text {
-  font-size: 12px;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.template-confirm-delete-btn {
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-  border: 1px solid var(--border-color);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  transition: background 0.12s;
-}
-
-.template-confirm-delete-btn:hover {
-  background: var(--bg-hover);
-}
-
-.template-confirm-delete-btn-danger {
-  border-color: var(--danger-color);
-  color: var(--danger-color);
-}
-
-.template-confirm-delete-btn-danger:hover {
+.template-item-btn-delete-confirm:hover,
+.template-item-btn-delete-confirm:focus-visible {
   background: var(--danger-color);
   color: #fff;
+  outline: 1px solid #fff;
+  outline-offset: -2px;
+}
+
+@keyframes template-confirm-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(211, 47, 47, 0);
+  }
 }
 
 .template-empty {

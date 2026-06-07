@@ -109,7 +109,13 @@ export default function ManageTemplatesModal({
   useEffect(() => {
     const isEditingOrConfirming = editingId !== null || confirmingDeleteId !== null;
     if (wasEditingOrConfirming.current && !isEditingOrConfirming) {
-      itemRefs.current.get(activeIndex)?.focus();
+      // Only reclaim focus if it actually fell back to <body> — if the user
+      // clicked elsewhere in the dialog (e.g. another row, the search box) to
+      // dismiss the confirm state, that click's focus should win instead.
+      const insideDialog = dialogRef.current?.contains(document.activeElement);
+      if (!insideDialog) {
+        itemRefs.current.get(activeIndex)?.focus();
+      }
     }
     wasEditingOrConfirming.current = isEditingOrConfirming;
   }, [editingId, confirmingDeleteId, activeIndex]);
@@ -153,7 +159,13 @@ export default function ManageTemplatesModal({
   }
 
   function handleListKeyDown(e: React.KeyboardEvent) {
-    if (editingId || confirmingDeleteId) return;
+    if (editingId) return;
+
+    // Any key other than a second Delete/Backspace (confirm) or Escape (cancel,
+    // handled by the dialog-level handler) backs out of a pending delete confirm.
+    if (confirmingDeleteId && e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") {
+      setConfirmingDeleteId(null);
+    }
 
     switch (e.key) {
       case "ArrowDown": {
@@ -187,7 +199,12 @@ export default function ManageTemplatesModal({
       case "Backspace": {
         e.preventDefault();
         if (activeTemplate) {
-          startDelete(activeTemplate.id);
+          if (confirmingDeleteId === activeTemplate.id) {
+            onDeleteTemplate(activeTemplate.id);
+            setConfirmingDeleteId(null);
+          } else {
+            startDelete(activeTemplate.id);
+          }
         }
         break;
       }
@@ -348,7 +365,7 @@ export default function ManageTemplatesModal({
             const isEditing = editingId === t.id;
             const isConfirmingDelete = confirmingDeleteId === t.id;
             const usageCount = workspaceCounts?.[t.id] ?? 0;
-            const showActions = !isEditing && !isConfirmingDelete;
+            const showActions = !isEditing;
 
             return (
               <div
@@ -439,54 +456,27 @@ export default function ManageTemplatesModal({
                         <Pencil size={13} />
                       </button>
                       <button
-                        className="template-item-btn template-item-btn-delete"
+                        className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          startDelete(t.id);
+                          if (isConfirmingDelete) {
+                            onDeleteTemplate(t.id);
+                            setConfirmingDeleteId(null);
+                          } else {
+                            startDelete(t.id);
+                          }
                         }}
-                        aria-label={`Delete ${t.name}`}
-                        title="Delete"
+                        onBlur={() => {
+                          setConfirmingDeleteId((prev) => (prev === t.id ? null : prev));
+                        }}
+                        aria-label={isConfirmingDelete ? `Confirm delete ${t.name}` : `Delete ${t.name}`}
+                        title={isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
                       >
-                        <Trash2 size={13} />
+                        {isConfirmingDelete ? <Check size={13} strokeWidth={3} /> : <Trash2 size={13} />}
                       </button>
                     </div>
                   )}
                 </div>
-
-                {isConfirmingDelete && (
-                  <div
-                    className="template-confirm-delete"
-                    onClick={(e) => e.stopPropagation()}
-                    role="group"
-                    aria-label="Confirm delete"
-                  >
-                    <span className="template-confirm-delete-text">
-                      Remove "{t.name}"?
-                    </span>
-                    <button
-                      className="template-confirm-delete-btn template-confirm-delete-btn-danger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteTemplate(t.id);
-                        setConfirmingDeleteId(null);
-                      }}
-                      autoFocus
-                      aria-label="Confirm deletion"
-                    >
-                      Delete
-                    </button>
-                    <button
-                      className="template-confirm-delete-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmingDeleteId(null);
-                      }}
-                      aria-label="Cancel deletion"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
               </div>
             );
           })}
