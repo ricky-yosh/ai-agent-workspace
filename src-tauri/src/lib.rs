@@ -284,7 +284,12 @@ fn update_task(
 pub fn run() {
     let mut registry = SessionRegistry::new().expect("Failed to initialize session registry");
     registry.demote_running_to_paused().expect("Failed to demote running sessions");
-    let layout_store = LayoutStore::new().expect("Failed to initialize layout store");
+    let mut layout_store = LayoutStore::new().expect("Failed to initialize layout store");
+    if layout_store.list_layouts().map_or(true, |l| l.is_empty()) {
+        let default_tree = LayoutStore::default_layout();
+        layout_store.save_layout("Default", default_tree).expect("Failed to seed default layout");
+        layout_store.save().expect("Failed to save seeded layout");
+    }
     let task_store = TaskStore::new();
     let app_state = AppState {
         registry: Mutex::new(registry),

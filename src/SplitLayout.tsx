@@ -91,8 +91,9 @@ export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) 
         onLayoutChange(updatedTree);
       }
 
+      const splitKey = `${JSON.stringify(path)}-${ratio}`;
       return (
-        <Allotment vertical={direction === "horizontal"} defaultSizes={sizes} onDragEnd={handleDragEnd} minSize={50}>
+        <Allotment key={splitKey} vertical={direction === "horizontal"} defaultSizes={sizes} onDragEnd={handleDragEnd} minSize={50}>
           {panes.map((child, i) => (
             <div key={i} className="split-layout-pane">
               {renderNode(child, [...path, i])}
