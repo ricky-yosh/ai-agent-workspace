@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Plus } from "lucide-react";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./LayoutTabs.css";
@@ -41,6 +41,8 @@ export default function LayoutTabs({
   const [renameValue, setRenameValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
@@ -58,6 +60,39 @@ export default function LayoutTabs({
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [dropdownOpen]);
+
+  useLayoutEffect(() => {
+    if (!ctxMenu || !ctxMenuRef.current) return;
+    const el = ctxMenuRef.current;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const { innerWidth: w, innerHeight: h } = window;
+    let x = ctxMenu.x;
+    let y = ctxMenu.y;
+    if (x + rect.width > w - 4) x = w - rect.width - 4;
+    if (x < 4) x = 4;
+    if (y + rect.height > h - 4) y = y - rect.height;
+    if (y < 4) y = 4;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }, [ctxMenu]);
+
+  useLayoutEffect(() => {
+    if (!dropdownOpen || !dropdownMenuRef.current || !dropdownRef.current) return;
+    const el = dropdownMenuRef.current;
+    const btnRect = dropdownRef.current.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const { innerWidth: w, innerHeight: h } = window;
+    let left = btnRect.left;
+    let top = btnRect.bottom;
+    if (left + rect.width > w - 4) left = w - rect.width - 4;
+    if (left < 4) left = 4;
+    if (top + rect.height > h - 4) top = btnRect.top - rect.height;
+    if (top < 4) top = 4;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
   }, [dropdownOpen]);
 
   function handleTabContextMenu(e: React.MouseEvent, wsId: string) {
@@ -108,12 +143,6 @@ export default function LayoutTabs({
     setDropdownOpen(false);
   }
 
-  function getDropdownStyle(): React.CSSProperties {
-    if (!dropdownRef.current) return {};
-    const rect = dropdownRef.current.getBoundingClientRect();
-    return { left: rect.left, top: rect.bottom };
-  }
-
   return (
     <div className="layout-tabs" onContextMenu={(e) => e.preventDefault()}>
       <div className="layout-tabs-bar">
@@ -153,7 +182,7 @@ export default function LayoutTabs({
           {dropdownOpen && dropdownRef.current && (
             <>
               <div className="context-menu-overlay" onClick={() => setDropdownOpen(false)} />
-              <div className="context-menu layout-tabs-dropdown" style={getDropdownStyle()}>
+              <div className="context-menu layout-tabs-dropdown" ref={dropdownMenuRef}>
                 {templates.map((t) => (
                   <div
                     key={t.id}
@@ -180,7 +209,7 @@ export default function LayoutTabs({
       {ctxMenu && (
         <>
           <div className="context-menu-overlay" onClick={() => setCtxMenu(null)} />
-          <div className="context-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+          <div className="context-menu" ref={ctxMenuRef}>
             <div className="context-menu-item" onClick={handleClose}>
               Close
             </div>
