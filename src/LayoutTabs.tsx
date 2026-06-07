@@ -19,7 +19,7 @@ interface LayoutTabsProps {
   onCloseWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, newName: string) => void;
   onResetToTemplate: (workspaceId: string) => void;
-  onSaveAsTemplate: (name: string, tree: LayoutTree) => void;
+  onSaveAsTemplate: (tree: LayoutTree) => void;
   onOpenTemplateManager: () => void;
 }
 
@@ -131,10 +131,8 @@ export default function LayoutTabs({
 
   function handleSaveAs() {
     if (!ctxMenu) return;
-    const name = window.prompt("Template name:");
-    if (!name || !name.trim()) return;
     const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
-    if (ws) onSaveAsTemplate(name.trim(), ws.current_tree);
+    if (ws) onSaveAsTemplate(ws.current_tree);
     setCtxMenu(null);
   }
 

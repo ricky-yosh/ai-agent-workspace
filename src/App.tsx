@@ -23,6 +23,8 @@ function MainArea() {
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
+  const [saveAsTarget, setSaveAsTarget] = useState<LayoutTree | null>(null);
+  const [saveAsName, setSaveAsName] = useState("");
 
   const refreshTemplates = useCallback(() => {
     invoke<Layout[]>("list_layouts").then(setTemplates).catch(console.error);
@@ -70,11 +72,27 @@ function MainArea() {
       .catch(console.error);
   }, [activeSessionId]);
 
-  const handleSaveAsTemplate = useCallback((name: string, tree: LayoutTree) => {
-    invoke<Layout>("save_layout", { name, tree })
+  const handleSaveAsTemplate = useCallback((tree: LayoutTree) => {
+    setSaveAsTarget(tree);
+    setSaveAsName("");
+  }, []);
+
+  const confirmSaveAsTemplate = useCallback(() => {
+    if (!saveAsTarget || !saveAsName.trim()) return;
+    invoke<Layout>("save_layout", { name: saveAsName.trim(), tree: saveAsTarget })
       .then(() => refreshTemplates())
+      .then(() => setSaveAsTarget(null))
       .catch(console.error);
-  }, [refreshTemplates]);
+  }, [saveAsTarget, saveAsName, refreshTemplates]);
+
+  useEffect(() => {
+    if (!saveAsTarget) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setSaveAsTarget(null);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [saveAsTarget]);
 
   const handleDeleteTemplate = useCallback((layoutId: string) => {
     invoke("delete_layout", { layoutId })
@@ -176,6 +194,29 @@ function MainArea() {
           onDeleteTemplate={handleDeleteTemplate}
           onClose={() => setTemplateManagerOpen(false)}
         />
+      )}
+      {saveAsTarget && (
+        <div className="dialog-overlay" onClick={() => setSaveAsTarget(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ width: 320 }}>
+            <div className="dialog-title">Save as Template</div>
+            <input
+              className="dialog-input"
+              autoFocus
+              value={saveAsName}
+              onChange={(e) => setSaveAsName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmSaveAsTemplate();
+                if (e.key === "Escape") setSaveAsTarget(null);
+              }}
+              placeholder="Template name..."
+              style={{ boxSizing: "border-box", width: "100%", marginBottom: 16 }}
+            />
+            <div className="dialog-actions">
+              <button className="dialog-btn" onClick={() => setSaveAsTarget(null)}>Cancel</button>
+              <button className="dialog-btn dialog-btn-primary" onClick={confirmSaveAsTemplate}>Save</button>
+            </div>
+          </div>
+        </div>
       )}
       {activeWorkspace ? (
         <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />

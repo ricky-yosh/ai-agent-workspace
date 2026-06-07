@@ -390,6 +390,16 @@
   color: white;
 }
 
+.dialog-btn-primary {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+
+.dialog-btn-primary:hover {
+  background: #1a8cff;
+}
+
 .dialog-confirm-text {
   font-size: 13px;
   color: var(--text-primary);
