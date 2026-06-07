@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { PanelLeftClose, PanelLeft, Plus } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Plus, ArrowLeft } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSessions, type SessionSummary } from "./SessionContext";
@@ -152,21 +152,25 @@ export default function SessionSidebar() {
           >
             {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
           </button>
-          {!collapsed && (
-            <h2
-              className="sidebar-title sidebar-title-home"
+          {!collapsed && activeSessionId ? (
+            <button
+              className="sidebar-title sidebar-title-back"
               onClick={() => {
-                if (activeSessionId) {
-                  invoke("close_session", { sessionId: activeSessionId }).then(() => {
-                    setActiveSessionId(null);
-                    refreshSessions();
-                  });
-                }
+                invoke("close_session", { sessionId: activeSessionId }).then(() => {
+                  setActiveSessionId(null);
+                  refreshSessions();
+                });
               }}
-              title="Back to home"
+              title="Back to all sessions"
+              aria-label="Close session and return to all sessions"
             >
-              Sessions
-            </h2>
+              <ArrowLeft size={14} className="sidebar-title-back-icon" />
+              <span className="sidebar-title-back-label">
+                {sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}
+              </span>
+            </button>
+          ) : (
+            !collapsed && <h2 className="sidebar-title">Sessions</h2>
           )}
           {!collapsed && (
             <button
@@ -186,9 +190,11 @@ export default function SessionSidebar() {
                 key={s.id}
                 className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
                 onClick={() => handleSelect(s.id)}
-                title={s.name}
+                title={`${s.name} — ${s.state}`}
+                aria-label={`${s.name}, ${s.state}`}
               >
                 {s.name.charAt(0).toUpperCase()}
+                <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -201,12 +207,21 @@ export default function SessionSidebar() {
             ) : (
               groupKeys.map((dir) => (
                 <div key={dir} className="session-group">
-                  <div className="session-group-header">{dir}</div>
+                  <div className="session-group-header" title={grouped[dir][0]?.working_directory ?? dir}>{dir}</div>
                   {grouped[dir].map((s) => (
                     <div
                       key={s.id}
                       className={`session-row${s.id === activeSessionId ? " active" : ""}${!s.reachable ? " unreachable" : ""}`}
                       onClick={() => handleSelect(s.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelect(s.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={s.id === activeSessionId ? "true" : undefined}
                       title={!s.reachable ? "Directory not found" : undefined}
                     >
                     <div className="session-info">
@@ -231,6 +246,7 @@ export default function SessionSidebar() {
                       <button
                         className="session-action-btn"
                         title="Rename"
+                        aria-label={`Rename ${s.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleStartRename(s);
@@ -241,6 +257,7 @@ export default function SessionSidebar() {
                       <button
                         className="session-action-btn"
                         title="Delete"
+                        aria-label={`Delete ${s.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setDeleteConfirmId(s.id);

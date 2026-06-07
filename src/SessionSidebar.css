@@ -59,6 +59,7 @@
 }
 
 .sidebar-collapsed-session {
+  position: relative;
   width: 28px;
   height: 28px;
   display: flex;
@@ -75,6 +76,29 @@
   padding: 0;
 }
 
+.sidebar-collapsed-session .session-state-dot {
+  display: block;
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--bg-secondary);
+}
+
+.session-state-dot-running {
+  background: var(--dot-running);
+}
+
+.session-state-dot-paused {
+  background: var(--dot-paused);
+}
+
+.session-state-dot-missing {
+  background: var(--dot-missing);
+}
+
 .sidebar-collapsed-session:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
@@ -86,19 +110,57 @@
 }
 
 .sidebar-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-primary);
   user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sidebar-title-home {
+.sidebar-title-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 auto;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--text-primary);
   cursor: pointer;
 }
 
-.sidebar-title-home:hover {
+.sidebar-title-back-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: color 0.12s;
+}
+
+.sidebar-title-back-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-title-back:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-title-back:hover .sidebar-title-back-icon {
   color: var(--accent-color);
 }
 
@@ -179,10 +241,6 @@
   flex: 1;
 }
 
-.session-state-dot {
-  display: none;
-}
-
 .session-name {
   font-size: 13px;
   color: var(--text-primary);
@@ -192,14 +250,27 @@
 }
 
 .session-actions {
-  display: none;
+  display: flex;
   gap: 2px;
   flex-shrink: 0;
   margin-left: 8px;
+  opacity: 0;
+  transition: opacity 0.12s;
 }
 
-.session-row:hover .session-actions {
-  display: flex;
+.session-row:hover .session-actions,
+.session-row:focus-within .session-actions {
+  opacity: 1;
+}
+
+.session-row:focus-visible,
+.session-action-btn:focus-visible,
+.sidebar-collapsed-session:focus-visible,
+.sidebar-title-back:focus-visible,
+.new-session-btn:focus-visible,
+.sidebar-toggle-btn:focus-visible {
+  outline: 1px solid var(--accent-color);
+  outline-offset: -1px;
 }
 
 .session-action-btn {
