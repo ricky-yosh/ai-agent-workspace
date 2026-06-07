@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use thiserror::Error;
@@ -68,6 +69,7 @@ pub type Result<T> = std::result::Result<T, RegistryError>;
 pub struct SessionRegistry {
     file_path: PathBuf,
     sessions: Vec<Session>,
+    suppress_watcher: AtomicBool,
 }
 
 fn now_iso() -> String {
@@ -94,7 +96,11 @@ impl SessionRegistry {
             Vec::new()
         };
 
-        Ok(SessionRegistry { file_path, sessions })
+        Ok(SessionRegistry {
+            file_path,
+            sessions,
+            suppress_watcher: AtomicBool::new(false),
+        })
     }
 
     pub fn create(&mut self, working_dir: &str, name: &str) -> Result<Session> {
@@ -312,14 +318,38 @@ impl SessionRegistry {
     }
 
     pub fn save(&self) -> Result<()> {
-        if let Some(parent) = self.file_path.parent() {
-            fs::create_dir_all(parent)?;
+        self.suppress_watcher.store(true, Ordering::SeqCst);
+        let result = (|| {
+            if let Some(parent) = self.file_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let sessions_file = SessionsFile {
+                sessions: self.sessions.clone(),
+            };
+            let content = serde_json::to_string_pretty(&sessions_file)?;
+            fs::write(&self.file_path, content)?;
+            Ok::<(), RegistryError>(())
+        })();
+        self.suppress_watcher.store(false, Ordering::SeqCst);
+        result
+    }
+
+    pub fn should_suppress_watcher(&self) -> bool {
+        self.suppress_watcher.load(Ordering::SeqCst)
+    }
+
+    pub fn reload(&mut self) -> Result<()> {
+        if self.file_path.exists() {
+            let content = fs::read_to_string(&self.file_path)?;
+            if content.trim().is_empty() {
+                self.sessions = Vec::new();
+            } else {
+                let sessions_file: SessionsFile = serde_json::from_str(&content)?;
+                self.sessions = sessions_file.sessions;
+            }
+        } else {
+            self.sessions = Vec::new();
         }
-        let sessions_file = SessionsFile {
-            sessions: self.sessions.clone(),
-        };
-        let content = serde_json::to_string_pretty(&sessions_file)?;
-        fs::write(&self.file_path, content)?;
         Ok(())
     }
 }

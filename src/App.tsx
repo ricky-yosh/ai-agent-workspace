@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import SplitLayout from "./SplitLayout";
@@ -54,6 +55,30 @@ function MainArea() {
       setLoading(false);
     }
   }, [activeSessionId]);
+
+  useEffect(() => {
+    console.log("[MainArea] Setting up event listeners");
+    const unlistenSessions = listen("sessions-changed", () => {
+      console.log("[MainArea] Received sessions-changed event");
+      if (activeSessionId) {
+        console.log("[MainArea] Re-fetching workspaces for session:", activeSessionId);
+        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId })
+          .then(setWorkspaces)
+          .catch(console.error);
+        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId })
+          .then(setActiveWorkspace)
+          .catch(console.error);
+      }
+    });
+    const unlistenLayouts = listen("layouts-changed", () => {
+      console.log("[MainArea] Received layouts-changed event");
+      refreshTemplates();
+    });
+    return () => {
+      unlistenSessions.then((fn) => fn());
+      unlistenLayouts.then((fn) => fn());
+    };
+  }, [activeSessionId, refreshTemplates]);
 
   const handleWorkspaceTreeChange = (newTree: LayoutTree) => {
     if (!activeWorkspace) return;

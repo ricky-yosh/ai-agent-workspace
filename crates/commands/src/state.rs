@@ -1,9 +1,9 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use ai_agent_workspace_core::{SessionRegistry, LayoutStore};
 
 pub struct AppState {
-    pub sessions: Mutex<SessionRegistry>,
-    pub layouts: Mutex<LayoutStore>,
+    pub sessions: Arc<Mutex<SessionRegistry>>,
+    pub layouts: Arc<Mutex<LayoutStore>>,
 }
 
 impl AppState {
@@ -16,8 +16,8 @@ impl AppState {
             ))
         })?;
         Ok(Self {
-            sessions: Mutex::new(sessions),
-            layouts: Mutex::new(layouts),
+            sessions: Arc::new(Mutex::new(sessions)),
+            layouts: Arc::new(Mutex::new(layouts)),
         })
     }
 }

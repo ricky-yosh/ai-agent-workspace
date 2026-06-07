@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
 use ai_agent_workspace_commands::{
     AppState, Command, CommandResult, execute,
 };
@@ -5,6 +7,7 @@ use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
     Layout, LayoutStore, LayoutTree,
 };
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -253,10 +256,77 @@ pub fn run() {
     }
     drop(layouts);
 
+    let watcher_state: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
+        .manage(watcher_state)
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let state = app.state::<AppState>();
+            let sessions_arc = state.sessions.clone();
+            let layouts_arc = state.layouts.clone();
+
+            let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+                match &res {
+                    Ok(event) => {
+                        for path in &event.paths {
+                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                                if file_name == "sessions.json" {
+                                    if let Ok(mut sessions) = sessions_arc.lock() {
+                                        if sessions.should_suppress_watcher() {
+                                            println!("[watcher] Skipping sessions reload (internal write)");
+                                            continue;
+                                        }
+                                        println!("[watcher] Reloading sessions from disk");
+                                        if let Err(e) = sessions.reload() {
+                                            eprintln!("[watcher] Failed to reload sessions: {}", e);
+                                        }
+                                    }
+                                    let _ = handle.emit("sessions-changed", ());
+                                } else if file_name == "layouts.json" {
+                                    if let Ok(mut layouts) = layouts_arc.lock() {
+                                        if layouts.should_suppress_watcher() {
+                                            println!("[watcher] Skipping layouts reload (internal write)");
+                                            continue;
+                                        }
+                                        println!("[watcher] Reloading layouts from disk");
+                                        if let Err(e) = layouts.reload() {
+                                            eprintln!("[watcher] Failed to reload layouts: {}", e);
+                                        }
+                                    }
+                                    let _ = handle.emit("layouts-changed", ());
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[watcher] Error: {}", e);
+                    }
+                }
+            }).expect("Failed to create file watcher");
+
+            if let Some(data_dir) = dirs::data_dir() {
+                let watch_path = data_dir.join("AI Agent Workspace");
+                println!("[watcher] Watch path: {:?}", watch_path);
+                println!("[watcher] Watch path exists: {}", watch_path.exists());
+                if watch_path.exists() {
+                    watcher.watch(&watch_path.as_path(), RecursiveMode::NonRecursive)
+                        .expect("Failed to watch data directory");
+                    println!("[watcher] Watching directory successfully");
+                } else {
+                    println!("[watcher] WARNING: Watch path does not exist!");
+                }
+            } else {
+                println!("[watcher] WARNING: No data directory found!");
+            }
+
+            let watcher_lock = app.state::<Mutex<Option<RecommendedWatcher>>>();
+            *watcher_lock.lock().expect("lock poisoned") = Some(watcher);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             create_session,

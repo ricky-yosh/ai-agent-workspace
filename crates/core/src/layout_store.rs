@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use thiserror::Error;
@@ -53,6 +54,7 @@ pub type Result<T> = std::result::Result<T, LayoutError>;
 pub struct LayoutStore {
     file_path: PathBuf,
     layouts: Vec<Layout>,
+    suppress_watcher: AtomicBool,
 }
 
 impl LayoutStore {
@@ -74,7 +76,11 @@ impl LayoutStore {
             Vec::new()
         };
 
-        Ok(LayoutStore { file_path, layouts })
+        Ok(LayoutStore {
+            file_path,
+            layouts,
+            suppress_watcher: AtomicBool::new(false),
+        })
     }
 
     pub fn save_layout(&mut self, name: &str, tree: LayoutTree) -> Result<Layout> {
@@ -128,11 +134,34 @@ impl LayoutStore {
     }
 
     pub fn save(&self) -> Result<()> {
-        if let Some(parent) = self.file_path.parent() {
-            fs::create_dir_all(parent)?;
+        self.suppress_watcher.store(true, Ordering::SeqCst);
+        let result = (|| {
+            if let Some(parent) = self.file_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let content = serde_json::to_string_pretty(&self.layouts)?;
+            fs::write(&self.file_path, content)?;
+            Ok::<(), LayoutError>(())
+        })();
+        self.suppress_watcher.store(false, Ordering::SeqCst);
+        result
+    }
+
+    pub fn should_suppress_watcher(&self) -> bool {
+        self.suppress_watcher.load(Ordering::SeqCst)
+    }
+
+    pub fn reload(&mut self) -> Result<()> {
+        if self.file_path.exists() {
+            let content = fs::read_to_string(&self.file_path)?;
+            if content.trim().is_empty() {
+                self.layouts = Vec::new();
+            } else {
+                self.layouts = serde_json::from_str(&content)?;
+            }
+        } else {
+            self.layouts = Vec::new();
         }
-        let content = serde_json::to_string_pretty(&self.layouts)?;
-        fs::write(&self.file_path, content)?;
         Ok(())
     }
 }

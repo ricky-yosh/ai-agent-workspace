@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface SessionSummary {
   id: string;
@@ -36,15 +37,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refreshSessions = useCallback(async () => {
     try {
       const list = await invoke<SessionSummary[]>("list_sessions");
+      console.log("[SessionContext] refreshSessions: got", list.length, "sessions:", list.map(s => s.name));
       setSessions(list);
     } catch (e) {
-      console.error("Failed to list sessions", e);
+      console.error("[SessionContext] Failed to list sessions", e);
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
     refreshSessions().finally(() => setLoading(false));
+  }, [refreshSessions]);
+
+  useEffect(() => {
+    console.log("[SessionContext] Setting up sessions-changed listener");
+    const unlisten = listen("sessions-changed", () => {
+      console.log("[SessionContext] Received sessions-changed event, refreshing...");
+      refreshSessions();
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, [refreshSessions]);
 
   return (

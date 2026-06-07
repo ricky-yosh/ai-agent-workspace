@@ -25,6 +25,8 @@ serde_json = "1"
 tauri-plugin-dialog = "2.7.1"
 ai-agent-workspace-commands = { path = "../crates/commands" }
 ai-agent-workspace-core = { path = "../crates/core" }
+notify = "6"
+dirs = "6"
 
 [dev-dependencies]
 tempfile = "3"
