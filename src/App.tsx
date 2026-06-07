@@ -57,6 +57,11 @@ function MainArea() {
   const handleWorkspaceTreeChange = (newTree: LayoutTree) => {
     if (!activeWorkspace) return;
     setActiveWorkspace({ ...activeWorkspace, current_tree: newTree });
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === activeWorkspace.id ? { ...w, current_tree: newTree } : w
+      )
+    );
     invoke("update_workspace_tree", {
       sessionId: activeSessionId,
       workspaceId: activeWorkspace.id,
