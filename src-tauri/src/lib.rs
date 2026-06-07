@@ -65,18 +65,18 @@ fn open_session(state: tauri::State<AppState>, session_id: String) -> Result<Ses
     if session.workspaces.is_empty() {
         let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
         let layouts = store.list_layouts().map_err(|e| e.to_string())?;
-        let (template_id, default_tree) = if let Some(first) = layouts.first() {
-            (first.id.clone(), first.tree.clone())
+        let (template_id, template_name, default_tree) = if let Some(first) = layouts.first() {
+            (first.id.clone(), first.name.clone(), first.tree.clone())
         } else {
             let default_tree = LayoutStore::default_layout();
             let layout = store.save_layout("General", default_tree).map_err(|e| e.to_string())?;
             store.save().map_err(|e| e.to_string())?;
-            (layout.id, layout.tree)
+            (layout.id, layout.name, layout.tree)
         };
         drop(store);
 
         registry
-            .add_workspace(&session_id, &template_id, default_tree)
+            .add_workspace(&session_id, &template_id, &template_name, default_tree)
             .map_err(|e| e.to_string())?;
         registry.save().map_err(|e| e.to_string())?;
     } else {
@@ -164,7 +164,7 @@ fn add_workspace(
     let store = state.layout_store.lock().map_err(|e| e.to_string())?;
     let template = store.get_layout(&template_id).map_err(|e| e.to_string())?;
     drop(store);
-    let ws = registry.add_workspace(&session_id, &template_id, template.tree).map_err(|e| e.to_string())?;
+    let ws = registry.add_workspace(&session_id, &template_id, &template.name, template.tree).map_err(|e| e.to_string())?;
     registry.save().map_err(|e| e.to_string())?;
     Ok(ws)
 }

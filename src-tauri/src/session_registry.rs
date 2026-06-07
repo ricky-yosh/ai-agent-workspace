@@ -174,13 +174,13 @@ impl SessionRegistry {
         Ok(self.sessions[idx].clone())
     }
 
-    pub fn add_workspace(&mut self, session_id: &str, template_id: &str, default_tree: LayoutTree) -> Result<WorkspaceInstance> {
+    pub fn add_workspace(&mut self, session_id: &str, template_id: &str, template_name: &str, default_tree: LayoutTree) -> Result<WorkspaceInstance> {
         let idx = self
             .find_index(session_id)
             .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
         let ws = WorkspaceInstance {
             id: Uuid::new_v4().to_string(),
-            name: "Workspace".to_string(),
+            name: template_name.to_string(),
             template_id: template_id.to_string(),
             current_tree: default_tree,
         };
@@ -433,7 +433,7 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws = registry
-            .add_workspace(&session.id, "tmpl_general", tree.clone())
+            .add_workspace(&session.id, "tmpl_general", "General", tree.clone())
             .unwrap();
         assert!(!ws.id.is_empty());
         assert_eq!(ws.template_id, "tmpl_general");
@@ -450,10 +450,10 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws1 = registry
-            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .add_workspace(&session.id, "tmpl_a", "Template A", tree.clone())
             .unwrap();
         let ws2 = registry
-            .add_workspace(&session.id, "tmpl_b", tree.clone())
+            .add_workspace(&session.id, "tmpl_b", "Template B", tree.clone())
             .unwrap();
 
         registry.remove_workspace(&session.id, &ws1.id).unwrap();
@@ -473,7 +473,7 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws = registry
-            .add_workspace(&session.id, "tmpl_general", tree)
+            .add_workspace(&session.id, "tmpl_general", "General", tree)
             .unwrap();
         registry
             .rename_workspace(&session.id, &ws.id, "My Renamed Tab")
@@ -488,10 +488,10 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws1 = registry
-            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .add_workspace(&session.id, "tmpl_a", "Template A", tree.clone())
             .unwrap();
         let ws2 = registry
-            .add_workspace(&session.id, "tmpl_b", tree)
+            .add_workspace(&session.id, "tmpl_b", "Template B", tree)
             .unwrap();
 
         registry.set_active_workspace(&session.id, &ws2.id).unwrap();
@@ -509,7 +509,7 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws = registry
-            .add_workspace(&session.id, "tmpl_general", tree)
+            .add_workspace(&session.id, "tmpl_general", "General", tree)
             .unwrap();
 
         let new_tree = crate::layout_store::LayoutTree {
@@ -530,10 +530,10 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         registry
-            .add_workspace(&session.id, "tmpl_a", tree.clone())
+            .add_workspace(&session.id, "tmpl_a", "Template A", tree.clone())
             .unwrap();
         registry
-            .add_workspace(&session.id, "tmpl_b", tree)
+            .add_workspace(&session.id, "tmpl_b", "Template B", tree)
             .unwrap();
         let workspaces = registry.get_workspaces(&session.id).unwrap();
         assert_eq!(workspaces.len(), 2);
@@ -545,7 +545,7 @@ mod tests {
         let session = registry.create("/tmp", "Test").unwrap();
         let tree = crate::layout_store::LayoutStore::default_layout();
         let ws = registry
-            .add_workspace(&session.id, "tmpl_general", tree)
+            .add_workspace(&session.id, "tmpl_general", "General", tree)
             .unwrap();
         let active = registry.get_active_workspace(&session.id).unwrap();
         assert_eq!(active.id, ws.id);
