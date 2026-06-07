@@ -1,0 +1,11 @@
+[package]
+name = "ai-agent-workspace-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "aiaws"
+path = "src/main.rs"
+
+[dependencies]
+ai-agent-workspace-core = { path = "../core" }
