@@ -6,6 +6,7 @@ import SplitLayout from "./SplitLayout";
 import LayoutTabs from "./LayoutTabs";
 import ManageTemplatesModal from "./ManageTemplatesModal";
 import type { Layout, LayoutTree } from "./SplitLayout";
+import ShortcutsModal from "./ShortcutsModal";
 import "./BlankPanel";
 import "./App.css";
 
@@ -98,6 +99,25 @@ function MainArea() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [saveAsTarget]);
+
+  const handleCycleWorkspace = useCallback((dir: 1 | -1) => {
+    if (workspaces.length < 2 || !activeWorkspace) return;
+    const idx = workspaces.findIndex((w) => w.id === activeWorkspace.id);
+    if (idx < 0) return;
+    const next = workspaces[(idx + dir + workspaces.length) % workspaces.length];
+    handleWorkspaceSwitch(next.id);
+  }, [workspaces, activeWorkspace, handleWorkspaceSwitch]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        handleCycleWorkspace(e.shiftKey ? -1 : 1);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [handleCycleWorkspace]);
 
   const handleDeleteTemplate = useCallback((layoutId: string) => {
     invoke("delete_layout", { layoutId })
@@ -223,13 +243,97 @@ function MainArea() {
           </div>
         </div>
       )}
-      {activeWorkspace ? (
-        <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
-      ) : (
-        <div className="empty-state">No active workspace</div>
-      )}
+      <div className="tab-content" key={activeWorkspace?.id ?? 'empty'}>
+        {activeWorkspace ? (
+          <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
+        ) : (
+          <div className="empty-state">No active workspace</div>
+        )}
+      </div>
     </main>
   );
+}
+
+function KeyboardShortcutsHandler() {
+  const {
+    sessions, activeSessionId, setActiveSessionId, refreshSessions,
+    setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
+  } = useSessions();
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  const handleCycle = useCallback((dir: 1 | -1) => {
+    if (sessions.length < 1) return;
+    const nextId = !activeSessionId
+      ? dir === 1 ? sessions[0].id : sessions[sessions.length - 1].id
+      : (() => {
+          const idx = sessions.findIndex((s) => s.id === activeSessionId);
+          if (idx < 0) return sessions[0].id;
+          return sessions[(idx + dir + sessions.length) % sessions.length].id;
+        })();
+    invoke("open_session", { sessionId: nextId })
+      .then(() => setActiveSessionId(nextId))
+      .catch(console.error);
+  }, [sessions, activeSessionId, setActiveSessionId]);
+
+  const handleCloseSession = useCallback(() => {
+    if (!activeSessionId) return;
+    invoke("close_session", { sessionId: activeSessionId })
+      .then(() => {
+        setActiveSessionId(null);
+        refreshSessions();
+      })
+      .catch(console.error);
+  }, [activeSessionId, setActiveSessionId, refreshSessions]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const inInput = !!(e.target instanceof HTMLElement && (e.target as HTMLElement).closest?.("input, textarea, [contenteditable]"));
+
+      if (
+        e.key === "?" &&
+        !e.metaKey && !e.ctrlKey && !e.altKey &&
+        !inInput
+      ) {
+        e.preventDefault();
+        setShowShortcuts((v) => !v);
+        return;
+      }
+
+      if (e.metaKey && e.shiftKey && (e.code === "BracketRight" || e.code === "BracketLeft")) {
+        e.preventDefault();
+        handleCycle(e.code === "BracketRight" ? 1 : -1);
+        return;
+      }
+
+      if (e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && !inInput) {
+        e.preventDefault();
+        handleCycle(e.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+
+      if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !inInput) {
+        if (e.key === "n") {
+          e.preventDefault();
+          setShowNewSessionDialog(true);
+          return;
+        }
+        if (e.key === "w") {
+          e.preventDefault();
+          handleCloseSession();
+          return;
+        }
+        if (e.code === "Backslash") {
+          e.preventDefault();
+          setSidebarCollapsed(!sidebarCollapsed);
+          return;
+        }
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [handleCycle, handleCloseSession, setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed]);
+
+  return showShortcuts ? <ShortcutsModal onClose={() => setShowShortcuts(false)} /> : null;
 }
 
 function App() {
@@ -239,6 +343,7 @@ function App() {
         <SessionSidebar />
         <MainArea />
       </div>
+      <KeyboardShortcutsHandler />
     </SessionProvider>
   );
 }

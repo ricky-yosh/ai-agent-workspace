@@ -18,6 +18,10 @@ interface SessionContextValue {
   setActiveSessionId: (id: string | null) => void;
   refreshSessions: () => Promise<void>;
   loading: boolean;
+  showNewSessionDialog: boolean;
+  setShowNewSessionDialog: (open: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -26,6 +30,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showNewSessionDialog, setShowNewSessionDialog] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -43,7 +49,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <SessionContext.Provider
-      value={{ sessions, activeSessionId, setActiveSessionId, refreshSessions, loading }}
+      value={{
+        sessions, activeSessionId, setActiveSessionId,
+        refreshSessions, loading,
+        showNewSessionDialog, setShowNewSessionDialog,
+        sidebarCollapsed, setSidebarCollapsed,
+      }}
     >
       {children}
     </SessionContext.Provider>
