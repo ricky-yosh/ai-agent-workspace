@@ -12,10 +12,12 @@ function folderNameOf(path: string): string {
 }
 
 export default function SessionSidebar() {
-  const { sessions, activeSessionId, setActiveSessionId, refreshSessions } =
-    useSessions();
+  const {
+    sessions, activeSessionId, setActiveSessionId, refreshSessions,
+    showNewSessionDialog, setShowNewSessionDialog,
+    sidebarCollapsed, setSidebarCollapsed,
+  } = useSessions();
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [showNewDialog, setShowNewDialog] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWorkingDir, setNewWorkingDir] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -25,7 +27,6 @@ export default function SessionSidebar() {
   );
   const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isResizing = useRef(false);
@@ -51,7 +52,7 @@ export default function SessionSidebar() {
   }
 
   useEffect(() => {
-    if (!showNewDialog) return;
+    if (!showNewSessionDialog) return;
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((event) => {
@@ -73,7 +74,7 @@ export default function SessionSidebar() {
       setIsDragOver(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showNewDialog]);
+  }, [showNewSessionDialog]);
 
   function handleSelect(id: string) {
     if (id === activeSessionId) return;
@@ -89,7 +90,7 @@ export default function SessionSidebar() {
       workingDir: newWorkingDir.trim(),
       name: newName.trim(),
     }).then((session) => {
-      setShowNewDialog(false);
+      setShowNewSessionDialog(false);
       setNewName("");
       setNewWorkingDir("");
       newNameEditedRef.current = false;
@@ -138,9 +139,9 @@ export default function SessionSidebar() {
     if (w < 60) {
       lastWidth.current = sidebarWidth > 60 ? sidebarWidth : lastWidth.current;
       setSidebarWidth(42);
-      setCollapsed(true);
+      setSidebarCollapsed(true);
     } else {
-      setCollapsed(false);
+      setSidebarCollapsed(false);
       setSidebarWidth(Math.max(200, Math.min(600, w)));
     }
   }
@@ -159,95 +160,91 @@ export default function SessionSidebar() {
   }, []);
 
   useEffect(() => {
+    if (sidebarCollapsed) {
+      if (sidebarWidth > 42) {
+        lastWidth.current = sidebarWidth;
+        setSidebarWidth(42);
+      }
+    } else {
+      if (sidebarWidth <= 42) {
+        setSidebarWidth(lastWidth.current);
+      }
+    }
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       if (deleteConfirmId) {
         setDeleteConfirmId(null);
-      } else if (showNewDialog) {
-        setShowNewDialog(false);
+      } else if (showNewSessionDialog) {
+        setShowNewSessionDialog(false);
       } else if (renamingSessionId) {
         setRenamingSessionId(null);
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [showNewDialog, deleteConfirmId, renamingSessionId]);
+  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId]);
 
   return (
     <>
-      <aside className={`sidebar${collapsed ? " sidebar-collapsed" : ""}`} style={collapsed ? undefined : { width: sidebarWidth }}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
         <div className="sidebar-header">
           <button
             className="sidebar-toggle-btn"
             onClick={() => {
-              if (collapsed) {
+              if (sidebarCollapsed) {
                 setSidebarWidth(lastWidth.current);
-                setCollapsed(false);
+                setSidebarCollapsed(false);
               } else {
                 lastWidth.current = sidebarWidth;
                 setSidebarWidth(42);
-                setCollapsed(true);
+                setSidebarCollapsed(true);
               }
             }}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+            {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
           </button>
-          {!collapsed && activeSessionId ? (
-            <button
-              className="sidebar-title sidebar-title-back"
-              onClick={() => {
-                invoke("close_session", { sessionId: activeSessionId }).then(() => {
-                  setActiveSessionId(null);
-                  refreshSessions();
-                });
-              }}
-              title="Back to all sessions"
-              aria-label="Close session and return to all sessions"
-            >
-              <ArrowLeft size={14} className="sidebar-title-back-icon" />
-              <span className="sidebar-title-back-label">
-                {sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}
-              </span>
-            </button>
-          ) : (
-            !collapsed && <h2 className="sidebar-title">Sessions</h2>
-          )}
-          {!collapsed && (
+          <div className="sidebar-header-content">
+            {activeSessionId ? (
+              <button
+                className="sidebar-title sidebar-title-back"
+                onClick={() => {
+                  invoke("close_session", { sessionId: activeSessionId }).then(() => {
+                    setActiveSessionId(null);
+                    refreshSessions();
+                  });
+                }}
+                title="Back to all sessions"
+                aria-label="Close session and return to all sessions"
+              >
+                <ArrowLeft size={14} className="sidebar-title-back-icon" />
+                <span className="sidebar-title-back-label">
+                  {sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}
+                </span>
+              </button>
+            ) : (
+              <h2 className="sidebar-title">Sessions</h2>
+            )}
             <button
               className="new-session-btn"
               onClick={() => {
                 setNewName("");
                 setNewWorkingDir("");
                 newNameEditedRef.current = false;
-                setShowNewDialog(true);
+                setShowNewSessionDialog(true);
               }}
               title="New Session"
             >
               <Plus size={16} />
             </button>
-          )}
+          </div>
         </div>
 
-        {collapsed && (
-          <div className="sidebar-collapsed-sessions">
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
-                onClick={() => handleSelect(s.id)}
-                title={`${s.name} — ${s.state}`}
-                aria-label={`${s.name}, ${s.state}`}
-              >
-                {s.name.charAt(0).toUpperCase()}
-                <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-        )}
-
-        {!collapsed && (
-          <div className="sidebar-list">
+        <div className="sidebar-content">
+          <div className="sidebar-view sidebar-view-expanded">
             {sessions.length === 0 ? (
               <div className="sidebar-empty">No sessions yet</div>
             ) : (
@@ -318,16 +315,32 @@ export default function SessionSidebar() {
             ))
            )}
           </div>
-        )}
+          <div className="sidebar-view sidebar-view-collapsed">
+            <div className="sidebar-collapsed-sessions">
+              {sessions.map((s) => (
+                <button
+                  key={s.id}
+                  className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
+                  onClick={() => handleSelect(s.id)}
+                  title={`${s.name} — ${s.state}`}
+                  aria-label={`${s.name}, ${s.state}`}
+                >
+                  {s.name.charAt(0).toUpperCase()}
+                  <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
-        <div className={`sidebar-resize${collapsed ? " sidebar-resize-collapsed" : ""}`} onMouseDown={handleResizeMouseDown} />
+        <div className="sidebar-resize" onMouseDown={handleResizeMouseDown} />
       </aside>
 
-      {showNewDialog && (
+      {showNewSessionDialog && (
         <div
           className="dialog-overlay"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setShowNewDialog(false);
+            if (e.target === e.currentTarget) setShowNewSessionDialog(false);
           }}
         >
           <div className="dialog" onClick={(e) => e.stopPropagation()}>
@@ -376,7 +389,7 @@ export default function SessionSidebar() {
             <div className="dialog-actions">
               <button
                 className="dialog-btn dialog-btn-cancel"
-                onClick={() => setShowNewDialog(false)}
+                onClick={() => setShowNewSessionDialog(false)}
               >
                 Cancel
               </button>
