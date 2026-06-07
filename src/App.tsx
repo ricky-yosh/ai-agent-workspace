@@ -243,7 +243,7 @@ function MainArea() {
           </div>
         </div>
       )}
-      <div className="tab-content" key={activeWorkspace?.id ?? 'empty'}>
+      <div className="tab-content">
         {activeWorkspace ? (
           <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
         ) : (
