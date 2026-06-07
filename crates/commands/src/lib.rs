@@ -1,4 +1,11 @@
-// Stub — Task 3 will implement the Command enum and executor
-pub fn placeholder() -> &'static str {
-    "commands crate placeholder"
-}
+pub mod error;
+pub mod result;
+pub mod command;
+pub mod state;
+pub mod executor;
+
+pub use error::CommandError;
+pub use result::CommandResult;
+pub use command::Command;
+pub use state::AppState;
+pub use executor::execute;
