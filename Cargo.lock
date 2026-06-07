@@ -21,6 +21,7 @@ dependencies = [
 name = "ai-agent-workspace"
 version = "0.1.0"
 dependencies = [
+ "ai-agent-workspace-commands",
  "ai-agent-workspace-core",
  "serde",
  "serde_json",

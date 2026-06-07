@@ -1,10 +1,10 @@
-use std::sync::Mutex;
-use ai_agent_workspace_core::{Session, SessionState, SessionSummary, WorkspaceInstance, SessionRegistry, Layout, LayoutStore, LayoutTree};
-
-pub struct AppState {
-    registry: Mutex<SessionRegistry>,
-    layout_store: Mutex<LayoutStore>,
-}
+use ai_agent_workspace_commands::{
+    AppState, Command, CommandResult, execute,
+};
+use ai_agent_workspace_core::{
+    Session, SessionSummary, WorkspaceInstance,
+    Layout, LayoutStore, LayoutTree,
+};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -17,16 +17,21 @@ fn create_session(
     working_dir: String,
     name: String,
 ) -> Result<Session, String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let session = registry.create(&working_dir, &name).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())?;
-    Ok(session)
+    let cmd = Command::SessionCreate { working_dir, name };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Session(s)) => Ok(s),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
 fn list_sessions(state: tauri::State<AppState>) -> Result<Vec<SessionSummary>, String> {
-    let registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.list().map_err(|e| e.to_string())
+    match execute(Command::SessionList, &state) {
+        Ok(CommandResult::Sessions(s)) => Ok(s),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -35,62 +40,51 @@ fn rename_session(
     session_id: String,
     new_name: String,
 ) -> Result<Session, String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let session = registry
-        .rename(&session_id, &new_name)
-        .map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())?;
-    Ok(session)
+    let cmd = Command::SessionRename { session_id, new_name };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Session(s)) => Ok(s),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
 fn delete_session(state: tauri::State<AppState>, session_id: String) -> Result<(), String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.delete(&session_id).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())
+    let cmd = Command::SessionDelete { session_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
 fn open_session(state: tauri::State<AppState>, session_id: String) -> Result<Session, String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let session = registry.open(&session_id).map_err(|e| e.to_string())?;
-
-    if session.workspaces.is_empty() {
-        let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
-        let layouts = store.list_layouts().map_err(|e| e.to_string())?;
-        let (template_id, template_name, default_tree) = if let Some(first) = layouts.first() {
-            (first.id.clone(), first.name.clone(), first.tree.clone())
-        } else {
-            let default_tree = LayoutStore::default_layout();
-            let layout = store.save_layout("General", default_tree).map_err(|e| e.to_string())?;
-            store.save().map_err(|e| e.to_string())?;
-            (layout.id, layout.name, layout.tree)
-        };
-        drop(store);
-
-        registry
-            .add_workspace(&session_id, &template_id, &template_name, default_tree)
-            .map_err(|e| e.to_string())?;
-        registry.save().map_err(|e| e.to_string())?;
-    } else {
-        registry.save().map_err(|e| e.to_string())?;
+    let cmd = Command::SessionOpen { session_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Session(s)) => Ok(s),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
     }
-
-    registry.get_by_id(&session_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn close_session(state: tauri::State<AppState>, session_id: String) -> Result<Session, String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let session = registry.close(&session_id).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())?;
-    Ok(session)
+    let cmd = Command::SessionClose { session_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Session(s)) => Ok(s),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
 fn list_layouts(state: tauri::State<AppState>) -> Result<Vec<Layout>, String> {
-    let store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    store.list_layouts().map_err(|e| e.to_string())
+    match execute(Command::TemplateList, &state) {
+        Ok(CommandResult::Layouts(l)) => Ok(l),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -99,20 +93,22 @@ fn save_layout(
     name: String,
     tree: LayoutTree,
 ) -> Result<Layout, String> {
-    let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    let layout = store.save_layout(&name, tree).map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())?;
-    Ok(layout)
+    let cmd = Command::TemplateSave { name, tree };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Layout(l)) => Ok(l),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
-fn delete_layout(
-    state: tauri::State<AppState>,
-    layout_id: String,
-) -> Result<(), String> {
-    let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    store.delete_layout(&layout_id).map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())
+fn delete_layout(state: tauri::State<AppState>, layout_id: String) -> Result<(), String> {
+    let cmd = Command::TemplateDelete { layout_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -121,9 +117,12 @@ fn rename_layout(
     layout_id: String,
     new_name: String,
 ) -> Result<(), String> {
-    let mut store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    store.rename_layout(&layout_id, &new_name).map_err(|e| e.to_string())?;
-    store.save().map_err(|e| e.to_string())
+    let cmd = Command::TemplateRename { layout_id, new_name };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -131,8 +130,12 @@ fn get_session_workspaces(
     state: tauri::State<AppState>,
     session_id: String,
 ) -> Result<Vec<WorkspaceInstance>, String> {
-    let registry = state.registry.lock().map_err(|e| e.to_string())?;
-    Ok(registry.get_workspaces(&session_id).map_err(|e| e.to_string())?.clone())
+    let cmd = Command::WorkspaceList { session_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Workspaces(w)) => Ok(w),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -140,10 +143,12 @@ fn get_active_workspace(
     state: tauri::State<AppState>,
     session_id: String,
 ) -> Result<Option<WorkspaceInstance>, String> {
-    let registry = state.registry.lock().map_err(|e| e.to_string())?;
-    match registry.get_active_workspace(&session_id) {
-        Ok(ws) => Ok(Some(ws)),
-        Err(_) => Ok(None),
+    let cmd = Command::WorkspaceGetActive { session_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Workspace(ws)) => Ok(Some(ws)),
+        Ok(CommandResult::Unit(())) => Ok(None),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -153,13 +158,12 @@ fn add_workspace(
     session_id: String,
     template_id: String,
 ) -> Result<WorkspaceInstance, String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    let store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    let template = store.get_layout(&template_id).map_err(|e| e.to_string())?;
-    drop(store);
-    let ws = registry.add_workspace(&session_id, &template_id, &template.name, template.tree).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())?;
-    Ok(ws)
+    let cmd = Command::WorkspaceAdd { session_id, template_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Workspace(w)) => Ok(w),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -168,9 +172,12 @@ fn remove_workspace(
     session_id: String,
     workspace_id: String,
 ) -> Result<(), String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.remove_workspace(&session_id, &workspace_id).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())
+    let cmd = Command::WorkspaceRemove { session_id, workspace_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -180,9 +187,12 @@ fn rename_workspace(
     workspace_id: String,
     new_name: String,
 ) -> Result<(), String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.rename_workspace(&session_id, &workspace_id, &new_name).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())
+    let cmd = Command::WorkspaceRename { session_id, workspace_id, new_name };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -191,9 +201,12 @@ fn set_active_workspace(
     session_id: String,
     workspace_id: String,
 ) -> Result<(), String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.set_active_workspace(&session_id, &workspace_id).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())
+    let cmd = Command::WorkspaceSetActive { session_id, workspace_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -203,9 +216,12 @@ fn update_workspace_tree(
     workspace_id: String,
     tree: LayoutTree,
 ) -> Result<(), String> {
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.update_workspace_tree(&session_id, &workspace_id, tree).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())
+    let cmd = Command::WorkspaceUpdateTree { session_id, workspace_id, tree };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -214,39 +230,28 @@ fn reset_workspace_to_template(
     session_id: String,
     workspace_id: String,
 ) -> Result<WorkspaceInstance, String> {
-    let template_id = {
-        let registry = state.registry.lock().map_err(|e| e.to_string())?;
-        registry.get_workspaces(&session_id).map_err(|e| e.to_string())?
-            .iter().find(|w| w.id == workspace_id)
-            .ok_or_else(|| "Workspace not found".to_string())?
-            .template_id.clone()
-    };
-    let store = state.layout_store.lock().map_err(|e| e.to_string())?;
-    let default_tree = store.get_layout(&template_id).map_err(|e| e.to_string())?.tree;
-    drop(store);
-    let mut registry = state.registry.lock().map_err(|e| e.to_string())?;
-    registry.reset_workspace_to_template(&session_id, &workspace_id, default_tree).map_err(|e| e.to_string())?;
-    registry.save().map_err(|e| e.to_string())?;
-    registry.get_workspaces(&session_id).map_err(|e| e.to_string())?
-        .iter().find(|w| w.id == workspace_id)
-        .cloned()
-        .ok_or_else(|| "Workspace not found".to_string())
+    let cmd = Command::WorkspaceReset { session_id, workspace_id };
+    match execute(cmd, &state) {
+        Ok(CommandResult::Workspace(w)) => Ok(w),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut registry = SessionRegistry::new().expect("Failed to initialize session registry");
-    registry.demote_running_to_paused().expect("Failed to demote running sessions");
-    let mut layout_store = LayoutStore::new().expect("Failed to initialize layout store");
-    if layout_store.list_layouts().map_or(true, |l| l.is_empty()) {
+    let app_state = AppState::new().expect("Failed to initialize app state");
+
+    app_state.sessions.lock().expect("lock poisoned")
+        .demote_running_to_paused().expect("Failed to demote running sessions");
+
+    let mut layouts = app_state.layouts.lock().expect("lock poisoned");
+    if layouts.list_layouts().map_or(true, |l| l.is_empty()) {
         let default_tree = LayoutStore::default_layout();
-        layout_store.save_layout("Default", default_tree).expect("Failed to seed default layout");
-        layout_store.save().expect("Failed to save seeded layout");
+        layouts.save_layout("Default", default_tree).expect("Failed to seed default layout");
+        layouts.save().expect("Failed to save seeded layout");
     }
-    let app_state = AppState {
-        registry: Mutex::new(registry),
-        layout_store: Mutex::new(layout_store),
-    };
+    drop(layouts);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
