@@ -109,16 +109,6 @@ impl LayoutStore {
         Ok(())
     }
 
-    pub fn update_tree(&mut self, id: &str, tree: LayoutTree) -> Result<()> {
-        let layout = self
-            .layouts
-            .iter_mut()
-            .find(|l| l.id == id)
-            .ok_or_else(|| LayoutError::NotFound(id.to_string()))?;
-        layout.tree = tree;
-        Ok(())
-    }
-
     pub fn rename_layout(&mut self, id: &str, new_name: &str) -> Result<()> {
         let layout = self
             .layouts
