@@ -8,7 +8,7 @@
 | **Card** | A node on the whiteboard with title, content, and position. | Node, Sticky |
 | **Edge** | A directed connection from one Card to another. | Link, Arrow, Connection |
 | **Frame** | A titled bounding box that groups Cards and Edges into a named region. | Group, Area, Zone |
-| **Command** | A canonical operation (e.g. CreateCard) dispatched through the Command Layer — the single execution path for all interfaces. | Action, Operation |
+| **Command** | A canonical operation (e.g. CreateSession) dispatched through the Command Layer — the single execution path for all interfaces. | Action, Operation |
 | **Event** | A persisted record of a successfully executed Command, appended to event-log.jsonl. Powers replay and audit. Displayed in the Log Panel. | Record |
 | **Session** | A UUID-identified workspace instance tied to a workingDirectory. Has state (running, paused, missing), a whiteboard, event-log, and artifacts. All state stored in App Support Dir. | Project, Workspace |
 | **workingDirectory** | The filesystem path (typically a git repo root) that a Session is associated with. Used to group Sessions in the sidebar. | Repo root, Project dir |
@@ -17,13 +17,13 @@
 | **Session Reachability** | Whether a Session's workingDirectory exists on disk. Missing directories produce **missing Sessions** shown dimmed in the sidebar. | Stale, Orphaned |
 | **Artifact** | An AI-generated document (e.g. architecture plan) stored in App Support under the session. Editable through the app UI. | Document, File |
 | **Panel** | A UI region in the split-screen layout (e.g. whiteboard panel, log panel, terminal panel, diff viewer panel). | Pane, Window |
-| **Layout Template** | A global blueprint/ preset defining the split arrangement of Panels (e.g. "General", "Modeling"). Stored in `layouts.json` — read-only during normal use. Users can explicitly save new templates here. | Layout, Preset, Blueprint |
+| **Layout Template** | A global blueprint/preset defining the split arrangement of Panels (e.g. "General", "Modeling"). Stored in `layouts.json` — read-only during normal use. Users can explicitly save new templates here. | Layout, Preset, Blueprint |
 | **Workspace Instance** | An editable instance of a Layout Template owned by a Session. Contains its own `current_tree`, `name`, and `template_id` referencing the source template. Stored in the Session's `workspaces` array in `sessions.json`. Deleting it does not affect the source template. | Tab, Workspace, Layout Tab |
 | **Workspace MCP** | The MCP server that lets AI agents manipulate whiteboard state, sessions, panels, and artifacts. | App MCP, Control MCP |
 | **Codebase MCP** | The MCP server for raw code intelligence — file search, symbol lookup, references, semantic search. | Sourcegraph MCP, Code MCP |
 | **Codebase Viz MCP** | The MCP server that auto-generates whiteboard diagrams from code structure (dependency graphs, call hierarchies, module maps). Composes Codebase MCP data with Workspace MCP placement. | CodeSee MCP, Map MCP |
 | **event-log.jsonl** | The append-only JSONL file in App Support Dir where all Events are persisted. Used to reconstruct workspace state and provide an audit trail. | Event Store, Event log |
-| **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. | Dispatcher, Mediator |
+| **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. Contains the Command enum and an executor that dispatches to core modules. | Dispatcher, Mediator |
 | **App Support Dir** | `~/Library/Application Support/AI Agent Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
 
 ## Relationships
@@ -37,7 +37,6 @@
 - Every **Command** produces one or more **Events** when executed.
 - Every **Event** is appended to **event-log.jsonl** and displayed in the **Log Panel**.
 - The **CLI**, **UI**, and all three **MCP** servers are adapters that translate their inputs into **Commands** dispatched through the **Command Layer**.
-- The **CLI** communicates with the app via Tauri IPC — it does not directly read or write state files.
 - **Codebase Viz MCP** composes **Codebase MCP** (for data) and **Workspace MCP** (for whiteboard placement).
 - **Window management** prevents the same Session from being open in two windows simultaneously.
 - **Layout Templates** are defined globally in `layouts.json` (the global library). **Workspace Instances** are per-session editable copies of a template, stored in the Session's `workspaces` array in `sessions.json`.
@@ -57,5 +56,14 @@
 - **Diff Viewer Panel** uses `git diff` against the repository — no independent versioning system.
 - **Terminal panel** uses a real PTY via xterm.js + Tauri's PTY backend — runs any interactive CLI tool (Claude Code, Codex, etc.).
 - **Codebase MCP** is full-scope: tree-sitter for symbol extraction, LSP integration for references/callers/callees, and semantic search.
-- **CLI** dispatches Commands via Tauri IPC — not via file writes.
+- **CLI** dispatches Commands through the **Command Layer** — not via file writes directly. The CLI is a standalone binary that calls the executor, which dispatches to core modules.
 - Undo/redo is a global in-memory stack at the Command Layer — not persisted. Used for instant undo, not long-term history.
+- **Cargo workspace** with three crates: `core` (domain logic), `commands` (Command enum + executor), `cli` (CLI binary). The Tauri app also depends on `commands`. See ADR 0007.
+- **CLI output** is JSON for all commands. Machine-readable, easy to test.
+- **CLI prefix** is `aiaws` (short for AI Agent Workspace).
+- **CLI subcommands** use `template` (not `layout`) for global presets to avoid confusion with Workspace Instances.
+- **--tree** accepts inline JSON; **--tree-file** reads from a file. Both supported for `template save` and `workspace update-tree`.
+
+## Open Questions
+
+- Decide whether external issue trackers are in scope.

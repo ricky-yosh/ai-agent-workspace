@@ -1,164 +1,183 @@
-# PRD: AI Agent Workspace — Shell & Layout System
+# PRD: CLI System with Command Layer
 
 ## Problem Statement
 
-A developer wants a desktop environment for AI-assisted software design, but before building the full whiteboard, terminal, diff viewer, and MCP tooling, they need a working shell: the ability to create and manage Sessions, and a Blender-style split-pane Layout system where they can arrange panels by splitting and resizing regions. Without this shell, all other features (whiteboard, terminal, etc.) have nowhere to live. The shell must prove the Layout splitting mechanic works before committing to the full feature set.
+The AI Agent Workspace backend (SessionRegistry, LayoutStore, Workspace management) can only be exercised through the Tauri GUI. There is no way to test the core engine from the command line. This makes it impossible to verify backend behavior without spinning up the desktop app, slows down development iteration, and blocks future integration work (MCP servers, scripting) that will depend on a shared Command Layer. The project needs a CLI that is the foundation for the canonical command interface described in the architecture — not a throwaway test harness.
 
 ## Solution
 
-A Tauri + React desktop app with a left Session Sidebar and a main Layout area. The Session Sidebar lists all Sessions grouped by workingDirectory, supports CRUD, and shows reachability. The main area renders a Layout — a recursive tree of split panes — where the user can split any region vertically or horizontally and resize split boundaries by dragging. Panels are placeholders for future content. Layouts are saved as named global presets; each Session remembers its active Layout.
+Restructure the Rust backend into a Cargo workspace with three crates — `core` (domain logic), `commands` (Command enum + executor), and `cli` (standalone binary) — so that all interfaces dispatch through the same Command Layer. The CLI (`aiaws`) exposes Session, Template, and Workspace operations as subcommands with JSON output. The existing Tauri app is rewired to depend on `commands` instead of calling core modules directly.
 
 ## User Stories
 
-1. As a developer, I want to launch the app and see a left sidebar and a main panel area, so that I have a clear starting point.
-2. As a developer, I want to create a new Session by providing a workingDirectory path and a session name, so that I can start a new workspace.
-3. As a developer, I want to see all my Sessions listed in the sidebar grouped by workingDirectory, so that I can quickly find Sessions by project.
-4. As a developer, I want the sidebar to show dimmed "missing" Sessions whose workingDirectory no longer exists, so that I know which Sessions are unreachable.
-5. As a developer, I want to rename a Session inline from the sidebar, so that I can fix typos or update names without deleting and recreating.
-6. As a developer, I want to delete a Session from the sidebar, so that I can clean up unused workspaces.
-7. As a developer, I want to open a Session by clicking it in the sidebar, so that I can switch between workspaces.
-8. As a developer, I want the app to automatically mark Sessions as paused on startup (crash safety), so that a prior crash doesn't leave Sessions stuck in "running" state.
-9. As a developer, I want to see a blank panel occupying the initial Layout when I open a new Session, so that I know the Layout system is working.
-10. As a developer, I want to split a panel region vertically by triggering a "Split Vertical" action, so that I can create side-by-side panels.
-11. As a developer, I want to split a panel region horizontally by triggering a "Split Horizontal" action, so that I can create stacked panels.
-12. As a developer, I want to resize the boundary between two split panels by dragging the divider, so that I can give more space to the panel I'm focused on.
-13. As a developer, I want to split nested regions — splitting a split child further — so that I can create complex multi-panel arrangements.
-14. As a developer, I want to save my current Layout as a named preset (e.g. "Debug Layout"), so that I can reuse it later.
-15. As a developer, I want to see a list of my saved Layout presets, so that I can switch between them.
-16. As a developer, I want each Session to remember which Layout it was using, so that reopening a Session restores my preferred panel arrangement.
-17. As a developer, I want to delete a Layout preset I no longer need, so that my preset list stays clean.
-18. As a developer, I want newly created Sessions to start with a default single-panel Layout, so that I don't have to configure Layouts before using a Session.
-19. As a developer, I want the active Layout for a Session to persist across app restarts, so that I don't lose my arrangement when I quit.
-20. As a developer, I want to close a Session (switching back to no active Session), so that I can return to an empty state without quitting the app.
+1. As a developer, I want to run `aiaws session list` from the terminal, so that I can see all Sessions without opening the GUI.
+2. As a developer, I want to create a Session from the CLI by providing a workingDirectory and name, so that I can test session creation without the GUI.
+3. As a developer, I want to rename a Session from the CLI, so that I can verify rename logic works end-to-end.
+4. As a developer, I want to delete a Session from the CLI, so that I can clean up test data.
+5. As a developer, I want to open a Session from the CLI, so that I can verify the open workflow (state transition, workspace auto-creation) works.
+6. As a developer, I want to close a Session from the CLI, so that I can verify the close workflow (state transition) works.
+7. As a developer, I want to list all Layout Templates from the CLI, so that I can see what templates exist.
+8. As a developer, I want to save a new Layout Template from the CLI with inline JSON, so that I can quickly create templates for testing.
+9. As a developer, I want to save a new Layout Template from the CLI with a file path, so that I can create complex nested templates without shell escaping.
+10. As a developer, I want to delete a Layout Template from the CLI, so that I can clean up test templates.
+11. As a developer, I want to rename a Layout Template from the CLI, so that I can verify rename logic.
+12. As a developer, I want to list all Workspace Instances for a Session from the CLI, so that I can inspect a Session's tab bar.
+13. As a developer, I want to get the active Workspace Instance for a Session from the CLI, so that I can see which tab is selected.
+14. As a developer, I want to add a Workspace Instance to a Session from the CLI by referencing a template ID, so that I can test the template-to-instance flow.
+15. As a developer, I want to remove a Workspace Instance from a Session from the CLI, so that I can test workspace cleanup.
+16. As a developer, I want to rename a Workspace Instance from the CLI, so that I can verify rename logic.
+17. As a developer, I want to set the active Workspace Instance for a Session from the CLI, so that I can test tab switching.
+18. As a developer, I want to update a Workspace Instance's layout tree from the CLI with inline JSON or a file, so that I can test layout modifications.
+19. As a developer, I want to reset a Workspace Instance back to its template from the CLI, so that I can test the reset workflow.
+20. As a developer, I want all CLI commands to return JSON output, so that I can parse results programmatically and write automated tests.
+21. As a developer, I want the CLI to show `--help` for all subcommands, so that I can discover available operations without reading source code.
+22. As a developer, I want the CLI to return non-zero exit codes on errors, so that I can detect failures in scripts.
+23. As a developer, I want the CLI to print structured JSON errors on failure, so that I can parse error details programmatically.
+24. As a developer, I want `open_session` to auto-create a default Workspace Instance if the Session has none, so that every opened Session is ready to use.
+25. As a developer, I want `open_session` to auto-create a default Layout Template if none exist, so that the first run always works.
+26. As a developer, I want the Command enum to be the single source of truth for all operations, so that adding a new interface (MCP, UI) means only adding a parser, not re-implementing dispatch logic.
+27. As a developer, I want the `execute()` function to accept a generic state container, so that the same executor works for CLI (direct) and future Tauri IPC (in-process).
+28. As a developer, I want the Tauri app to be rewired to dispatch through the Command Layer, so that CLI and GUI share the same execution path.
+29. As a developer, I want the existing unit tests for SessionRegistry and LayoutStore to pass after the workspace restructure, so that no regressions are introduced.
+30. As a developer, I want the CLI binary to have no Tauri dependencies, so that it compiles fast and stays small.
 
 ## Implementation Decisions
 
-### Module decomposition
+### Cargo workspace structure
 
-Two Rust backend crates (tests included) and three React frontend modules:
+Restructure into a Cargo workspace with three crates (see ADR 0007):
 
-- **SessionRegistry** (Rust): Manages the Session Registry (`sessions.json` in App Support Dir). Owns session CRUD, the running/paused/missing state machine, and reachability checking. Reachability is checked on list by testing whether the workingDirectory path exists on disk. On startup, any Session in `running` state is demoted to `paused`.
+- `crates/core/` — lib crate containing domain logic: `SessionRegistry`, `LayoutStore`, and all shared types (`Session`, `SessionSummary`, `SessionState`, `WorkspaceInstance`, `Layout`, `LayoutTree`, `LayoutNode`, `Direction`). No dependency on Tauri, CLI frameworks, or command abstractions. All existing unit tests move here and continue to pass. Core types are the API contract — their serde attributes are the canonical JSON shape consumed by all interfaces. No DTO layer in v1.
 
-- **LayoutStore** (Rust): Manages Layout presets (`layouts.json` in App Support Dir). Owns Layout CRUD and the per-Session active Layout mapping (stored as `active_layout_id` on each Session record). A Layout is a recursive tree — each node is either a Split (direction: vertical or horizontal, ratio: float 0–1, children: [LayoutNode, LayoutNode]) or a PanelRef (panel_type: string, e.g. "blank"). Provides helper to produce a default single-panel Layout for new Sessions.
+- `crates/commands/` — lib crate containing the `Command` enum, `CommandResult` enum, and an `execute()` function that dispatches commands to core modules. Depends on `core`. Contains an `AppState` struct that wraps `SessionRegistry` and `LayoutStore`.
 
-- **SplitLayout** (React): Renders a Layout tree recursively. Each Split node renders two child regions separated by a draggable divider (a resizable split pane library such as `allotment` or `react-resizable-panels`). Each PanelRef leaf renders a Panel component. Provides a context menu on each region with "Split Vertical" and "Split Horizontal" actions. Emits updated Layout trees that are persisted via LayoutStore.
+- `crates/cli/` — binary crate containing the `aiaws` CLI binary. Uses `clap` for argument parsing. Depends on `commands`. No Tauri dependencies.
 
-- **SessionSidebar** (React): Left sidebar panel. Fetches sessions from the backend on mount. Renders sessions grouped by workingDirectory with separators. Supports inline rename (click-to-edit on name), delete (with confirmation), and create (dialog with workingDirectory path input and name input). Dimmed rows for missing sessions. Highlights the currently active session.
+- `src-tauri/` — modified Tauri app. Depends on `commands` instead of directly importing core modules. Tauri commands become thin wrappers that call `execute()`.
 
-- **App** (React): Top-level shell. Layout: SessionSidebar on the left (fixed width ~280px, resizable boundary), SplitLayout filling the remaining space. Routes the active Session's Layout to SplitLayout. Dispatches sidebar actions (create, open, rename, delete) to the backend.
+### Command enum
 
-### IPC contract
+The `Command` enum lives in `crates/commands/` and has 18 variants:
 
-Tauri commands exposed from Rust to React:
+**Session commands:**
+- `CreateSession { working_dir: String, name: String }`
+- `ListSessions`
+- `RenameSession { session_id: String, new_name: String }`
+- `DeleteSession { session_id: String }`
+- `OpenSession { session_id: String }`
+- `CloseSession { session_id: String }`
 
-| Command | Input | Output |
-|---------|-------|--------|
-| `create_session` | `working_dir: String, name: String` | `Session` |
-| `list_sessions` | — | `Vec<SessionSummary>` (grouped by workingDirectory) |
-| `rename_session` | `session_id: String, new_name: String` | `Session` |
-| `delete_session` | `session_id: String` | `()` |
-| `open_session` | `session_id: String` | `Session` (with active Layout) |
-| `list_layouts` | — | `Vec<Layout>` |
-| `save_layout` | `name: String, tree: LayoutTree` | `Layout` |
-| `delete_layout` | `layout_id: String` | `()` |
-| `set_active_layout` | `session_id: String, layout_id: String` | `()` |
+**Template commands:**
+- `ListTemplates`
+- `SaveTemplate { name: String, tree: LayoutTree }`
+- `DeleteTemplate { layout_id: String }`
+- `RenameTemplate { layout_id: String, new_name: String }`
 
-### Data schema
+**Workspace commands:**
+- `ListWorkspaces { session_id: String }`
+- `GetActiveWorkspace { session_id: String }`
+- `AddWorkspace { session_id: String, template_id: String }`
+- `RemoveWorkspace { session_id: String, workspace_id: String }`
+- `RenameWorkspace { session_id: String, workspace_id: String, new_name: String }`
+- `SetActiveWorkspace { session_id: String, workspace_id: String }`
+- `UpdateWorkspaceTree { session_id: String, workspace_id: String, tree: LayoutTree }`
+- `ResetWorkspace { session_id: String, workspace_id: String }`
 
-Session record (in `sessions.json`):
-```json
-{
-  "id": "uuid",
-  "name": "My Session",
-  "working_directory": "/path/to/repo",
-  "state": "running | paused | missing",
-  "active_layout_id": "uuid",
-  "created_at": "ISO8601",
-  "updated_at": "ISO8601"
-}
+### CommandResult enum
+
+The `CommandResult` enum has variants matching the return types of each command:
+
+- `Session(Session)`
+- `Sessions(Vec<SessionSummary>)`
+- `Layout(Layout)`
+- `Layouts(Vec<Layout>)`
+- `Workspace(WorkspaceInstance)`
+- `Workspaces(Vec<WorkspaceInstance>)`
+- `Unit(())`
+
+### Executor
+
+The `execute()` function signature:
+
+```rust
+fn execute(cmd: Command, state: &mut AppState) -> Result<CommandResult, CommandError>
 ```
 
-Layout record (in `layouts.json`):
-```json
-{
-  "id": "uuid",
-  "name": "Debug Layout",
-  "tree": {
-    "type": "split",
-    "direction": "vertical",
-    "ratio": 0.5,
-    "children": [
-      { "type": "panel", "panel_type": "blank" },
-      { "type": "panel", "panel_type": "blank" }
-    ]
-  }
-}
+It pattern-matches on `Command` and calls the appropriate method on `SessionRegistry` or `LayoutStore`. Error handling maps core errors to a `CommandError` type.
+
+### AppState
+
+The `AppState` struct wraps `SessionRegistry` and `LayoutStore`. For the CLI, it's constructed in `main()` by calling `SessionRegistry::new()` and `LayoutStore::new()`. For the Tauri app, it replaces the existing `AppState` in `lib.rs`.
+
+### CLI structure
+
+The CLI binary uses `clap` with derive macros. Subcommand structure:
+
+```
+aiaws session <subcommand> [args]
+aiaws template <subcommand> [args]
+aiaws workspace <subcommand> [args]
 ```
 
-Layout tree node:
-```json
-// Split node
-{ "type": "split", "direction": "vertical | horizontal", "ratio": 0.5, "children": [LayoutNode, LayoutNode] }
-// Panel leaf
-{ "type": "panel", "panel_type": "blank" }
-```
+All output is JSON. Errors return non-zero exit codes with JSON error bodies.
 
-### Startup sequence
+### Tree arguments
 
-1. App launches, Rust backend initializes.
-2. SessionRegistry loads `sessions.json`. Demotes any `running` sessions to `paused`.
-3. Frontend mounts, calls `list_sessions` and `list_layouts`.
-4. SessionSidebar renders. No Session is active until the user clicks one.
-5. When user clicks a Session, `open_session` returns the Session with its `active_layout_id`. LayoutStore resolves the Layout tree. App renders it in SplitLayout.
-6. If the Session has no active Layout, the default single-panel Layout is assigned and saved.
+Both `template save` and `workspace update-tree` accept:
+- `--tree <json>` — inline JSON string
+- `--tree-file <path>` — path to a JSON file
 
-### Layout persistence model
+If neither is provided for `template save`, the default single-panel layout is used.
 
-- Layouts are global — saved once, usable by any Session.
-- Each Session stores `active_layout_id` — a reference to a global Layout.
-- When a user modifies a Layout (splits, resizes, adds panels), the modified tree is saved as the current Layout preset's tree. The user can "Save As" to create a new preset from the current arrangement.
-- Deleting a Layout preset that is still referenced by Sessions is allowed — those Sessions will fall back to the default Layout on next open.
+### Tauri app rewiring
+
+The existing `src-tauri/src/lib.rs` Tauri commands become thin wrappers. Each `#[tauri::command]` function constructs a `Command` variant, calls `execute()`, unpacks the `CommandResult` variant, and returns the inner bare type. The existing `AppState` struct is replaced with one from the `commands` crate.
+
+### Output contract
+
+All interfaces (CLI, Tauri IPC, future MCP) share the same JSON shapes defined by the serde attributes of core types (see ADR 0008). On success, data is written to stdout. On failure, a structured error JSON is written to stderr and the process returns a non-zero exit code. No outer envelope — exit codes signal success/failure.
+- **CLI**: Prints `CommandResult` inner value to stdout, `CommandError` JSON to stderr.
+- **Tauri IPC**: Unwraps `CommandResult` and returns the bare type to the frontend.
 
 ## Testing Decisions
 
 ### What makes a good test
 
-Tests verify external behavior (inputs → outputs / side effects), not internal implementation details. For Rust backend modules, tests call the public API with known inputs and assert the returned data and filesystem state. Tests use temporary directories to avoid coupling to the real App Support Dir.
+Tests verify external behavior (inputs → outputs / side effects), not internal implementation details. For Rust modules, tests call the public API with known inputs and assert the returned data and filesystem state. Tests use temporary directories to avoid coupling to the real App Support Dir.
 
 ### Modules tested
 
-Only the Rust backend modules receive tests:
+- **`crates/core/` — SessionRegistry**: All existing tests move here. Test create, list, rename, delete, open (state transitions), close, startup demotion (running→paused), reachability checking, and workspace CRUD (add, remove, rename, set active, update tree, reset, get active, get workspaces).
 
-- **SessionRegistry**: Test create, list, rename, delete, open (state transitions), startup demotion (running→paused), and reachability checking (existing vs missing workingDirectory).
-- **LayoutStore**: Test save, list, delete, get/set active Layout, default Layout production, fallback behavior when referenced Layout is deleted.
+- **`crates/core/` — LayoutStore**: All existing tests move here. Test save, list, delete, get, rename, default layout production, persistence round-trip, and missing file handling.
+
+- **`crates/commands/` — Command executor**: New tests. Test that each `Command` variant dispatches to the correct core method and returns the expected `CommandResult`. Use temporary directories for isolation. Test error cases (session not found, workspace not found, layout not found).
 
 ### Prior art
 
-No prior tests exist in this repo — this is the first code written.
+The existing `session_registry.rs` and `layout_store.rs` both have comprehensive test suites using `tempfile::TempDir` for isolation. The command executor tests should follow the same pattern.
 
 ## Out of Scope
 
-- Whiteboard canvas — no Cards, Edges, or Frames
-- Command Layer and Event system
-- event-log.jsonl and Log Panel
-- Terminal Panel (xterm.js + PTY)
-- Diff Viewer Panel
-- Workspace MCP, Codebase MCP, Codebase Viz MCP
-- CLI tool
-- Undo/redo stack
-- Artifacts (AI-generated documents)
-- Multi-window management
-- Any AI integration
-- Panel types beyond "blank" — the blank panel is a placeholder
-- Layout "Save As" UI — only inline save of the current Layout is in scope
-- Drag-and-drop panel reordering
-- Floating/detached panels
-- Keyboard shortcuts for split/layout actions
-- Macros, scripting, multiplayer (explicitly dropped per user)
+- Task operations — removed from scope per user decision.
+- Whiteboard canvas — no Cards, Edges, or Frames.
+- Command Layer middleware, undo/redo stack, or event generation.
+- event-log.jsonl and Log Panel.
+- Terminal Panel, Diff Viewer Panel.
+- Workspace MCP, Codebase MCP, Codebase Viz MCP.
+- Panel types beyond "blank".
+- Any AI integration.
+- Multi-window management.
+- Macros, scripting, multiplayer.
+- Pretty-printing CLI output (JSON only for v1).
+- Interactive/prompted CLI mode.
+- Shell completions.
+- CLI commands for Cards, Edges, Frames, Artifacts, or Events.
 
 ## Further Notes
 
-- The "blank" panel is intentionally minimal — it renders nothing but a background and a label showing its type. Its purpose is to prove the Layout splitting mechanic works end-to-end before panels like the whiteboard or terminal are built on top of it.
-- The Layout tree is deliberately simple (binary splits only). This keeps the split/render logic straightforward while still enabling arbitrary panel arrangements through nesting.
-- Session reachability is checked on list, not tracked reactively. The user sees a dimmed row in the sidebar; there is no background file watcher.
-- Layout resizes update the `ratio` field on the Split node in real-time as the user drags, then persist on drag-end to avoid excessive writes.
+- The `open_session` command has side effects: it auto-creates a default Layout Template if none exist, and auto-creates a Workspace Instance if the Session has none. This matches the existing behavior in `lib.rs:open_session`.
+- The CLI uses `template` as the subcommand name (not `layout`) to distinguish global Layout Templates from per-session Workspace Instances. The domain terms remain unchanged in CONTEXT.md.
+- The workspace restructure must not break the existing Tauri app. The `src-tauri/` crate should compile and run after rewiring to depend on `commands`.
+- The `commands` crate should have its own error type (`CommandError`) that wraps core errors with additional context (which command failed, why).
+- The CLI binary should have no dependency on `tauri`, `tauri-plugin-dialog`, or any frontend crate. It depends only on `commands`, `clap`, and `serde_json`.

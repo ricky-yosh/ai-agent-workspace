@@ -3,167 +3,113 @@
     "id": 1,
     "type": "AFK",
     "category": "infrastructure",
-    "description": "Scaffold a Tauri + React project with a dev server and a visible window",
+    "description": "Scaffold the Cargo workspace with core, commands, and cli crates",
     "acceptance_criteria": [
-      "Running the dev command opens a native desktop window",
-      "The window renders a React component (any visible text or element)",
-      "The Rust backend compiles and the IPC bridge is functional (any invoke round-trip succeeds)"
+      "The workspace Cargo.toml lists crates/core, crates/commands, crates/cli, and src-tauri as members",
+      "crates/core and crates/commands are lib crates; crates/cli is a bin crate",
+      "crates/commands depends on crates/core; crates/cli depends on crates/commands",
+      "crates/cli has no dependency on tauri",
+      "cargo build succeeds for the entire workspace"
     ],
-    "effort": "medium",
+    "effort": "low",
     "blocked_by": [],
-    "passes": true
+    "passes": false
   },
   {
     "id": 2,
     "type": "AFK",
     "category": "engine",
-    "description": "Implement Session Registry backend with CRUD operations and IPC commands for creating, listing, renaming, and deleting Sessions",
+    "description": "Extract SessionRegistry and LayoutStore into crates/core and verify existing tests pass",
     "acceptance_criteria": [
-      "A Session can be created with a workingDirectory and name, and is persisted to the Session Registry in the App Support Dir",
-      "Listing Sessions returns all Sessions grouped by workingDirectory",
-      "A Session can be renamed and the change persists across restarts",
-      "A Session can be deleted and is removed from the Registry",
-      "Unit tests pass for all CRUD operations"
+      "SessionRegistry and LayoutStore are public modules in crates/core",
+      "All existing unit tests for SessionRegistry pass under crates/core",
+      "All existing unit tests for LayoutStore pass under crates/core",
+      "cargo test --package core succeeds with zero failures"
     ],
     "effort": "medium",
     "blocked_by": [1],
-    "passes": true
+    "passes": false
   },
   {
     "id": 3,
     "type": "AFK",
-    "category": "ui",
-    "description": "Build the Session Sidebar that renders Sessions grouped by workingDirectory with create, rename, and delete actions wired to the backend",
+    "category": "engine",
+    "description": "Implement the Command enum, CommandResult enum, CommandError, and executor in crates/commands",
     "acceptance_criteria": [
-      "The left sidebar shows Sessions grouped under workingDirectory headers",
-      "Clicking 'New Session' opens a dialog with workingDirectory and name fields, and creates a Session on submit",
-      "Renaming a Session inline updates the sidebar and persists to the backend",
-      "Deleting a Session removes it from the sidebar after confirmation",
-      "The sidebar shows an empty state when no Sessions exist"
+      "Command enum has 18 variants covering Session, Template, and Workspace operations",
+      "CommandResult enum has Session, Sessions, Layout, Layouts, Workspace, Workspaces, and Unit variants",
+      "CommandError wraps core errors with context about which command failed and why",
+      "CommandError serializes to JSON with stable variant codes written to stderr",
+      "AppState struct wraps SessionRegistry and LayoutStore and is the state container for execute()",
+      "execute() accepts &mut AppState and dispatches each Command variant to the correct core method",
+      "Executor tests cover happy paths and error cases (not-found for session, template, workspace)"
     ],
     "effort": "medium",
     "blocked_by": [2],
-    "passes": true
+    "passes": false
   },
   {
     "id": 4,
     "type": "AFK",
-    "category": "engine",
-    "description": "Implement Layout Store backend that persists Layout presets as recursive trees, produces a default single-panel Layout, and maps active Layouts to Sessions",
+    "category": "cli",
+    "description": "Build the CLI binary with session create, list, rename, delete, open, and close subcommands",
     "acceptance_criteria": [
-      "A Layout can be saved with a name and recursive tree of splits and panels",
-      "Listing Layouts returns all saved presets",
-      "A Layout can be deleted",
-      "A default single-panel Layout is returned when no Layout is assigned to a Session",
-      "Unit tests pass for save, list, delete, default production, and active Layout assignment"
+      "aiaws session create and list subcommands return correct JSON responses",
+      "aiaws session rename and delete subcommands return correct JSON responses",
+      "aiaws session open auto-creates a default Layout Template and Workspace Instance if none exist",
+      "aiaws session --help shows all available subcommands",
+      "Errors return non-zero exit codes with JSON error bodies on stderr"
     ],
     "effort": "medium",
-    "blocked_by": [1],
-    "passes": true
+    "blocked_by": [3],
+    "passes": false
   },
   {
     "id": 5,
     "type": "AFK",
-    "category": "ui",
-    "description": "Build the SplitLayout component that recursively renders a Layout tree with a blank Panel at each leaf, using a panel registry to resolve panel types to components",
+    "category": "cli",
+    "description": "Build CLI subcommands for template list, save, delete, and rename",
     "acceptance_criteria": [
-      "A Layout tree with a single panel renders a full-area blank Panel with its type label visible",
-      "A Layout tree with a vertical split renders two blank Panels side by side separated by a divider",
-      "A Layout tree with a horizontal split renders two blank Panels stacked with a divider",
-      "A deeply nested Layout tree renders all Panels in the correct positions",
-      "The panel registry maps panel_type strings to React components so new Panel types can be added without touching SplitLayout"
+      "aiaws template list returns JSON array of Layout objects",
+      "aiaws template save --name <name> --tree <json> creates a template and returns JSON",
+      "aiaws template save --name <name> --tree-file <path> reads tree JSON from a file",
+      "aiaws template save --name <name> with no tree flag uses the default single-panel layout",
+      "aiaws template delete and rename subcommands return correct JSON responses"
     ],
     "effort": "medium",
-    "blocked_by": [4],
-    "passes": true
+    "blocked_by": [3],
+    "passes": false
   },
   {
     "id": 6,
     "type": "AFK",
-    "category": "ui",
-    "description": "Wire Session open and close to the main Layout area so clicking a Session renders its active Layout and closing returns to empty state",
+    "category": "cli",
+    "description": "Build CLI subcommands for workspace list, get-active, add, remove, rename, set-active, update-tree, and reset",
     "acceptance_criteria": [
-      "Clicking a Session in the sidebar loads its active Layout and renders it in the main area",
-      "The active Session is highlighted in the sidebar",
-      "A newly created Session renders the default single-panel Layout on first open",
-      "Closing a Session clears the main area and deselects the sidebar item",
-      "The active Session and its Layout persist across app restarts"
+      "aiaws workspace list and get-active return JSON arrays and objects respectively",
+      "aiaws workspace add --session-id <id> --template-id <tid> creates a WorkspaceInstance and returns JSON",
+      "aiaws workspace remove, rename, and set-active subcommands return correct JSON responses",
+      "aiaws workspace update-tree accepts --tree <json> and --tree-file <path> for layout modifications",
+      "aiaws workspace reset --session-id <id> --workspace-id <wid> resets to template and returns JSON"
     ],
     "effort": "medium",
-    "blocked_by": [3, 5],
-    "passes": true
+    "blocked_by": [3],
+    "passes": false
   },
   {
     "id": 7,
     "type": "AFK",
-    "category": "ui",
-    "description": "Add split interactions to the SplitLayout via context menus on each Panel region",
+    "category": "infrastructure",
+    "description": "Rewire src-tauri to depend on crates/commands and dispatch through the Command Layer",
     "acceptance_criteria": [
-      "Right-clicking a Panel region shows context menu with 'Split Vertical' and 'Split Horizontal' options",
-      "Choosing 'Split Vertical' replaces the Panel with a vertical split containing two blank Panels",
-      "Choosing 'Split Horizontal' replaces the Panel with a horizontal split containing two blank Panels",
-      "Splitting a Panel inside an already-split region produces a nested split that renders correctly"
+      "src-tauri/Cargo.toml depends on the commands crate instead of importing core directly",
+      "Every Tauri command function constructs a Command variant, calls execute(), and unwraps the CommandResult",
+      "The existing AppState struct is replaced with the one from the commands crate",
+      "cargo build --package ai-agent-workspace succeeds",
+      "The Tauri app launches and existing Session and Template CRUD works through the GUI"
     ],
     "effort": "medium",
-    "blocked_by": [5],
-    "passes": true
-  },
-  {
-    "id": 8,
-    "type": "AFK",
-    "category": "ui",
-    "description": "Implement draggable resize dividers between split Panels that persist the ratio on drag-end",
-    "acceptance_criteria": [
-      "Dragging a divider between two Panels resizes both regions in real time",
-      "The split ratio persists to the Layout tree on drag-end",
-      "Resizing a parent split does not affect child split ratios",
-      "Resizing is constrained to minimum Panel dimensions (no collapsing to zero)"
-    ],
-    "effort": "medium",
-    "blocked_by": [7],
-    "passes": true
-  },
-  {
-    "id": 9,
-    "type": "AFK",
-    "category": "ui",
-    "description": "Add Layout preset management — save current arrangement as a named preset, list presets, switch between presets, and delete presets",
-    "acceptance_criteria": [
-      "The current Layout arrangement can be saved as a named preset from the UI",
-      "All saved presets appear in a dropdown or list in the toolbar or sidebar",
-      "Selecting a different preset replaces the current Layout and persists the active Layout on the Session",
-      "Deleting a preset removes it from the list; Sessions referencing it fall back to the default Layout on next open"
-    ],
-    "effort": "medium",
-    "blocked_by": [5],
-    "passes": true
-  },
-  {
-    "id": 10,
-    "type": "AFK",
-    "category": "engine",
-    "description": "Implement Session reachability checking so missing workingDirectories produce dimmed rows in the sidebar",
-    "acceptance_criteria": [
-      "Sessions whose workingDirectory no longer exists on disk appear dimmed in the sidebar",
-      "Sessions whose workingDirectory exists appear normally",
-      "Reachability is checked on each sidebar render (no file watchers)"
-    ],
-    "effort": "low",
     "blocked_by": [3],
-    "passes": true
-  },
-  {
-    "id": 11,
-    "type": "AFK",
-    "category": "engine",
-    "description": "Implement startup crash safety by demoting all running Sessions to paused when the app launches",
-    "acceptance_criteria": [
-      "Creating a Session and marking it running, then restarting the app, shows it as paused in the sidebar",
-      "Sessions already in paused state remain paused after restart",
-      "Unit test verifies the demotion logic"
-    ],
-    "effort": "low",
-    "blocked_by": [2],
-    "passes": true
+    "passes": false
   }
 ]
