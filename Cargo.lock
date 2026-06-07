@@ -21,8 +21,7 @@ dependencies = [
 name = "ai-agent-workspace"
 version = "0.1.0"
 dependencies = [
- "chrono",
- "dirs",
+ "ai-agent-workspace-core",
  "serde",
  "serde_json",
  "tauri",
@@ -30,8 +29,6 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tempfile",
- "thiserror 1.0.69",
- "uuid",
 ]
 
 [[package]]

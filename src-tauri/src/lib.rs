@@ -1,9 +1,5 @@
-mod session_registry;
-mod layout_store;
-
 use std::sync::Mutex;
-use session_registry::{Session, SessionRegistry, SessionSummary, WorkspaceInstance};
-use layout_store::{Layout, LayoutStore, LayoutTree};
+use ai_agent_workspace_core::{Session, SessionState, SessionSummary, WorkspaceInstance, SessionRegistry, Layout, LayoutStore, LayoutTree};
 
 pub struct AppState {
     registry: Mutex<SessionRegistry>,
