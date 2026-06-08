@@ -10,6 +10,10 @@
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.sidebar.sidebar-resizing {
+  transition: none;
+}
+
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -129,6 +133,16 @@
   height: 6px;
   border-radius: 50%;
   border: 1px solid var(--bg-secondary);
+}
+
+.session-state-dot-inline {
+  display: inline-block;
+  position: static;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: none;
 }
 
 .session-state-dot-running {

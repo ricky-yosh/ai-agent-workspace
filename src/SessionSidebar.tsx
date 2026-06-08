@@ -18,6 +18,7 @@ export default function SessionSidebar() {
     sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
   const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [isResizingState, setIsResizingState] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWorkingDir, setNewWorkingDir] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
@@ -129,6 +130,8 @@ export default function SessionSidebar() {
 
   function handleResizeMouseDown() {
     isResizing.current = true;
+    setIsResizingState(true);
+    document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleResizeMouseMove);
     document.addEventListener("mouseup", handleResizeMouseUp);
   }
@@ -148,6 +151,8 @@ export default function SessionSidebar() {
 
   function handleResizeMouseUp() {
     isResizing.current = false;
+    setIsResizingState(false);
+    document.body.style.userSelect = "";
     document.removeEventListener("mousemove", handleResizeMouseMove);
     document.removeEventListener("mouseup", handleResizeMouseUp);
   }
@@ -189,7 +194,7 @@ export default function SessionSidebar() {
 
   return (
     <>
-      <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}${isResizingState ? " sidebar-resizing" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
         <div className="sidebar-header">
           <button
             className="sidebar-toggle-btn"
@@ -268,6 +273,11 @@ export default function SessionSidebar() {
                       title={!s.reachable ? "Directory not found" : undefined}
                     >
                     <div className="session-info">
+                      <span
+                        className={`session-state-dot session-state-dot-${s.state.toLowerCase()} session-state-dot-inline`}
+                        aria-hidden="true"
+                        title={s.state}
+                      />
                       {renamingSessionId === s.id ? (
                           <input
                             ref={renameInputRef}
