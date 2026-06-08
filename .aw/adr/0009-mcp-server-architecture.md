@@ -61,7 +61,7 @@ When the app spawns a Terminal Panel's PTY for a Session, it injects an `AIAW_SE
 └──────────────────────────────────────────────────────┘
 ```
 
-Both MCP and GUI share the same `AppState` in memory. MCP calls `execute()` directly — no file I/O, no serialization, no cross-process communication. After each mutation, the MCP plugin calls `app.emit("state-changed", ())` and the frontend refreshes.
+Both MCP and GUI share the same `AppState` in memory. MCP calls `execute()` directly — no file I/O, no serialization, no cross-process communication. After each mutation, the MCP plugin calls `app.emit("sessions-changed", ())` or `app.emit("layouts-changed", ())` and the frontend refreshes.
 
 ## Consequences
 

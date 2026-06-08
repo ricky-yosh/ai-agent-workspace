@@ -38,11 +38,9 @@
     "acceptance_criteria": [
       "Command enum has 18 variants covering Session, Template, and Workspace operations",
       "CommandResult enum has Session, Sessions, Layout, Layouts, Workspace, Workspaces, and Unit variants",
-      "CommandError wraps core errors with context about which command failed and why",
-      "CommandError serializes to JSON with stable variant codes written to stderr",
       "AppState struct wraps SessionRegistry and LayoutStore and is the state container for execute()",
       "execute() accepts &mut AppState and dispatches each Command variant to the correct core method",
-      "Executor tests cover happy paths and error cases (not-found for session, template, workspace)"
+      "Executor tests cover happy paths and error cases for all three domains"
     ],
     "effort": "medium",
     "blocked_by": [2],
@@ -120,12 +118,106 @@
     "acceptance_criteria": [
       "Tauri app watches sessions.json and layouts.json for external changes",
       "When a file changes, Tauri reloads state into the Mutex",
-      "Tauri emits a state-changed event to the frontend after reload",
-      "Frontend listens for state-changed events and refreshes session list and workspace data",
+      "Tauri emits sessions-changed and layouts-changed events after reload",
+      "Frontend listeners refresh session list on sessions-changed and templates on layouts-changed",
       "Running aiaws session create while the GUI is open shows the new session in the sidebar without restart"
     ],
     "effort": "medium",
     "blocked_by": [7],
+    "passes": false
+  },
+  {
+    "id": 9,
+    "type": "AFK",
+    "category": "infrastructure",
+    "description": "Scaffold the MCP crate as a Tauri plugin with Plugin Builder",
+    "acceptance_criteria": [
+      "Cargo.toml depends on rmcp (with macros feature), commands, tauri, and tokio",
+      "Root workspace Cargo.toml lists crates/mcp as a member",
+      "Plugin init() function uses plugin::Builder::new(\"mcp\") and compiles",
+      "cargo check --package mcp succeeds"
+    ],
+    "effort": "low",
+    "blocked_by": [1, 2, 3],
+    "passes": false
+  },
+  {
+    "id": 10,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement the tracer-bullet MCP tool: session_list, with McpHandler, McpError, event emission, and Tauri wiring end-to-end",
+    "acceptance_criteria": [
+      "McpHandler struct derives ToolHandler and holds Arc<Mutex<SessionRegistry>>, Arc<Mutex<LayoutStore>>, and AppHandle",
+      "McpError maps CommandError fields to JSON-RPC error codes (not_found → -32001, already_exists → -32002, invalid_input → -32602, other → -32000)",
+      "Session-scoped tools read session context from AIAW_SESSION_ID env var with no explicit session_id override",
+      "An MCP client connecting to the app's stdio can call session_list and receive the current Session list as JSON",
+      "src-tauri registers the plugin with .plugin(mcp::init()) and the app launches without errors"
+    ],
+    "effort": "high",
+    "blocked_by": [3, 7, 9],
+    "passes": false
+  },
+  {
+    "id": 11,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement remaining 5 session MCP tools: session_create, session_rename, session_delete, session_open, session_close",
+    "acceptance_criteria": [
+      "An MCP client calling session_create with a valid working_dir and name can create a Session, and a subsequent session_list call includes the new session",
+      "session_create is a global operation — it requires an explicit absolute working_dir and does not use AIAW_SESSION_ID",
+      "An MCP client calling session_rename, session_delete, session_open, or session_close on an existing session alters state and a subsequent session_list reflects the change",
+      "Session mutations set suppress_watcher during writes so the file watcher does not double-emit events",
+      "Session mutations emit sessions-changed events that trigger frontend refresh"
+    ],
+    "effort": "medium",
+    "blocked_by": [10],
+    "passes": false
+  },
+  {
+    "id": 12,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement 4 template MCP tools: template_list, template_save, template_delete, template_rename",
+    "acceptance_criteria": [
+      "An MCP client calling template_list receives all Layout Templates as JSON",
+      "An MCP client calling template_save with a name and LayoutTree JSON object creates a template, and a subsequent template_list includes it",
+      "An MCP client calling template_delete or template_rename on an existing template alters state and a subsequent template_list reflects the change",
+      "Template mutations emit layouts-changed events that trigger frontend refresh of templates"
+    ],
+    "effort": "low",
+    "blocked_by": [10],
+    "passes": false
+  },
+  {
+    "id": 13,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Implement 8 workspace MCP tools: workspace_list, workspace_get_active, workspace_add, workspace_remove, workspace_rename, workspace_set_active, workspace_update_tree, workspace_reset",
+    "acceptance_criteria": [
+      "An MCP client calling workspace_list receives all Workspace Instances for the current Session (via AIAW_SESSION_ID)",
+      "An MCP client calling workspace_get_active receives the active Workspace Instance, or null when none is active",
+      "An MCP client calling workspace_add creates a Workspace Instance from a template, and a subsequent workspace_list includes it",
+      "An MCP client calling workspace_remove, workspace_rename, or workspace_set_active alters state and subsequent workspace_list calls reflect the change",
+      "An MCP client calling workspace_update_tree with a LayoutTree JSON object updates the layout, and calling workspace_reset reverts it back to the source template"
+    ],
+    "effort": "medium",
+    "blocked_by": [10],
+    "passes": false
+  },
+  {
+    "id": 14,
+    "type": "AFK",
+    "category": "engine",
+    "description": "Add integration tests for MCP tool dispatch correctness and error propagation",
+    "acceptance_criteria": [
+      "Tests create AppState with temp directories, construct McpHandler, and call each tool method",
+      "Tests verify successful tool calls return expected core output types (session summaries, templates, workspaces)",
+      "Tests cover error cases: invalid session/template/workspace IDs return proper McpError with correct JSON-RPC codes",
+      "Tests verify session_create works without AIAW_SESSION_ID set",
+      "cargo test --package mcp succeeds with zero failures"
+    ],
+    "effort": "medium",
+    "blocked_by": [10],
     "passes": false
   }
 ]
