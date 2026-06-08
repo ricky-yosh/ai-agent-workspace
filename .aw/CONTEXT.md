@@ -19,9 +19,7 @@
 | **Panel** | A UI region in the split-screen layout (e.g. whiteboard panel, log panel, terminal panel, diff viewer panel). | Pane, Window |
 | **Layout Template** | A global blueprint/preset defining the split arrangement of Panels (e.g. "General", "Modeling"). Stored in `layouts.json` — read-only during normal use. Users can explicitly save new templates here. | Layout, Preset, Blueprint |
 | **Workspace Instance** | An editable instance of a Layout Template owned by a Session. Contains its own `current_tree`, `name`, and `template_id` referencing the source template. Stored in the Session's `workspaces` array in `sessions.json`. Deleting it does not affect the source template. | Tab, Workspace, Layout Tab |
-| **Workspace MCP** | The MCP server that lets AI agents manipulate whiteboard state, sessions, panels, and artifacts. | App MCP, Control MCP |
-| **Codebase MCP** | The MCP server for raw code intelligence — file search, symbol lookup, references, semantic search. | Sourcegraph MCP, Code MCP |
-| **Codebase Viz MCP** | The MCP server that auto-generates whiteboard diagrams from code structure (dependency graphs, call hierarchies, module maps). Composes Codebase MCP data with Workspace MCP placement. | CodeSee MCP, Map MCP |
+| **MCP Server** | The monolithic in-process MCP server exposing all tools — workspace manipulation (create session, place Cards/Edges, manage artifacts) and codebase intelligence (tree-sitter symbol extraction, LSP references, `build_code_map`). Runs as a Tauri plugin. | Workspace MCP, Codebase MCP, Codebase Viz MCP, App MCP, Control MCP |
 | **event-log.jsonl** | The append-only JSONL file in App Support Dir where all Events are persisted. Used to reconstruct workspace state and provide an audit trail. | Event Store, Event log |
 | **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. Contains the Command enum and an executor that dispatches to core modules. | Dispatcher, Mediator |
 | **App Support Dir** | `~/Library/Application Support/AI Agent Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
@@ -36,8 +34,7 @@
 - A **Whiteboard** contains zero or more **Cards**, **Edges**, and **Frames**.
 - Every **Command** produces one or more **Events** when executed.
 - Every **Event** is appended to **event-log.jsonl** and displayed in the **Log Panel**.
-- The **CLI**, **UI**, and all three **MCP** servers are adapters that translate their inputs into **Commands** dispatched through the **Command Layer**.
-- **Codebase Viz MCP** composes **Codebase MCP** (for data) and **Workspace MCP** (for whiteboard placement).
+- The **CLI**, **UI**, and **MCP Server** are adapters that translate their inputs into **Commands** dispatched through the **Command Layer**.
 - **Window management** prevents the same Session from being open in two windows simultaneously.
 - **Layout Templates** are defined globally in `layouts.json` (the global library). **Workspace Instances** are per-session editable copies of a template, stored in the Session's `workspaces` array in `sessions.json`.
 - A **Session** owns zero or more **Workspace Instances** (its tab bar). Each Workspace Instance references a **Layout Template** by `template_id`. Deleting an instance does not affect the source template.
@@ -47,7 +44,7 @@
 ## Decisions
 
 - Use **Tauri + React (React Flow)** for the desktop application (see ADR 0001).
-- Use **Rust** for the backend core, command layer, CLI, and MCP servers.
+- Use **Rust** for the backend core, command layer, CLI, and MCP Server.
 - Whiteboard primitives limited to **Card, Edge, Frame** — no additional node types for v1.
 - All session state, registry, and event-log.jsonl live in **App Support Dir** — nothing written to the repository (see ADR 0002).
 - **Session Sidebar** groups Sessions by workingDirectory, supports inline rename, CRUD, and reachability display.
@@ -55,15 +52,15 @@
 - All writes to session state are atomic.
 - **Diff Viewer Panel** uses `git diff` against the repository — no independent versioning system.
 - **Terminal panel** uses a real PTY via xterm.js + Tauri's PTY backend — runs any interactive CLI tool (Claude Code, Codex, etc.).
-- **Codebase MCP** is full-scope: tree-sitter for symbol extraction, LSP integration for references/callers/callees, and semantic search.
+- **MCP Server** is monolithic and in-process (see ADR 0009): workspace manipulation and full-scope codebase intelligence (tree-sitter, LSP, `build_code_map`) in one Tauri plugin. Tools use prefix conventions (`workspace.*`, `codebase.*`). Heavy work offloaded to `tokio::task::spawn_blocking`. Built with `rmcp`. v1 tools mirror the CLI subcommands 1:1 — 18 tools wrapping the 18 Command variants. Codebase tools added when corresponding Commands exist.
 - **CLI** dispatches Commands through the **Command Layer** — not via file writes directly. The CLI is a standalone binary that calls the executor, which dispatches to core modules.
 - Undo/redo is a global in-memory stack at the Command Layer — not persisted. Used for instant undo, not long-term history.
-- **Cargo workspace** with three crates: `core` (domain logic), `commands` (Command enum + executor), `cli` (CLI binary). The Tauri app also depends on `commands`. See ADR 0007.
+- **Cargo workspace** with four crates: `core` (domain logic), `commands` (Command enum + executor), `cli` (CLI binary), `mcp` (MCP server as Tauri plugin). The Tauri app depends on `commands` and `mcp`. See ADR 0007.
 - **CLI output** is JSON for all commands. Machine-readable, easy to test.
 - **CLI prefix** is `aiaws` (short for AI Agent Workspace).
 - **CLI subcommands** use `template` (not `layout`) for global presets to avoid confusion with Workspace Instances.
 - **--tree** accepts inline JSON; **--tree-file** reads from a file. Both supported for `template save` and `workspace update-tree`.
-- **Session orientation for MCP**: each Terminal Panel's PTY is spawned scoped to exactly one Session (never shared across Sessions). At spawn time, the app injects an `AIAW_SESSION_ID` environment variable into the PTY's shell. Any stdio-based MCP server launched from within that shell inherits the variable and uses it to attribute Commands (e.g. future `CreateTask`) to the correct Session — no filesystem lookups or explicit session arguments required from the agent (see ADR 0009).
+- **Session orientation**: each Terminal Panel's PTY is spawned scoped to exactly one Session (never shared). At spawn time, the app injects an `AIAW_SESSION_ID` environment variable into the PTY's shell. The stdio-based MCP Server launched from within inherits the variable and uses it to attribute Commands to the correct Session — no filesystem lookups or explicit session arguments required from the agent (see ADR 0009).
 - **Terminal restoration** is left to the underlying CLI tool's own resumption feature (e.g. `claude --resume`). The app does not attempt to keep the PTY process alive across restarts or reattach via a multiplexer — it's a thin convenience layer (remember last command/cwd, offer a "Resume" relaunch), not a guarantee.
 
 ## Open Questions
