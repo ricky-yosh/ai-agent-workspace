@@ -32,6 +32,9 @@ export interface Layout {
 interface SplitLayoutProps {
   tree: LayoutTree;
   onLayoutChange?: (tree: LayoutTree) => void;
+  focusedPath?: number[] | null;
+  onFocusedPathChange?: (path: number[]) => void;
+  zoomedPath?: number[] | null;
 }
 
 interface ContextMenuState {
@@ -71,10 +74,30 @@ function replaceNode(node: LayoutNode, path: number[], newNode: LayoutNode): Lay
   };
 }
 
-export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) {
+function pathsEqual(a: number[] | null | undefined, b: number[] | null | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
+function getNodeAtPath(node: LayoutNode, path: number[]): LayoutNode | null {
+  if (path.length === 0) return node;
+  if (!("split" in node)) return null;
+  const [idx, ...rest] = path;
+  if (idx < 0 || idx >= node.split.children.length) return null;
+  return getNodeAtPath(node.split.children[idx], rest);
+}
+
+export default function SplitLayout({ tree, onLayoutChange, focusedPath, onFocusedPathChange, zoomedPath }: SplitLayoutProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const treeRef = useRef(tree);
   treeRef.current = tree;
+
+  if (zoomedPath && zoomedPath.length > 0) {
+    const zoomedNode = getNodeAtPath(tree.tree, zoomedPath);
+    if (zoomedNode) return <div className="split-layout">{renderNode(zoomedNode)}</div>;
+  }
 
   function renderNode(node: LayoutNode, path: number[] = []): React.ReactNode {
     if ("split" in node) {
@@ -108,7 +131,8 @@ export default function SplitLayout({ tree, onLayoutChange }: SplitLayoutProps) 
     if (PanelComponent) {
       return (
         <div
-          className="split-layout-panel-wrapper"
+          className={`split-layout-panel-wrapper${pathsEqual(focusedPath, path) ? " focused" : ""}`}
+          onMouseDown={() => onFocusedPathChange?.(path)}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();

@@ -43,6 +43,12 @@ const groups: ShortcutGroup[] = [
       { keys: "Esc", action: "Close dialog / Cancel" },
     ],
   },
+  {
+    group: "Panels",
+    shortcuts: [
+      { keys: "⌘⇧↵", action: "Zoom focused panel" },
+    ],
+  },
 ];
 
 export default function ShortcutsModal({ onClose }: { onClose: () => void }) {

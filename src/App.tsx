@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { SessionProvider, useSessions } from "./SessionContext";
@@ -18,7 +18,7 @@ interface WorkspaceInstance {
   current_tree: LayoutTree;
 }
 
-function MainArea() {
+function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
   const { activeSessionId } = useSessions();
   const [workspaces, setWorkspaces] = useState<WorkspaceInstance[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
@@ -27,6 +27,30 @@ function MainArea() {
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   const [saveAsTarget, setSaveAsTarget] = useState<LayoutTree | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
+  const [focusedPath, setFocusedPath] = useState<number[] | null>(null);
+  const [zoomedPath, setZoomedPath] = useState<number[] | null>(null);
+
+  function pathsEqual(a: number[] | null, b: number[] | null): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+
+  const toggleZoom = useCallback(() => {
+    if (!focusedPath) return;
+    setZoomedPath((prev) =>
+      prev && pathsEqual(prev, focusedPath) ? null : focusedPath
+    );
+  }, [focusedPath]);
+
+  useEffect(() => {
+    toggleZoomRef.current = toggleZoom;
+  }, [toggleZoom, toggleZoomRef]);
+
+  useEffect(() => {
+    setZoomedPath(null);
+  }, [activeWorkspace?.id]);
 
   const refreshTemplates = useCallback(() => {
     invoke<Layout[]>("list_layouts").then(setTemplates).catch(console.error);
@@ -270,7 +294,13 @@ function MainArea() {
       )}
       <div className="tab-content">
         {activeWorkspace ? (
-          <SplitLayout tree={activeWorkspace.current_tree} onLayoutChange={handleWorkspaceTreeChange} />
+          <SplitLayout
+            tree={activeWorkspace.current_tree}
+            onLayoutChange={handleWorkspaceTreeChange}
+            focusedPath={focusedPath}
+            onFocusedPathChange={setFocusedPath}
+            zoomedPath={zoomedPath}
+          />
         ) : (
           <div className="empty-state">No active workspace</div>
         )}
@@ -279,7 +309,7 @@ function MainArea() {
   );
 }
 
-function KeyboardShortcutsHandler() {
+function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
   const {
     sessions, activeSessionId, setActiveSessionId, refreshSessions,
     setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
@@ -336,6 +366,12 @@ function KeyboardShortcutsHandler() {
         return;
       }
 
+      if (e.metaKey && e.shiftKey && e.key === "Enter") {
+        e.preventDefault();
+        toggleZoomRef.current?.();
+        return;
+      }
+
       if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !inInput) {
         if (e.key === "n") {
           e.preventDefault();
@@ -356,19 +392,21 @@ function KeyboardShortcutsHandler() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [handleCycle, handleCloseSession, setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed]);
+  }, [handleCycle, handleCloseSession, setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed, toggleZoomRef]);
 
   return showShortcuts ? <ShortcutsModal onClose={() => setShowShortcuts(false)} /> : null;
 }
 
 function App() {
+  const toggleZoomRef = useRef<(() => void) | null>(null);
+
   return (
     <SessionProvider>
       <div className="app-layout">
         <SessionSidebar />
-        <MainArea />
+        <MainArea toggleZoomRef={toggleZoomRef} />
       </div>
-      <KeyboardShortcutsHandler />
+      <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} />
     </SessionProvider>
   );
 }
