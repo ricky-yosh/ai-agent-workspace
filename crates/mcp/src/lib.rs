@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 struct McpHandler {
     sessions: Arc<Mutex<SessionRegistry>>,
     layouts: Arc<Mutex<LayoutStore>>,
-    app: AppHandle,
+    app: Option<AppHandle>,
 }
 
 impl ServerHandler for McpHandler {
@@ -78,7 +78,7 @@ impl McpHandler {
         };
         match execute(Command::SessionCreate { working_dir, name }, &state) {
             Ok(CommandResult::Session(session)) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -100,7 +100,7 @@ impl McpHandler {
         };
         match execute(Command::SessionRename { session_id, new_name }, &state) {
             Ok(CommandResult::Session(session)) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -120,7 +120,7 @@ impl McpHandler {
         };
         match execute(Command::SessionDelete { session_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -159,7 +159,7 @@ impl McpHandler {
         };
         match execute(Command::SessionClose { session_id }, &state) {
             Ok(CommandResult::Session(session)) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -196,7 +196,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateSave { name, tree }, &state) {
             Ok(CommandResult::Layout(layout)) => {
-                let _ = self.app.emit("layouts-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&layout)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -216,7 +216,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateDelete { layout_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("layouts-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -238,7 +238,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateRename { layout_id, new_name }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("layouts-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -287,7 +287,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceAdd { session_id, template_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&ws)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -305,7 +305,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRemove { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -325,7 +325,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -343,7 +343,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceSetActive { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -363,7 +363,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state) {
             Ok(CommandResult::Unit(())) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -381,12 +381,230 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceReset { session_id, workspace_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
-                let _ = self.app.emit("sessions-changed", ());
+                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
                 Ok(CallToolResult::success(vec![Content::json(&ws)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
             Err(e) => Err(crate::error::to_mcp_error(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::model::RawContent;
+    use tempfile::TempDir;
+
+    fn setup() -> (McpHandler, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let sessions_path = dir.path().join("sessions.json");
+        let layouts_path = dir.path().join("layouts.json");
+        let sessions = SessionRegistry::new_with_path(sessions_path).unwrap();
+        let layouts = LayoutStore::new_with_path(layouts_path).unwrap();
+        let handler = McpHandler {
+            sessions: Arc::new(Mutex::new(sessions)),
+            layouts: Arc::new(Mutex::new(layouts)),
+            app: None,
+        };
+        (handler, dir)
+    }
+
+    fn extract_text(result: CallToolResult) -> String {
+        result.content.first().and_then(|c| match &c.raw {
+            RawContent::Text(t) => Some(t.text.clone()),
+            _ => None,
+        }).unwrap_or_default()
+    }
+
+    // --- Error mapping tests ---
+
+    #[test]
+    fn test_error_code_not_found() {
+        let err = crate::error::to_mcp_error(
+            ai_agent_workspace_commands::CommandError::not_found("session", "abc")
+        );
+        assert_eq!(err.code.0, -32001);
+        assert!(err.data.is_some());
+        let data = err.data.unwrap();
+        assert_eq!(data["entity"], "session");
+        assert_eq!(data["id"], "abc");
+    }
+
+    #[test]
+    fn test_error_code_already_exists() {
+        let err = crate::error::to_mcp_error(
+            ai_agent_workspace_commands::CommandError::already_exists("template", "xyz")
+        );
+        assert_eq!(err.code.0, -32002);
+    }
+
+    #[test]
+    fn test_error_code_invalid_input() {
+        let err = crate::error::to_mcp_error(
+            ai_agent_workspace_commands::CommandError::invalid_input("bad data")
+        );
+        assert_eq!(err.code.0, -32602);
+    }
+
+    #[test]
+    fn test_error_code_internal() {
+        let err = crate::error::to_mcp_error(
+            ai_agent_workspace_commands::CommandError::internal("oops")
+        );
+        assert_eq!(err.code.0, -32000);
+    }
+
+    // --- Session tool tests ---
+
+    #[tokio::test]
+    async fn test_session_list_empty() {
+        let (handler, _dir) = setup();
+        let result = handler.session_list().await.unwrap();
+        assert_eq!(result.content.len(), 1);
+        let text = extract_text(result);
+        assert_eq!(text, "[]");
+    }
+
+    #[tokio::test]
+    async fn test_session_create_then_list() {
+        let (handler, _dir) = setup();
+        let result = handler.session_create("/tmp/test".into(), "Test Session".into()).await.unwrap();
+        let text = extract_text(result);
+        assert!(text.contains("Test Session"));
+        assert!(text.contains("/tmp/test"));
+
+        let list = handler.session_list().await.unwrap();
+        let list_text = extract_text(list);
+        assert!(list_text.contains("Test Session"));
+    }
+
+    #[tokio::test]
+    async fn test_session_create_global() {
+        let (handler, _dir) = setup();
+        let result = handler.session_create("/tmp/global".into(), "Global".into()).await;
+        assert!(result.is_ok());
+        let text = extract_text(result.unwrap());
+        assert!(text.contains("Global"));
+    }
+
+    #[tokio::test]
+    async fn test_session_delete_not_found() {
+        let (handler, _dir) = setup();
+        let result = handler.session_delete("nonexistent".into()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code.0, -32001);
+        let data = err.data.unwrap();
+        assert_eq!(data["entity"], "session");
+    }
+
+    #[tokio::test]
+    async fn test_session_rename_not_found() {
+        let (handler, _dir) = setup();
+        let result = handler.session_rename("nonexistent".into(), "New".into()).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code.0, -32001);
+    }
+
+    // --- Template tool tests ---
+
+    #[tokio::test]
+    async fn test_template_list_empty() {
+        let (handler, _dir) = setup();
+        let result = handler.template_list().await.unwrap();
+        let text = extract_text(result);
+        assert_eq!(text, "[]");
+    }
+
+    #[tokio::test]
+    async fn test_template_save_and_list() {
+        let (handler, _dir) = setup();
+        let tree = LayoutTree {
+            tree: ai_agent_workspace_core::LayoutNode::Panel {
+                panel_type: "terminal".into(),
+            },
+        };
+        let result = handler.template_save("My Template".into(), tree).await.unwrap();
+        let text = extract_text(result);
+        assert!(text.contains("My Template"));
+
+        let list = handler.template_list().await.unwrap();
+        let list_text = extract_text(list);
+        assert!(list_text.contains("My Template"));
+    }
+
+    #[tokio::test]
+    async fn test_template_delete_not_found() {
+        let (handler, _dir) = setup();
+        let result = handler.template_delete("nonexistent".into()).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code.0, -32001);
+    }
+
+    #[tokio::test]
+    async fn test_template_rename_not_found() {
+        let (handler, _dir) = setup();
+        let result = handler.template_rename("nonexistent".into(), "New".into()).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code.0, -32001);
+    }
+
+    // --- Workspace tool tests ---
+
+    #[tokio::test]
+    async fn test_workspace_requires_session_id() {
+        let (handler, _dir) = setup();
+        let result = handler.workspace_list().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code.0, -32602);
+        assert!(err.message.contains("AIAW_SESSION_ID"));
+    }
+
+    #[tokio::test]
+    async fn test_workspace_get_active_requires_session_id() {
+        let (handler, _dir) = setup();
+        let result = handler.workspace_get_active().await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code.0, -32602);
+    }
+
+    #[tokio::test]
+    async fn test_workspace_add_and_list_with_session() {
+        let (handler, _dir) = setup();
+
+        let create_result = handler.session_create("/tmp/ws_test".into(), "WS Test".into()).await.unwrap();
+        let create_text = extract_text(create_result);
+
+        let session: serde_json::Value = serde_json::from_str(&create_text).unwrap();
+        let session_id = session["id"].as_str().unwrap().to_string();
+
+        std::env::set_var("AIAW_SESSION_ID", &session_id);
+
+        let tree = LayoutTree {
+            tree: ai_agent_workspace_core::LayoutNode::Panel {
+                panel_type: "terminal".into(),
+            },
+        };
+        let tmpl_result = handler.template_save("WS Template".into(), tree).await.unwrap();
+        let tmpl_text = extract_text(tmpl_result);
+        let tmpl: serde_json::Value = serde_json::from_str(&tmpl_text).unwrap();
+        let template_id = tmpl["id"].as_str().unwrap().to_string();
+
+        let add_result = handler.workspace_add(template_id.clone()).await.unwrap();
+        let add_text = extract_text(add_result);
+        assert!(add_text.contains("WS Template"));
+
+        let list_result = handler.workspace_list().await.unwrap();
+        let list_text = extract_text(list_result);
+        assert!(list_text.contains("WS Template"));
+
+        let active_result = handler.workspace_get_active().await.unwrap();
+        let active_text = extract_text(active_result);
+        assert!(active_text.contains("WS Template"));
+
+        std::env::remove_var("AIAW_SESSION_ID");
     }
 }
 
@@ -402,7 +620,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let handler = McpHandler {
                     sessions,
                     layouts,
-                    app: handle,
+                    app: Some(handle),
                 };
                 if let Err(e) = serve_server(handler, rmcp::transport::io::stdio()).await {
                     eprintln!("[mcp] Server error: {}", e);

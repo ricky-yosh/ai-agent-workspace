@@ -83,7 +83,7 @@ impl SessionRegistry {
         Self::new_with_path(file_path)
     }
 
-    fn new_with_path(file_path: PathBuf) -> Result<Self> {
+    pub fn new_with_path(file_path: PathBuf) -> Result<Self> {
         let sessions = if file_path.exists() {
             let content = fs::read_to_string(&file_path)?;
             if content.trim().is_empty() {
