@@ -1,4 +1,4 @@
-# ADR 0009: Monolithic In-Process MCP Server
+# ADR 0009: Monolithic MCP Server with Standalone Binary
 
 ## Status
 
@@ -18,7 +18,24 @@ We considered splitting these across separate MCP servers — **Workspace MCP** 
 
 ### Decision
 
-**One monolithic MCP server running in-process as a Tauri plugin.** All tools — workspace manipulation and codebase intelligence — live in a single server that holds a reference to `AppState`.
+**One monolithic MCP server shipped in two modes:**
+
+1. **Embedded** — as a Tauri plugin inside the GUI process. Shares `AppState` in memory. Emits Tauri events for live UI refresh.
+2. **Standalone binary** (`aiaw-mcp-server`) — a separate process that reads/writes App Support Dir directly. No GUI dependency. Clients connect via stdio subprocess (`claude mcp add aiaws -- aiaw-mcp-server`).
+
+Both modes use the same `McpHandler` with the same 18 tools. The handler is decoupled from Tauri via callback fields:
+
+```rust
+pub struct McpHandler {
+    pub sessions: Arc<Mutex<SessionRegistry>>,
+    pub layouts: Arc<Mutex<LayoutStore>>,
+    pub on_session_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_layouts_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+```
+
+- **Embedded mode**: `init()` constructs callbacks that call `app.emit("sessions-changed", ())` / `app.emit("layouts-changed", ())`. The `tauri-integration` feature flag gates the plugin.
+- **Standalone mode**: Callbacks are `None`. No Tauri compiled. The GUI's file watcher detects state changes from App Support Dir.
 
 ### Why monolithic?
 
@@ -29,47 +46,75 @@ We considered splitting these across separate MCP servers — **Workspace MCP** 
 | Session orientation | One server, one `AIAW_SESSION_ID` — trivial. |
 | Tool namespace pollution | Tools use prefix conventions (`codebase.find_symbol`, `workspace.create_card`). Well-written tool descriptions guide the agent. |
 | LSP queries blocking GUI | Heavy work runs on `tokio::task::spawn_blocking` — the Tauri event loop stays responsive. |
-| Standalone codebase MCP unavailable | Acceptable. Codebase intelligence is a feature of the app, not a standalone service. If the app isn't running, there's no whiteboard to place results on. |
+| AI tool connectivity | Standalone binary uses standard stdio subprocess — identical to every reference MCP server in the ecosystem. |
 
 ### Session Orientation
 
-When the app spawns a Terminal Panel's PTY for a Session, it injects an `AIAW_SESSION_ID` environment variable (the Session's UUID) into that shell. Any stdio-based MCP server launched as a child process from within that shell inherits the variable and uses it to attribute Commands to the correct Session — no filesystem lookups or explicit arguments required.
+When the app spawns a Terminal Panel's PTY for a Session, it injects an `AIAW_SESSION_ID` environment variable (the Session's UUID) into that shell. The standalone `aiaw-mcp-server` binary, when launched as a child process from within that shell, inherits the variable and uses it to attribute workspace Commands to the correct Session — no filesystem lookups or explicit arguments required.
 
 ### Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Tauri App Process                                   │
-│                                                      │
-│  ┌─────────────┐  ┌───────────────────────────────┐  │
-│  │ GUI (React) │  │ MCP Server (in-process plugin) │  │
-│  │             │  │                                │  │
-│  │  listen()   │  │  Workspace tools:              │  │
-│  │             │  │    create_card, create_edge,   │  │
-│  └──────┬──────┘  │    create_session, ...         │  │
-│         │         │                                │  │
-│         ▼         │  Codebase tools:               │  │
-│  ┌────────────┐   │    find_symbol, find_references│  │
-│  │  Command   │◄──│    build_code_map, ...         │  │
-│  │  Layer     │   │                                │  │
-│  └─────┬──────┘   │  Transports:                   │  │
-│        │          │    stdio (local agents)         │  │
-│        ▼          │    TCP (remote agents)          │  │
-│  ┌────────────┐   └───────────────────────────────┘  │
-│  │  AppState  │                                      │
-│  └────────────┘                                      │
-└──────────────────────────────────────────────────────┘
+┌────────────── Embedded Mode (Tauri plugin) ─────────────┐
+│                                                           │
+│  ┌─────────────┐  ┌───────────────────────────────────┐  │
+│  │ GUI (React) │  │ MCP Server (in-process)            │  │
+│  │             │  │                                    │  │
+│  │  listen()   │  │  18 tools → Command Layer → core   │  │
+│  └──────┬──────┘  │                                    │  │
+│         │         │  on_session_changed ──► app.emit() │  │
+│         ▼         │  on_layouts_changed ──► app.emit() │  │
+│  ┌────────────┐   └───────────────────────────────────┘  │
+│  │  AppState  │◄── in-memory shared state                │
+│  └─────┬──────┘                                          │
+│        │                                                 │
+└────────┼─────────────────────────────────────────────────┘
+         │
+         ▼  reads/writes
+┌────────┴─────────────────────────────────────────────────┐
+│              App Support Dir                              │
+│  sessions.json  │  layouts.json  │  event-log.jsonl       │
+└────────┬─────────────────────────────────────────────────┘
+         ▲  reads/writes
+         │
+┌────────┴────── Standalone Mode (binary) ─────────────────┐
+│                                                           │
+│  AI Tool (Claude Code, Codex, Cursor)                     │
+│    │                                                      │
+│    │  spawns aiaw-mcp-server as stdio subprocess          │
+│    ▼                                                      │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │ aiaw-mcp-server                                   │   │
+│  │                                                    │   │
+│  │  18 tools → Command Layer → core (file I/O)        │   │
+│  │  Inherits AIAW_SESSION_ID from parent shell         │   │
+│  │  on_session_changed = None (no GUI to notify)       │   │
+│  └───────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────────┘
 ```
 
-Both MCP and GUI share the same `AppState` in memory. MCP calls `execute()` directly — no file I/O, no serialization, no cross-process communication. After each mutation, the MCP plugin calls `app.emit("sessions-changed", ())` or `app.emit("layouts-changed", ())` and the frontend refreshes.
+### Crate structure
+
+```
+crates/mcp/          Library crate (handler + optional Tauri plugin)
+  ├── lib.rs          McpHandler, init() behind feature flag
+  ├── error.rs        CommandError → MCP error mapping
+  └── Cargo.toml      tauri = optional, default = ["tauri-integration"]
+
+crates/mcp-server/   Standalone binary crate
+  ├── main.rs         Construct handler, serve stdio, no Tauri
+  └── Cargo.toml      mcp { default-features = false }
+```
 
 ## Consequences
 
-- MCP has near-zero latency for state changes — direct Mutex access and event emit.
-- No cross-server coordination problems — `build_code_map` is one tool, one call stack.
-- No non-idiomatic server-as-client patterns — clean MCP spec compliance.
-- Single deployment artifact — the MCP runs inside the Tauri app.
+- **Dual deployment**: Embedded for GUI users, standalone for AI tool CLI users. Same tools, same state files.
+- **No Tauri in binary**: Standalone binary has zero Tauri symbols — 8.6MB, slim dependency tree.
+- **Callback decoupling**: `McpHandler` uses `Option<Arc<dyn Fn() + Send + Sync>>` for event emission, not `AppHandle`. Any consumer can provide their own notification mechanism.
+- **File-based coordination**: GUI file watcher detects standalone binary's writes. No cross-process IPC needed.
+- **Standard MCP pattern**: `claude mcp add aiaws -- aiaw-mcp-server` — identical to how every other MCP server is configured.
+- **Session orientation**: Unchanged — `AIAW_SESSION_ID` env var flows through PTY to subprocess automatically.
+- **No cross-server coordination** — `build_code_map` is one tool, one call stack.
+- **Tool namespace** uses prefixes to avoid pollution (`codebase.*`, `workspace.*`).
 - LSP/tree-sitter CPU work offloaded to background threads via `tokio::task::spawn_blocking`.
-- If the Tauri app is not running, the MCP is unavailable — acceptable since its purpose is to manipulate the workspace the user is looking at.
-- Tool namespace uses prefixes to avoid pollution (`codebase.*`, `workspace.*`).
-- Session orientation is automatic via `AIAW_SESSION_ID` env var — no explicit session arguments from the agent.
+- The embedded in-process MCP has **near-zero latency** for state changes — direct Mutex access and event emit.
