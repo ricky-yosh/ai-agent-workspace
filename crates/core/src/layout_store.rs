@@ -2,17 +2,18 @@ use std::path::PathBuf;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 use uuid::Uuid;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Vertical,
     Horizontal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LayoutNode {
     Split {
@@ -25,7 +26,7 @@ pub enum LayoutNode {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct LayoutTree {
     pub tree: LayoutNode,
 }
