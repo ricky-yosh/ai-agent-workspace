@@ -616,15 +616,19 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let layouts = state.layouts.clone();
             let handle = app.app_handle().clone();
 
-            tokio::spawn(async move {
-                let handler = McpHandler {
-                    sessions,
-                    layouts,
-                    app: Some(handle),
-                };
-                if let Err(e) = serve_server(handler, rmcp::transport::io::stdio()).await {
-                    eprintln!("[mcp] Server error: {}", e);
-                }
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new()
+                    .expect("failed to create tokio runtime for MCP server");
+                rt.block_on(async {
+                    let handler = McpHandler {
+                        sessions,
+                        layouts,
+                        app: Some(handle),
+                    };
+                    if let Err(e) = serve_server(handler, rmcp::transport::io::stdio()).await {
+                        eprintln!("[mcp] Server error: {}", e);
+                    }
+                });
             });
 
             Ok(())
