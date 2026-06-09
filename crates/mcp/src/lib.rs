@@ -1,19 +1,22 @@
 pub mod error;
 
 use std::sync::{Arc, Mutex};
-use rmcp::{ServerHandler, serve_server, tool};
-use rmcp::model::{CallToolResult, Content, ServerInfo};
+use rmcp::{ServerHandler, tool};
+#[cfg(feature = "tauri-integration")]
+use rmcp::serve_server;
+use rmcp::model::{CallToolResult, Content, ServerInfo, ServerCapabilities};
 use ai_agent_workspace_core::{SessionRegistry, LayoutStore, LayoutTree};
 use ai_agent_workspace_commands::{AppState, Command, CommandResult, execute};
 use serde_json;
-use tauri::{AppHandle, Emitter, Manager};
+#[cfg(feature = "tauri-integration")]
+use tauri::{Emitter, Manager};
 
 #[derive(Clone)]
-#[allow(dead_code)]
-struct McpHandler {
-    sessions: Arc<Mutex<SessionRegistry>>,
-    layouts: Arc<Mutex<LayoutStore>>,
-    app: Option<AppHandle>,
+pub struct McpHandler {
+    pub sessions: Arc<Mutex<SessionRegistry>>,
+    pub layouts: Arc<Mutex<LayoutStore>>,
+    pub on_session_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub on_layouts_changed: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl ServerHandler for McpHandler {
@@ -22,6 +25,7 @@ impl ServerHandler for McpHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some("AI Agent Workspace MCP Server".into()),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
     }
@@ -78,7 +82,7 @@ impl McpHandler {
         };
         match execute(Command::SessionCreate { working_dir, name }, &state) {
             Ok(CommandResult::Session(session)) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -100,7 +104,7 @@ impl McpHandler {
         };
         match execute(Command::SessionRename { session_id, new_name }, &state) {
             Ok(CommandResult::Session(session)) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -120,7 +124,7 @@ impl McpHandler {
         };
         match execute(Command::SessionDelete { session_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -159,7 +163,7 @@ impl McpHandler {
         };
         match execute(Command::SessionClose { session_id }, &state) {
             Ok(CommandResult::Session(session)) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&session)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -196,7 +200,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateSave { name, tree }, &state) {
             Ok(CommandResult::Layout(layout)) => {
-                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
+                if let Some(cb) = &self.on_layouts_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&layout)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -216,7 +220,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateDelete { layout_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
+                if let Some(cb) = &self.on_layouts_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -238,7 +242,7 @@ impl McpHandler {
         };
         match execute(Command::TemplateRename { layout_id, new_name }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("layouts-changed", ()); }
+                if let Some(cb) = &self.on_layouts_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -287,7 +291,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceAdd { session_id, template_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&ws)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -305,7 +309,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRemove { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -325,7 +329,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -343,7 +347,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceSetActive { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -363,7 +367,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state) {
             Ok(CommandResult::Unit(())) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -381,7 +385,7 @@ impl McpHandler {
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceReset { session_id, workspace_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
-                if let Some(app) = &self.app { let _ = app.emit("sessions-changed", ()); }
+                if let Some(cb) = &self.on_session_changed { cb(); }
                 Ok(CallToolResult::success(vec![Content::json(&ws)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -405,7 +409,8 @@ mod tests {
         let handler = McpHandler {
             sessions: Arc::new(Mutex::new(sessions)),
             layouts: Arc::new(Mutex::new(layouts)),
-            app: None,
+            on_session_changed: None,
+            on_layouts_changed: None,
         };
         (handler, dir)
     }
@@ -608,6 +613,7 @@ mod tests {
     }
 }
 
+#[cfg(feature = "tauri-integration")]
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("mcp")
         .setup(|app, _config| {
@@ -616,6 +622,15 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let layouts = state.layouts.clone();
             let handle = app.app_handle().clone();
 
+            let on_session_changed = {
+                let h = handle.clone();
+                Some(Arc::new(move || { let _ = h.emit("sessions-changed", ()); }) as Arc<dyn Fn() + Send + Sync>)
+            };
+            let on_layouts_changed = {
+                let h = handle.clone();
+                Some(Arc::new(move || { let _ = h.emit("layouts-changed", ()); }) as Arc<dyn Fn() + Send + Sync>)
+            };
+
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new()
                     .expect("failed to create tokio runtime for MCP server");
@@ -623,10 +638,16 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     let handler = McpHandler {
                         sessions,
                         layouts,
-                        app: Some(handle),
+                        on_session_changed,
+                        on_layouts_changed,
                     };
-                    if let Err(e) = serve_server(handler, rmcp::transport::io::stdio()).await {
-                        eprintln!("[mcp] Server error: {}", e);
+                    match serve_server(handler, rmcp::transport::io::stdio()).await {
+                        Ok(running) => {
+                            let _ = running.waiting().await;
+                        }
+                        Err(e) => {
+                            eprintln!("[mcp] Server error: {}", e);
+                        }
                     }
                 });
             });

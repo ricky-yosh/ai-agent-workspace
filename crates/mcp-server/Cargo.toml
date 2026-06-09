@@ -1,0 +1,10 @@
+[package]
+name = "ai-agent-workspace-mcp-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ai-agent-workspace-mcp = { path = "../mcp", default-features = false }
+ai-agent-workspace-core = { path = "../core" }
+rmcp = { version = "0.1", features = ["transport-io"] }
+tokio = { version = "1", features = ["full"] }
