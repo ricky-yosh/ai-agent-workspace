@@ -1,0 +1,105 @@
+[
+  {
+    "id": 1,
+    "type": "AFK",
+    "category": "infrastructure",
+    "description": "Wire up the Preferences window foundation: tauri-plugin-store, native macOS menu, Cmd+, shortcut, and a separate blank Preferences webview window",
+    "acceptance_criteria": [
+      "Cmd+, opens a blank Preferences window as a separate OS window",
+      "Pressing Cmd+, again when the window is already open brings it to front",
+      "The Preferences window is 520x400, not resizable, titled 'Preferences'",
+      "tauri-plugin-store is registered and accessible from the frontend",
+      "The macOS app menu shows 'AI Agent Workspace' with About, Preferences... (⌘,), and Quit"
+    ],
+    "effort": "high",
+    "blocked_by": [],
+    "passes": false
+  },
+  {
+    "id": 2,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the Preferences form with External Tools section: Editor, Diff Tool, and Terminal preset dropdowns with Custom input and debounced auto-save to the store",
+    "acceptance_criteria": [
+      "Preferences window shows an 'External Tools' section with three labeled dropdowns",
+      "Each preset dropdown lists the correct presets with correct bundle names and a 'Custom...' option",
+      "Selecting 'Custom...' reveals an inline text input for entering an arbitrary application name",
+      "Dropdown selections and custom text changes are saved to the store with debounced writes",
+      "All fields default to unconfigured when the store is empty or fails to load",
+      "Preferences persist across app restarts",
+      "Store read and write failures show an error toast"
+    ],
+    "effort": "medium",
+    "blocked_by": [1],
+    "passes": false
+  },
+  {
+    "id": 3,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the toast notification system: context provider, fixed-position component, auto-dismiss, stacking, and action buttons",
+    "acceptance_criteria": [
+      "Triggering a toast shows a fixed-position banner in the bottom-right of the app window",
+      "Toasts auto-dismiss after 4 seconds",
+      "Up to 3 toasts stack vertically; when a 4th arrives, the oldest is dismissed",
+      "Toasts accept an optional action button; clicking it fires the provided callback",
+      "Info toasts and error toasts render with distinct visual styling",
+      "A manual close button on each toast dismisses it immediately"
+    ],
+    "effort": "medium",
+    "blocked_by": [],
+    "passes": false
+  },
+  {
+    "id": 4,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Add the session row context menu scaffold: right-click handler, six-item menu rendering with scroll-aware positioning, and dismiss via click-outside and Escape",
+    "acceptance_criteria": [
+      "Right-clicking any session row shows a context menu at the cursor position",
+      "The menu contains all six items in order: Open in Finder, Open in Editor, Open in External Diff, Open in Terminal, Copy SessionID, Copy Session Path",
+      "The menu position accounts for sidebar scroll offset",
+      "Clicking outside the menu or pressing Escape dismisses it",
+      "The existing inline Rename and Delete buttons remain unchanged on the session row",
+      "The context menu shows the same six items regardless of whether the session is running, paused, or missing"
+    ],
+    "effort": "medium",
+    "blocked_by": [],
+    "passes": false
+  },
+  {
+    "id": 5,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Wire Open in Finder and clipboard copy actions to the context menu with error handling",
+    "acceptance_criteria": [
+      "Clicking 'Open in Finder' reveals the session's workingDirectory in macOS Finder",
+      "For missing sessions, Finder reveals the first existing parent directory",
+      "Clicking 'Copy SessionID' copies the session UUID to the system clipboard",
+      "Clicking 'Copy Session Path' copies the workingDirectory to the system clipboard",
+      "Clipboard write failures show an error toast",
+      "Selecting any of these three actions dismisses the context menu"
+    ],
+    "effort": "medium",
+    "blocked_by": [3, 4],
+    "passes": false
+  },
+  {
+    "id": 6,
+    "type": "AFK",
+    "category": "ui",
+    "description": "Build the tool launcher function and wire Open in Editor, Open in External Diff, and Open in Terminal actions to the context menu, Preferences store, toasts, and opener plugin",
+    "acceptance_criteria": [
+      "Clicking 'Open in Editor' launches the configured External Editor in the workingDirectory",
+      "Clicking 'Open in External Diff' launches the configured External Diff Tool in the workingDirectory",
+      "Clicking 'Open in Terminal' launches the configured External Terminal in the workingDirectory",
+      "If a tool preference is unconfigured, an info toast appears with a 'Configure' button that opens the Preferences window",
+      "If an external tool launch fails, an error toast appears with the tool name",
+      "If the workingDirectory is not a git repository, the diff tool action shows a warning toast before launching the tool",
+      "Selecting any of these three actions dismisses the context menu"
+    ],
+    "effort": "medium",
+    "blocked_by": [2, 3, 4],
+    "passes": false
+  }
+]

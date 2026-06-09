@@ -1,188 +1,187 @@
-# PRD: MCP Server (v1)
+# PRD: Session Sidebar Context Menu & Preferences
 
 ## Problem Statement
 
-AI agents running inside the Terminal Panel (Claude Code, Codex, etc.) have no way to interact with the AI Agent Workspace — they cannot create sessions, list templates, add workspace instances, or modify layout trees. The app's backend is fully functional (the Command Layer exposes 18 operations and the CLI exercises them all), but there is no MCP interface for AI agents to call these same operations programmatically. Without the MCP server, the "AI agent as collaborator" vision is blocked — the agent can only observe the repository, not manipulate the workspace.
+The Session Sidebar currently offers only two inline actions per session row: Rename and Delete. When a user wants to open a session's workingDirectory in Finder, launch their code editor in that directory, open a diff tool to review changes, or start a terminal there, they must manually navigate via Finder or terminal — breaking their flow. There is no way to copy a Session ID or workingDirectory path to the clipboard. Additionally, the app has no configuration system — users cannot set preferences for which external tools to launch.
 
 ## Solution
 
-Add a monolithic in-process MCP server as a Tauri plugin in a new `crates/mcp` crate. The MCP server exposes all 18 existing Command variants as MCP tools — one tool per Command. When the app spawns a Terminal Panel PTY, it injects `AIAW_SESSION_ID` into the shell environment, and the MCP server (launched as a child process) inherits this variable to attribute all operations to the correct Session. The MCP server shares `AppState` with the Tauri app so mutations appear instantly in the GUI.
+Add a right-click context menu to each session row in the Session Sidebar with six actions: Open in Finder, Open in Editor, Open in External Diff, Open in Terminal, Copy SessionID, and Copy Session Path. The Editor, Diff Tool, and Terminal actions launch user-configured external applications. Configuration is done in a separate Preferences window (opened via Cmd+, or app menu) with a single "External Tools" section containing preset dropdowns and an optional custom path input. When a tool is unconfigured and the user clicks its action, a toast notification appears with a "Configure" button that opens Preferences directly. The existing inline Rename and Delete buttons remain unchanged alongside the new context menu.
 
 ## User Stories
 
-1. As an AI agent running inside a Session's Terminal Panel, I want to call `session_create` via MCP stdio, so that I can create new Sessions programmatically.
-2. As an AI agent, I want to call `session_list` via MCP stdio, so that I can discover what Sessions exist.
-3. As an AI agent, I want to call `session_rename` via MCP stdio, so that I can rename Sessions I created.
-4. As an AI agent, I want to call `session_delete` via MCP stdio, so that I can clean up Sessions.
-5. As an AI agent, I want to call `session_open` via MCP stdio, so that I can open a Session and trigger its auto-initialization (default template + workspace).
-6. As an AI agent, I want to call `session_close` via MCP stdio, so that I can close a Session.
-7. As an AI agent, I want to call `template_list` via MCP stdio, so that I can see available Layout Templates.
-8. As an AI agent, I want to call `template_save` via MCP stdio, so that I can create new Layout Templates programmatically.
-9. As an AI agent, I want to call `template_delete` via MCP stdio, so that I can remove unwanted templates.
-10. As an AI agent, I want to call `template_rename` via MCP stdio, so that I can rename templates.
-11. As an AI agent, I want to call `workspace_list` via MCP stdio, so that I can see a Session's Workspace Instances.
-12. As an AI agent, I want to call `workspace_get_active` via MCP stdio, so that I can discover which workspace is active in a Session.
-13. As an AI agent, I want to call `workspace_add` via MCP stdio, so that I can add a Workspace Instance to a Session from a template.
-14. As an AI agent, I want to call `workspace_remove` via MCP stdio, so that I can remove Workspace Instances.
-15. As an AI agent, I want to call `workspace_rename` via MCP stdio, so that I can rename Workspace Instances.
-16. As an AI agent, I want to call `workspace_set_active` via MCP stdio, so that I can switch between Workspace Instances.
-17. As an AI agent, I want to call `workspace_update_tree` via MCP stdio, so that I can modify a workspace's panel layout.
-18. As an AI agent, I want to call `workspace_reset` via MCP stdio, so that I can reset a workspace back to its template.
-19. As a developer, I want the MCP server to share AppState with the Tauri app, so that MCP mutations appear instantly in the GUI without file watcher latency.
-20. As a developer, I want the MCP server to emit Tauri events after each mutation, so that the frontend listeners refresh automatically.
-21. As a developer, I want the MCP server to run in-process as a Tauri plugin, so that it has direct access to the Command Layer.
-22. As a user, I want the MCP server to automatically know which Session it's serving via the `AIAW_SESSION_ID` env var, so that I never need to pass a session ID explicitly to the agent.
-23. As a developer, I want the MCP tools to accept the same parameters as the Command enum variants, so that understanding one interface teaches the other.
-24. As a developer, I want MCP errors to return structured JSON with error codes and messages, so that AI agents can handle failures gracefully.
+1. As a user, I want to right-click a session row and see a context menu with quick actions, so that I can access common operations without leaving the sidebar.
+2. As a user, I want to click "Open in Finder" on a session, so that the session's workingDirectory opens in macOS Finder.
+3. As a user, I want to click "Open in Editor" on a session, so that my preferred code editor (Cursor, VS Code, etc.) opens in that directory.
+4. As a user, I want to click "Open in External Diff" on a session, so that my preferred diff tool (Fork, GitKraken, etc.) opens for that repository.
+5. As a user, I want to click "Open in Terminal" on a session, so that my preferred terminal app (iTerm2, Warp, etc.) opens in that directory.
+6. As a user, I want to copy a session's UUID to the clipboard via "Copy SessionID", so that I can reference it in scripts or share it.
+7. As a user, I want to copy a session's workingDirectory path via "Copy Session Path", so that I can paste it into a terminal command.
+8. As a user, I want to open the Preferences window via Cmd+, or the app menu, so that I can configure my external tool preferences without reaching for a config file.
+9. As a user, I want to select my preferred editor from a list of common presets (Cursor, VS Code, Windsurf, etc.), so that I don't need to know the application's bundle name.
+10. As a user, I want to select my preferred diff tool from a list of common presets (Fork, GitKraken, Sourcetree, etc.), so that I can use the tool I already have installed.
+11. As a user, I want to select my preferred terminal from a list of common presets (iTerm2, Warp, Terminal, etc.), so that my existing terminal workflow is preserved.
+12. As a user, I want to type a custom application name or bundle identifier when my tool is not in the preset list, so that I can use any editor, diff tool, or terminal I want.
+13. As a user, I want my preferences to persist across app restarts, so that I don't need to reconfigure every time I launch.
+14. As a user, I want to see a toast notification when I click an external tool action but haven't configured that tool yet, so that I know I need to set a preference.
+15. As a user, I want the toast notification to include a "Configure" button, so that I can go directly to the Preferences window instead of hunting for it.
+16. As a user, I want the context menu to appear at the mouse cursor position when I right-click a session row, so that it feels responsive and native.
+17. As a user, I want to dismiss the context menu by clicking anywhere outside it or pressing Escape, so that I can cancel accidental right-clicks.
+18. As a user, I want the Preferences window to be a separate OS window, so that it feels native and I can keep it open while using the main window.
+19. As a user with "missing" (unreachable) sessions, I want all six context menu actions to work — Finder opens the parent directory if the target doesn't exist, the other tools attempt to launch and show a toast if the path is unreachable.
+20. As a user, I want to see a toast notification when an external tool fails to launch (app not installed, path unreachable), so that I know what went wrong and can fix my configuration.
+21. As a user, I want clipboard copy failures to show a toast notification, so that I know the copy didn't work and can try again.
+22. As a user who presses Cmd+, when the Preferences window is already open, I want it to come to the front, so that I'm not confused by an apparently non-working shortcut.
 
 ## Implementation Decisions
 
-### Crate structure
+### Context Menu
 
-A new `crates/mcp` crate is added to the Cargo workspace. It depends on `crates/commands` (for the Command enum, `execute()`, and `AppState`) and on `rmcp` (the Rust MCP SDK). The Tauri app (`src-tauri`) depends on `crates/mcp` and registers it as a plugin.
+The context menu is added to existing session rows in the Session Sidebar. It follows the same pattern already used for workspace tab context menus and split layout context menus: an `onContextMenu` handler sets a state with `{x, y, sessionId}`, and a conditionally rendered overlay + positioned menu div uses the existing `ContextMenu.css` styles. The position accounts for the sidebar's scroll offset so the menu appears at the correct screen position regardless of scroll state. Clicking the overlay, selecting an action, or pressing Escape dismisses the menu.
 
-**Root `Cargo.toml`** — add `crates/mcp` to workspace members.
+The context menu is identical for all session states (running, paused, missing) — all six actions are always shown. The existing inline Rename and Delete buttons remain on the session row and are not moved into the context menu.
 
-**`crates/mcp/Cargo.toml`** — depends on `rmcp` (with `macros` feature), `ai-agent-workspace-commands`, `ai-agent-workspace-core`, `tauri`, `tokio`, `serde`, `serde_json`.
+Each of the six menu items triggers one of three behaviors:
+- **Open in Finder** — calls the opener plugin to reveal the session's workingDirectory in Finder. If the path does not exist on disk, falls back to revealing the parent directory.
+- **Open in Editor / Open in External Diff / Open in Terminal** — reads the corresponding preference from the store, then launches the configured application via the opener plugin. If no preference is set, shows a toast with a "Configure" button. If the launch fails (app not installed, path unreachable), shows an error toast.
+- **Copy SessionID / Copy Session Path** — writes to the system clipboard. If the clipboard API rejects or fails, shows an error toast.
 
-### `crates/mcp/src/lib.rs` — Tauri plugin
+### Toast Notification System
 
-Exports an `init()` function returning `TauriPlugin<R>` built with `plugin::Builder::new("mcp")`. In the `setup()` hook:
+A new custom React component renders fixed-position, auto-dismissing toast messages in the bottom-right of the app window. Toasts are managed through a React context, following the same pattern as the existing SessionContext. Each toast accepts an optional `action` (label + callback), enabling the "Configure" button on unconfigured-tool toasts. Toasts auto-dismiss after 4 seconds. Up to 3 toasts are visible at once, stacked vertically; if more arrive, the oldest is dismissed. Toast types include: info (for unconfigured tools), error (for launch failures, clipboard failures, store failures), and the user can dismiss any toast manually by clicking a close button.
 
-1. Get `AppState` from `app.state::<AppState>()` and clone the `Arc<Mutex<SessionRegistry>>`, `Arc<Mutex<LayoutStore>>`, and `AppHandle` (via `app.handle().clone()`).
-2. Build an `McpHandler` struct holding these three Arcs.
-3. `tokio::spawn` (on Tauri's built-in async runtime) an async task that calls `serve_server(handler, stdio()).await` to start listening for MCP requests on stdin/stdout.
-4. No TCP transport for v1.
+### Preferences Window
 
-### `crates/mcp/src/tools.rs` — Tool handlers (McpHandler struct)
+The Preferences window is a separate OS window (label `preferences`) created via Tauri's `WebviewWindowBuilder`. The window size is 520x400, not resizable, with a title of "Preferences". It is opened programmatically by the Rust backend in response to a menu item click (Cmd+,) or by the frontend when the toast "Configure" button is clicked. If the window is already open, it is brought to the front rather than creating a duplicate.
 
-A single `McpHandler` struct annotated with `#[tool_handler]` from `rmcp`. The struct holds cloned `Arc`s for `SessionRegistry`, `LayoutStore`, and `AppHandle`.
+The Preferences window uses its own Vite entry point (`preferences.html`) with a separate React mount, since the project does not use a client-side router. This requires a Vite multi-page configuration. The window has the same Tauri capabilities as the main window (core:default, opener:default, store permissions).
 
-Each tool is an async method with the `#[tool]` attribute:
+The Preferences UI is a single flat form in v1 — a header "External Tools" and three tool selection rows. The layout is structured to accept additional sections in the future (a sidebar or tabs can be added without changing the form components). Each tool type (Editor, Diff Tool, Terminal) is rendered as a row with a label and a preset dropdown. The preset dropdown lists common macOS applications. Selecting "Custom..." reveals an inline text input for entering an arbitrary application name or bundle identifier. Changes are auto-saved to the store on every selection change or text input change (debounced at 300ms to avoid excessive writes).
 
-```rust
-#[derive(Clone, tool_handler::ToolHandler)]
-struct McpHandler {
-    sessions: Arc<Mutex<SessionRegistry>>,
-    layouts: Arc<Mutex<LayoutStore>>,
-    app_handle: AppHandle,
-}
+### Preferences Store
 
-impl McpHandler {
-    #[tool]
-    async fn session_list(&self) -> Result<Vec<SessionSummary>, McpError> {
-        // Lock sessions, call execute(SessionList), map result/error
-    }
-    // ... 17 more tools
-}
-```
+Preferences are persisted via `tauri-plugin-store` as a key/value JSON file. The store is auto-saved on every change in the Preferences window. The store file lives in the platform's app config directory (separate from the App Support Dir used for session state).
 
-Each tool method:
-1. Reads `AIAW_SESSION_ID` from `std::env::var()` to determine the current Session.
-2. Constructs a `Command` variant with the tool's arguments.
-3. Locks the appropriate Mutex, calls `execute(command, &mut state)`.
-4. Maps `CommandResult` to the tool's return type.
-5. Maps `CommandError` to an MCP error response.
+Store schema:
+- `external_editor` (string) — the application name or bundle ID for the editor. Empty string = unconfigured.
+- `external_diff_tool` (string) — the application name or bundle ID for the diff tool. Empty string = unconfigured.
+- `external_terminal` (string) — the application name or bundle ID for the terminal. Empty string = unconfigured.
 
-The 18 tools (following CLI naming convention):
+When reading, a missing or empty key is treated as unconfigured. If the store fails to load (corrupted file, disk error), all preferences default to empty and the user sees an error toast. If the store fails to write, the user sees an error toast.
 
-| Tool name | Command variant | Parameters |
-|---|---|---|
-| `session_create` | `SessionCreate` | `working_dir` (absolute path), `name` |
-| `session_list` | `SessionList` | none |
-| `session_rename` | `SessionRename` | `session_id`, `new_name` |
-| `session_delete` | `SessionDelete` | `session_id` |
-| `session_open` | `SessionOpen` | `session_id` |
-| `session_close` | `SessionClose` | `session_id` |
-| `template_list` | `TemplateList` | none |
-| `template_save` | `TemplateSave` | `name`, `tree` |
-| `template_delete` | `TemplateDelete` | `layout_id` |
-| `template_rename` | `TemplateRename` | `layout_id`, `new_name` |
-| `workspace_list` | `WorkspaceList` | `session_id` |
-| `workspace_get_active` | `WorkspaceGetActive` | `session_id` |
-| `workspace_add` | `WorkspaceAdd` | `session_id`, `template_id` |
-| `workspace_remove` | `WorkspaceRemove` | `session_id`, `workspace_id` |
-| `workspace_rename` | `WorkspaceRename` | `session_id`, `workspace_id`, `new_name` |
-| `workspace_set_active` | `WorkspaceSetActive` | `session_id`, `workspace_id` |
-| `workspace_update_tree` | `WorkspaceUpdateTree` | `session_id`, `workspace_id`, `tree` |
-| `workspace_reset` | `WorkspaceReset` | `session_id`, `workspace_id` |
+### Tool Launching
 
-### Shared state pattern
+A single async function `launchTool(toolType, workingDirectory)` reads the stored preference, constructs the appropriate opener call, and executes it. The function returns a result that the caller uses to determine whether to show a success toast or an error toast.
 
-`AppState` already uses `Arc<Mutex<SessionRegistry>>` and `Arc<Mutex<LayoutStore>>` (changed for the file watcher). The MCP plugin clones these `Arc`s into the background thread, so both the Tauri main thread and the MCP listener thread share the same Mutex-protected state.
+Tool-specific behavior:
+- **Finder**: Uses the opener plugin's `revealItemInDir` function. If workingDirectory is unreachable, attempts to reveal the first existing parent directory.
+- **Editor**: Launches via `open -a "<AppName>" <workingDirectory>` using the opener plugin.
+- **Diff Tool**: Launches via `open -a "<AppName>" <workingDirectory>`. The workingDirectory is expected to be a git repository. If the workingDirectory is not a git repository, the app shows a toast: "The directory is not a git repository. The diff tool may not show any changes."
+- **Terminal**: Launches via `open -a "<AppName>" <workingDirectory>` using the opener plugin.
 
-### GUI event emission
+If the launch fails (app not installed, OS rejects the launch, opener plugin error), the user sees an error toast: "Failed to launch [AppName]. Is it installed?".
 
-After each successful `execute()` call, the tool handler emits the appropriate Tauri event via the cloned `AppHandle`:
-- `sessions-changed` — after session mutations (create, rename, delete, open, close) and workspace mutations (add, remove, rename, set active, update tree, reset)
-- `layouts-changed` — after template mutations (save, delete, rename)
+### Preset Lists and Bundle Names
 
-These match the existing event names emitted by the file watcher, so no new frontend listeners are needed.
+**Editors:**
+| Preset label | Bundle name |
+|---|---|
+| Cursor | `Cursor` |
+| VS Code | `Visual Studio Code` |
+| Windsurf | `Windsurf` |
+| VS Code Insiders | `Visual Studio Code - Insiders` |
+| Zed | `Zed` |
+| Custom... | (user-provided) |
 
-### Session orientation
+**Diff tools:**
+| Preset label | Bundle name |
+|---|---|
+| Fork | `Fork` |
+| GitKraken | `GitKraken` |
+| Sourcetree | `Sourcetree` |
+| GitX | `GitX` |
+| Custom... | (user-provided) |
 
-The MCP server inherits `AIAW_SESSION_ID` from the PTY shell environment. Tools that require a session context always use the env var — v1 does not accept explicit `session_id` overrides from the agent. Tools that don't require session context (like `template_list`, `template_save`, `template_delete`, `template_rename`) operate globally without any session ID.
+**Terminals:**
+| Preset label | Bundle name |
+|---|---|
+| iTerm2 | `iTerm` |
+| Warp | `Warp` |
+| Terminal | `Terminal` |
+| Hyper | `Hyper` |
+| Custom... | (user-provided) |
 
-### rmcp integration
+### Tauri Menu Integration
 
-The `rmcp` crate (https://github.com/modelcontextprotocol/rust-sdk) provides:
+A native macOS menu is added to the Tauri app. It includes the standard app menu (AI Agent Workspace) with About, Preferences... (Cmd+,), and Quit. The Preferences menu item emits an event that triggers opening the Preferences window from the Rust backend.
 
-- `#[tool]` attribute macro for declaring tool methods on a handler struct (requires `macros` feature on the dependency)
-- `#[tool_handler]` derive macro that generates the `ServerHandler` trait implementation for the handler struct
-- `serve_server(handler, transport).await` — async function that runs the MCP server over a transport
-- `rmcp::transport::io::stdio()` — returns the stdio transport for stdio-based MCP
-- `rmcp::ErrorData` trait — implement for the local error type to convert to JSON-RPC errors
-- Tool method parameters must derive `Serialize + Deserialize` (and optionally `schemars::JsonSchema`)
-- Tool methods must be async and return `Result<T, impl Into<rmcp::ErrorData>>`
+### Permissions and Dependencies
 
-The MCP server constructs the `McpHandler`, then `tokio::spawn(serve_server(handler, stdio()))` from the plugin's `setup()` hook.
+New dependencies:
+- **Rust**: `tauri-plugin-store = "2"` added to `src-tauri/Cargo.toml`
+- **JS**: `@tauri-apps/plugin-store: "^2"` added to `package.json`
 
-### Error mapping
+The `tauri-plugin-opener` and `@tauri-apps/plugin-opener` are already installed and permitted.
 
-`CommandError` maps to MCP JSON-RPC error codes:
+New permissions in `src-tauri/capabilities/default.json`:
+- `store:default` added to the `permissions` array
+- The `windows` array updated from `["main"]` to `["main", "preferences"]`
 
-| CommandError field | JSON-RPC error | Mapping |
-|---|---|---|
-| `error: "not_found"` | code `-32001` | Entity not found |
-| `error: "already_exists"` | code `-32002` | Duplicate entity |
-| `error: "invalid_input"` | code `-32602` | Invalid params |
-| Other `error` values | code `-32000` | Generic server error |
+The `preferences` window inherits the same capabilities as `main` by sharing the same capability entry.
 
-The JSON-RPC `data` field contains a structured object with `error` (the kind string), `entity`, and `id` from the `CommandError`. This gives AI agents enough context to understand and potentially recover from errors.
+Clipboard access uses the standard Web API `navigator.clipboard.writeText()`, which requires no additional Tauri permissions. On macOS, the first clipboard write may trigger a native permission prompt; if denied, an error toast is shown.
+
+### Error Handling Summary
+
+| Scenario | Behavior |
+|---|---|
+| Tool preference unconfigured | Toast: "No [tool type] configured" with "Configure" button |
+| External tool launch fails (app not installed) | Toast: "Failed to launch [AppName]. Is it installed?" |
+| workingDirectory unreachable (Finder) | Reveal parent directory |
+| workingDirectory unreachable (Editor/Diff/Terminal) | Attempt launch; if OS rejects, show error toast |
+| workingDirectory is not a git repo (Diff) | Toast: "Not a git repository. Diff tool may not show changes." |
+| Clipboard write fails | Toast: "Failed to copy to clipboard" |
+| Store read fails (corrupted, disk error) | Default to unconfigured; toast: "Failed to load preferences" |
+| Store write fails | Toast: "Failed to save preferences" |
+| Preferences window creation fails | Console error; Cmd+, becomes a silent no-op (OS-level logging only) |
 
 ## Testing Decisions
 
 ### What makes a good test
 
-Tests verify that each MCP tool correctly dispatches to the Command Layer and returns the expected result. Tests use temporary directories for isolation (same pattern as existing core and commands tests). Tests verify error cases (invalid session ID, missing template, etc.) return proper MCP error responses.
+Tests verify external behavior — they check that the context menu renders the correct items, that action clicks trigger the expected side effects (clipboard write, opener plugin call, or toast), and that preferences are correctly read from and written to the store. Tests use mocked dependencies (opener plugin, clipboard API, store plugin) to avoid side effects and focus on the component's response to each outcome. Tests do not couple to implementation details like internal state structure or exact DOM nesting.
 
 ### Modules tested
 
-- **`crates/mcp/src/tools.rs`** — Test each of the 18 tool methods on `McpHandler`. Create a fresh `AppState` with a temp directory and a Tauri `App`/`AppHandle` test instance, construct `McpHandler`, call the async tool method with known inputs, await the result, assert the returned data matches the expected core output. Test error propagation: when the underlying `execute()` returns an error, the tool method returns an `McpError` with the correct JSON-RPC code and data.
-- **`crates/mcp/src/lib.rs`** — Test plugin setup: verify `init()` returns a valid `TauriPlugin`, verify state is accessible in `setup()`, verify the handler struct can be constructed.
+- **Context menu** — Render a session row, simulate a right-click event, verify the menu appears at the correct position, verify all six items are present, verify clicking an item triggers the expected action and dismisses the menu, verify clicking outside or pressing Escape dismisses, verify the menu is identical regardless of session state.
+- **Toast component** — Trigger a toast via the toast context, verify it appears, verify it auto-dismisses after 4 seconds, verify the "Configure" action button works when provided, verify multiple toasts stack vertically (max 3), verify error toasts render with distinct styling.
+- **Preferences window** — Mount the Preferences component with a mock store, verify the form is populated from stored values, change a selection and verify the store is updated (debounced), verify the "Custom..." option reveals the text input, verify an empty store renders all fields as unconfigured.
+- **Tool launcher** — Call the launcher with a configured preference, verify the opener plugin is invoked with the correct application name and path. Call with an unconfigured preference, verify a toast is triggered. Call with an unreachable path, verify the correct fallback behavior. Call with a non-git-repo path for diff tool, verify the appropriate toast.
 
 ### Prior art
 
-The existing tests in `crates/commands/src/executor.rs` test the `execute()` function with `AppState` backed by temp directories. The MCP tool handler tests follow the same pattern — each test creates `AppState`, calls the tool function, and asserts the result.
+The existing context menu in `SplitLayout.tsx` and `LayoutTabs.tsx` demonstrates the `{x, y, ...}` state pattern and overlay-based menu rendering. The toast system follows the same React component pattern as the existing context menu overlay. The store integration follows standard Tauri plugin patterns (similar to how `tauri-plugin-opener` is registered and used). Tests mirror the existing component test patterns in the codebase (e.g., session registry tests verify state transitions through public interfaces).
 
 ## Out of Scope
 
-- Whiteboard operations (create_card, create_edge, create_frame, etc.) — no corresponding Commands exist yet.
-- Codebase intelligence tools (find_symbol, find_references, build_code_map) — no corresponding Commands exist yet.
-- TCP transport — stdio only for v1. TCP can be added later as a config option on the plugin builder.
-- Tool name prefixing (`workspace.*`, `codebase.*`) — all 18 v1 tools are workspace/session/template operations; prefixing is deferred until codebase tools are added.
-- Frontend changes — the frontend already has event listeners for `sessions-changed` and `layouts-changed`; no new listeners needed.
-- MCP capabilities beyond tools (resources, prompts) — v1 is tools-only.
-- MCP server lifecycle management — the server starts with the app and stops when the app exits. No start/stop controls.
-- Remote agent authentication — TCP is out of scope for v1.
-- `AIAW_SESSION_ID` fallback logic — v1 requires the env var to be set. Future: allow explicit session_id parameter as override.
+- Additional Preferences sections beyond "External Tools" (e.g., Appearance, General, Terminal behavior). The UI is structured to accept them but they are not implemented.
+- In-app launching of external tools (the tools are always launched as separate OS applications, not embedded in the app's panels).
+- Remote or cloud-based editors (GitHub Codespaces, Gitpod).
+- Tool auto-detection — all presets are always shown regardless of whether the application is installed.
+- Windows and Linux support — preset lists use macOS bundle names. The `open` / `revealItemInDir` calls use macOS-specific APIs.
+- Keyboard shortcuts for individual context menu items (beyond the Cmd+, shortcut for Preferences).
+- Drag-and-drop reordering of sessions in the sidebar.
+- Multi-selection of sessions (batch actions).
+- Custom tool categories or user-defined preset lists.
+- Preferences import/export or sync.
+- Toast persistence or history.
+- Moving the existing Rename/Delete inline buttons into the context menu (they remain as-is).
 
 ## Further Notes
 
-- The MCP server is a pure adapter layer — it adds no new business logic. Every tool is a thin wrapper: receive MCP request → construct `Command` → call `execute()` → return `CommandResult` as MCP response.
-- The `tree` parameter for `template_save` and `workspace_update_tree` accepts a `LayoutTree` JSON object directly (the same struct shape as the Command variant), not a JSON string. The MCP protocol natively deserializes JSON objects into structs.
-- `session_create` is a global operation that does not use `AIAW_SESSION_ID` — the agent must supply an absolute `working_dir`. The agent is responsible for providing a valid path (typically the PTY's current working directory).
-- `workspace_get_active` returns `null` (not an error) when a Session has no active workspace. This matches the Command Layer behavior where `execute()` returns `Ok(Unit(()))` in this case.
-- The `suppress_watcher` flag in SessionRegistry and LayoutStore is set during `save()`, so MCP-initiated writes don't trigger redundant file watcher reloads. The Tauri event emission handles GUI updates directly.
-- The MCP plugin does not use `invoke_handler()` (no `#[tauri::command]` functions exposed to the frontend). It's purely a background server started in `setup()`.
-- If the Tauri app is not running, the MCP server is unavailable. This is acceptable — the MCP's purpose is to manipulate the workspace the user is viewing.
+- Context menu actions do not require the session to be open (running state). They operate solely on the session's workingDirectory path and the stored preferences.
+- "Open in External Diff" launches the diff tool in the workingDirectory. The tool itself handles staging detection and file selection; the app does not pre-select specific files.
+- The tool launcher is a shallow module — a single async function with no side effects beyond opening an app or showing a toast. It can be tested in isolation with mocked dependencies.
+- The Vite multi-page configuration adds a second entry point (`preferences.html`) pointing to a separate React mount (`src/preferences-main.tsx`). The existing `index.html` / `src/main.tsx` entry is unchanged.
+- The Preferences window URL used by `WebviewWindowBuilder` is the dev server URL with `/preferences.html` appended (in dev) or the bundled file path (in production). The Tauri config or Rust code handles the environment-dependent URL resolution.
+- The toast context wraps the entire app (similar to how SessionContext wraps the app), making the toast API available to any component without prop drilling.
