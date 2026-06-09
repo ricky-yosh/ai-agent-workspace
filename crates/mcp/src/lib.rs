@@ -1,11 +1,14 @@
+pub mod error;
+
 use std::sync::{Arc, Mutex};
-use rmcp::{ServerHandler, serve_server};
-use rmcp::model::ServerInfo;
+use rmcp::{ServerHandler, serve_server, tool};
+use rmcp::model::{CallToolResult, Content, ServerInfo};
 use ai_agent_workspace_core::{SessionRegistry, LayoutStore};
-use ai_agent_workspace_commands::AppState;
+use ai_agent_workspace_commands::{AppState, Command, CommandResult, execute};
 use tauri::{AppHandle, Manager};
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct McpHandler {
     sessions: Arc<Mutex<SessionRegistry>>,
     layouts: Arc<Mutex<LayoutStore>>,
@@ -13,7 +16,7 @@ struct McpHandler {
 }
 
 impl ServerHandler for McpHandler {
-    rmcp::tool_box!(@derive tool_box);
+    rmcp::tool_box!(@derive);
 
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -24,10 +27,25 @@ impl ServerHandler for McpHandler {
 }
 
 impl McpHandler {
-    rmcp::tool_box!(McpHandler {} tool_box);
+    rmcp::tool_box!(McpHandler { session_list });
+
+    #[tool(description = "List all sessions")]
+    async fn session_list(&self) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState {
+            sessions: self.sessions.clone(),
+            layouts: self.layouts.clone(),
+        };
+        match execute(Command::SessionList, &state) {
+            Ok(CommandResult::Sessions(sessions)) => {
+                Ok(CallToolResult::success(vec![Content::json(&sessions)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    }
 }
 
-pub fn init() -> tauri::plugin::Builder<tauri::Wry> {
+pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("mcp")
         .setup(|app, _config| {
             let state = app.state::<AppState>();
@@ -48,4 +66,5 @@ pub fn init() -> tauri::plugin::Builder<tauri::Wry> {
 
             Ok(())
         })
+        .build()
 }
