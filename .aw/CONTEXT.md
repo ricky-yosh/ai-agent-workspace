@@ -23,6 +23,11 @@
 | **event-log.jsonl** | The append-only JSONL file in App Support Dir where all Events are persisted. Used to reconstruct workspace state and provide an audit trail. | Event Store, Event log |
 | **Command Layer** | The single internal execution path through which all interfaces (CLI, MCP, UI) dispatch Commands. Contains the Command enum and an executor that dispatches to core modules. | Dispatcher, Mediator |
 | **App Support Dir** | `~/Library/Application Support/AI Agent Workspace/` (macOS) — the canonical storage location for all session state, registry, and event-log.jsonl files. Nothing written to the repository. | Data dir, Config dir |
+| **Preferences Window** | A separate Tauri window (Cmd+,) for configuring app settings — preferred external tools, editor, diff tool, and terminal. | Settings, Config panel |
+| **Toast Notification** | A transient auto-dismissing message banner displayed in the bottom-right of the app window to surface feedback (e.g. "no editor configured"). | Alert, Snackbar |
+| **External Editor** | A user-configured code editor (Cursor, VS Code, etc.) launched in the session's workingDirectory from the sidebar context menu. | Code editor preference |
+| **External Diff Tool** | A user-configured diff/merge tool (Fork, GitKraken, etc.) launched in the session's workingDirectory from the sidebar context menu. | Visual diff tool |
+| **External Terminal** | A user-configured terminal application (iTerm2, Warp, etc.) launched in the session's workingDirectory from the sidebar context menu. | Terminal preference |
 
 ## Relationships
 
@@ -64,6 +69,10 @@
 - **--tree** accepts inline JSON; **--tree-file** reads from a file. Both supported for `template save` and `workspace update-tree`.
 - **Session orientation**: each Terminal Panel's PTY is spawned scoped to exactly one Session (never shared). At spawn time, the app injects an `AIAW_SESSION_ID` environment variable into the PTY's shell. The stdio-based MCP Server launched from within inherits the variable and uses it to attribute Commands to the correct Session — no filesystem lookups or explicit session arguments required from the agent (see ADR 0009).
 - **Terminal restoration** is left to the underlying CLI tool's own resumption feature (e.g. `claude --resume`). The app does not attempt to keep the PTY process alive across restarts or reattach via a multiplexer — it's a thin convenience layer (remember last command/cwd, offer a "Resume" relaunch), not a guarantee.
+- **Session sidebar context menu** provides six right-click actions: Open in Finder, Open in Editor, Open in External Diff, Open in Terminal, Copy SessionID, Copy Session Path. Open in Editor, Open in External Diff, and Open in Terminal launch external applications configured in Preferences — not in-app panels. Copy actions use the system clipboard. If a tool preference is unconfigured, clicking the action shows a **Toast Notification** directing the user to Preferences.
+- **Preferences** are persisted via **tauri-plugin-store** as a key/value JSON file in the platform config directory.
+- **Tool configuration** in Preferences uses a preset dropdown (Cursor, VS Code, iTerm2, Fork, etc.) plus a "Custom..." option that reveals a free-text path input.
+- **Preferences Window** is structured as a single "External Tools" section in v1 with an extensible section-based layout. A clickable "Configure" button on the toast opens Preferences directly.
 
 ## Open Questions
 
