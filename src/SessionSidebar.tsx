@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
 import "./SessionSidebar.css";
+import "./ContextMenu.css";
 
 function folderNameOf(path: string): string {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -28,6 +29,7 @@ export default function SessionSidebar() {
   );
   const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isResizing = useRef(false);
@@ -180,7 +182,9 @@ export default function SessionSidebar() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (deleteConfirmId) {
+      if (contextMenu) {
+        setContextMenu(null);
+      } else if (deleteConfirmId) {
         setDeleteConfirmId(null);
       } else if (showNewSessionDialog) {
         setShowNewSessionDialog(false);
@@ -190,7 +194,7 @@ export default function SessionSidebar() {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId]);
+  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, contextMenu]);
 
   return (
     <>
@@ -261,6 +265,11 @@ export default function SessionSidebar() {
                       key={s.id}
                       className={`session-row${s.id === activeSessionId ? " active" : ""}${!s.reachable ? " unreachable" : ""}`}
                       onClick={() => handleSelect(s.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({ x: e.clientX, y: e.clientY, sessionId: s.id });
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
@@ -444,6 +453,32 @@ export default function SessionSidebar() {
             </div>
           </div>
         </div>
+      )}
+
+      {contextMenu && (
+        <>
+          <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
+          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Open in Finder
+            </div>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Open in Editor
+            </div>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Open in External Diff
+            </div>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Open in Terminal
+            </div>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Copy SessionID
+            </div>
+            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+              Copy Session Path
+            </div>
+          </div>
+        </>
       )}
     </>
   );
