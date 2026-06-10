@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { Plus } from "lucide-react";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import "./LayoutTabs.css";
+import "./ContextMenu.css";
 
 interface WorkspaceInstance {
   id: string;
