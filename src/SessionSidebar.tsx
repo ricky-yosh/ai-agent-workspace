@@ -4,7 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
 import "./SessionSidebar.css";
 import "./ContextMenu.css";
@@ -236,6 +237,91 @@ export default function SessionSidebar() {
     } catch {
       addToast({ type: "error", message: "Failed to copy to clipboard" });
     }
+    setContextMenu(null);
+  }
+
+  async function getToolPref(key: string): Promise<string> {
+    try {
+      const store = await Store.load("preferences.json");
+      const val = await store.get<string>(key);
+      return val ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  async function launchTool(
+    preferenceKey: string,
+    workingDir: string,
+    toolLabel: string,
+    onUnconfigured?: () => void,
+  ) {
+    const appName = await getToolPref(preferenceKey);
+    if (!appName) {
+      addToast({
+        type: "info",
+        message: `No ${toolLabel} configured`,
+        action: onUnconfigured
+          ? { label: "Configure", onClick: onUnconfigured }
+          : undefined,
+      });
+      return;
+    }
+    try {
+      await openPath(workingDir, appName);
+    } catch {
+      addToast({
+        type: "error",
+        message: `Failed to launch ${appName}. Is it installed?`,
+      });
+    }
+  }
+
+  function openPreferences() {
+    invoke("open_preferences");
+  }
+
+  async function handleOpenInEditor() {
+    if (!contextSession) return;
+    await launchTool(
+      "external_editor",
+      contextSession.working_directory,
+      "editor",
+      openPreferences,
+    );
+    setContextMenu(null);
+  }
+
+  async function handleOpenInDiff() {
+    if (!contextSession) return;
+    const appName = await getToolPref("external_diff_tool");
+    if (appName) {
+      try {
+        await openPath(contextSession.working_directory + "/.git", "Finder");
+      } catch {
+        addToast({
+          type: "info",
+          message: "Not a git repository. Diff tool may not show changes.",
+        });
+      }
+    }
+    await launchTool(
+      "external_diff_tool",
+      contextSession.working_directory,
+      "diff tool",
+      openPreferences,
+    );
+    setContextMenu(null);
+  }
+
+  async function handleOpenInTerminal() {
+    if (!contextSession) return;
+    await launchTool(
+      "external_terminal",
+      contextSession.working_directory,
+      "terminal",
+      openPreferences,
+    );
     setContextMenu(null);
   }
 
@@ -505,13 +591,13 @@ export default function SessionSidebar() {
             <div className="context-menu-item" onClick={handleOpenInFinder}>
               Open in Finder
             </div>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleOpenInEditor}>
               Open in Editor
             </div>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleOpenInDiff}>
               Open in External Diff
             </div>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleOpenInTerminal}>
               Open in Terminal
             </div>
             <div className="context-menu-item" onClick={handleCopySessionId}>
