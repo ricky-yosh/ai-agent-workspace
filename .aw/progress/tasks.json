@@ -31,7 +31,7 @@
     ],
     "effort": "medium",
     "blocked_by": [1],
-    "passes": false
+    "passes": true
   },
   {
     "id": 3,

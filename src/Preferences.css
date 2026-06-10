@@ -1,0 +1,69 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-primary, #1e1e1e);
+  color: var(--text-primary, #cccccc);
+  padding: 24px;
+}
+
+.preferences-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: #ffffff;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tool-label {
+  min-width: 100px;
+  font-size: 14px;
+  color: var(--text-muted, #6e6e6e);
+}
+
+.tool-select {
+  flex: 1;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #3c3c3c);
+  background: var(--bg-secondary, #252526);
+  color: var(--text-primary, #cccccc);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tool-select:focus {
+  outline: none;
+  border-color: var(--accent-color, #0078d4);
+}
+
+.tool-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #3c3c3c);
+  background: var(--bg-secondary, #252526);
+  color: var(--text-primary, #cccccc);
+  font-size: 13px;
+}
+
+.tool-input:focus {
+  outline: none;
+  border-color: var(--accent-color, #0078d4);
+}
+
+.loading {
+  color: var(--text-muted, #6e6e6e);
+  font-size: 14px;
+}
