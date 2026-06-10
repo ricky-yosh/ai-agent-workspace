@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useToast } from "./ToastContext";
 import "./SessionSidebar.css";
 import "./ContextMenu.css";
 
@@ -31,6 +33,7 @@ export default function SessionSidebar() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
+  const { addToast } = useToast();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isResizing = useRef(false);
   const lastWidth = useRef(280);
@@ -195,6 +198,46 @@ export default function SessionSidebar() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, contextMenu]);
+
+  const contextSession = contextMenu
+    ? sessions.find((s) => s.id === contextMenu.sessionId)
+    : null;
+
+  async function handleOpenInFinder() {
+    if (!contextSession) return;
+    const path = contextSession.working_directory;
+    try {
+      await revealItemInDir(path);
+    } catch {
+      const parent = path.substring(0, path.lastIndexOf("/")) || "/";
+      try {
+        await revealItemInDir(parent);
+      } catch {
+        addToast({ type: "error", message: "Failed to open Finder" });
+      }
+    }
+    setContextMenu(null);
+  }
+
+  async function handleCopySessionId() {
+    if (!contextSession) return;
+    try {
+      await navigator.clipboard.writeText(contextSession.id);
+    } catch {
+      addToast({ type: "error", message: "Failed to copy to clipboard" });
+    }
+    setContextMenu(null);
+  }
+
+  async function handleCopySessionPath() {
+    if (!contextSession) return;
+    try {
+      await navigator.clipboard.writeText(contextSession.working_directory);
+    } catch {
+      addToast({ type: "error", message: "Failed to copy to clipboard" });
+    }
+    setContextMenu(null);
+  }
 
   return (
     <>
@@ -459,7 +502,7 @@ export default function SessionSidebar() {
         <>
           <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleOpenInFinder}>
               Open in Finder
             </div>
             <div className="context-menu-item" onClick={() => setContextMenu(null)}>
@@ -471,10 +514,10 @@ export default function SessionSidebar() {
             <div className="context-menu-item" onClick={() => setContextMenu(null)}>
               Open in Terminal
             </div>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleCopySessionId}>
               Copy SessionID
             </div>
-            <div className="context-menu-item" onClick={() => setContextMenu(null)}>
+            <div className="context-menu-item" onClick={handleCopySessionPath}>
               Copy Session Path
             </div>
           </div>

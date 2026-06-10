@@ -82,7 +82,7 @@
     ],
     "effort": "medium",
     "blocked_by": [3, 4],
-    "passes": false
+    "passes": true
   },
   {
     "id": 6,
