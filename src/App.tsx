@@ -8,8 +8,11 @@ import LayoutTabs from "./LayoutTabs";
 import ManageTemplatesModal from "./ManageTemplatesModal";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import ShortcutsModal from "./ShortcutsModal";
+import { ToastProvider } from "./ToastContext";
+import { ToastContainer } from "./Toast";
 import "./BlankPanel";
 import "./App.css";
+import "./Toast.css";
 
 interface WorkspaceInstance {
   id: string;
@@ -401,13 +404,16 @@ function App() {
   const toggleZoomRef = useRef<(() => void) | null>(null);
 
   return (
-    <SessionProvider>
-      <div className="app-layout">
-        <SessionSidebar />
-        <MainArea toggleZoomRef={toggleZoomRef} />
-      </div>
-      <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} />
-    </SessionProvider>
+    <ToastProvider>
+      <SessionProvider>
+        <div className="app-layout">
+          <SessionSidebar />
+          <MainArea toggleZoomRef={toggleZoomRef} />
+        </div>
+        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} />
+      </SessionProvider>
+      <ToastContainer />
+    </ToastProvider>
   );
 }
 
