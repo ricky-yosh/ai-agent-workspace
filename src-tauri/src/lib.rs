@@ -257,6 +257,18 @@ fn open_preferences(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_in_app(path: String, app_name: String) -> Result<(), String> {
+    use std::process::Command;
+    Command::new("/usr/bin/open")
+        .arg("-a")
+        .arg(&app_name)
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("Failed to launch {}: {}", app_name, e))?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::new().expect("Failed to initialize app state");
@@ -406,6 +418,7 @@ pub fn run() {
             update_workspace_tree,
             reset_workspace_to_template,
             open_preferences,
+            open_in_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

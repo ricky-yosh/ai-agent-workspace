@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
-import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
 import "./SessionSidebar.css";
@@ -272,11 +272,11 @@ export default function SessionSidebar() {
       return;
     }
     try {
-      console.log(`[launchTool] Calling openPath("${workingDir}", "${appName}")`);
-      await openPath(workingDir, appName);
-      console.log(`[launchTool] openPath succeeded`);
+      console.log(`[launchTool] Calling invoke("open_in_app", { path: "${workingDir}", appName: "${appName}" })`);
+      await invoke("open_in_app", { path: workingDir, appName });
+      console.log(`[launchTool] invoke succeeded`);
     } catch (err) {
-      console.error(`[launchTool] openPath failed:`, err);
+      console.error(`[launchTool] invoke failed:`, err);
       addToast({
         type: "error",
         message: `Failed to launch ${appName}. Is it installed?`,
@@ -306,7 +306,7 @@ export default function SessionSidebar() {
     const appName = await getToolPref("external_diff_tool");
     if (appName) {
       try {
-        await openPath(contextSession.working_directory + "/.git", "Finder");
+        await revealItemInDir(contextSession.working_directory + "/.git");
       } catch {
         addToast({
           type: "info",
