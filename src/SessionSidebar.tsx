@@ -303,16 +303,12 @@ export default function SessionSidebar() {
   async function handleOpenInDiff() {
     console.log("[ctx-menu] handleOpenInDiff called, contextSession:", contextSession?.id);
     if (!contextSession) return;
-    const appName = await getToolPref("external_diff_tool");
-    if (appName) {
-      try {
-        await revealItemInDir(contextSession.working_directory + "/.git");
-      } catch {
-        addToast({
-          type: "info",
-          message: "Not a git repository. Diff tool may not show changes.",
-        });
-      }
+    const isGit = await invoke<boolean>("is_git_repo", { path: contextSession.working_directory });
+    if (!isGit) {
+      addToast({
+        type: "info",
+        message: "Not a git repository. Diff tool may not show changes.",
+      });
     }
     await launchTool(
       "external_diff_tool",

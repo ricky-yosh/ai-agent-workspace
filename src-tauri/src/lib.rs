@@ -269,6 +269,11 @@ fn open_in_app(path: String, app_name: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn is_git_repo(path: String) -> bool {
+    std::path::Path::new(&path).join(".git").exists()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::new().expect("Failed to initialize app state");
@@ -419,6 +424,7 @@ pub fn run() {
             reset_workspace_to_template,
             open_preferences,
             open_in_app,
+            is_git_repo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
