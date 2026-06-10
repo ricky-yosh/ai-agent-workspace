@@ -205,6 +205,7 @@ export default function SessionSidebar() {
     : null;
 
   async function handleOpenInFinder() {
+    console.log("[ctx-menu] handleOpenInFinder called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     const path = contextSession.working_directory;
     try {
@@ -288,6 +289,7 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInEditor() {
+    console.log("[ctx-menu] handleOpenInEditor called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     await launchTool(
       "external_editor",
@@ -299,6 +301,7 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInDiff() {
+    console.log("[ctx-menu] handleOpenInDiff called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     const appName = await getToolPref("external_diff_tool");
     if (appName) {
@@ -321,6 +324,7 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInTerminal() {
+    console.log("[ctx-menu] handleOpenInTerminal called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     await launchTool(
       "external_terminal",
