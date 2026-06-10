@@ -33,6 +33,12 @@
   outline: none;
 }
 
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 .split-layout-panel-wrapper {
   width: 100%;
   height: 100%;

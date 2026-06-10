@@ -606,6 +606,7 @@ export default function SessionSidebar() {
             <div className="context-menu-item" onClick={handleOpenInTerminal}>
               Open in Terminal
             </div>
+            <div className="context-menu-divider" />
             <div className="context-menu-item" onClick={handleCopySessionId}>
               Copy SessionID
             </div>
