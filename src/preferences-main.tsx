@@ -14,6 +14,7 @@ const EDITOR_PRESETS: Preset[] = [
   { label: "Windsurf", bundleName: "Windsurf" },
   { label: "VS Code Insiders", bundleName: "Visual Studio Code - Insiders" },
   { label: "Zed", bundleName: "Zed" },
+  { label: "Xcode", bundleName: "Xcode" },
 ];
 
 const DIFF_TOOL_PRESETS: Preset[] = [
@@ -27,6 +28,7 @@ const TERMINAL_PRESETS: Preset[] = [
   { label: "iTerm2", bundleName: "iTerm" },
   { label: "Warp", bundleName: "Warp" },
   { label: "Terminal", bundleName: "Terminal" },
+  { label: "Ghostty", bundleName: "Ghostty" },
   { label: "Hyper", bundleName: "Hyper" },
 ];
 
@@ -93,16 +95,20 @@ interface ToolRowProps {
 }
 
 function ToolRow({ label, presets, value, onChange }: ToolRowProps) {
+  const [customMode, setCustomMode] = useState(false);
+
   const isCustom =
-    value !== "" && !presets.some((p) => p.bundleName === value);
+    customMode || (value !== "" && !presets.some((p) => p.bundleName === value));
 
   const selectValue = isCustom ? CUSTOM_SENTINEL : value;
 
   const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selected = e.target.value;
     if (selected === CUSTOM_SENTINEL) {
+      setCustomMode(true);
       onChange("");
     } else {
+      setCustomMode(false);
       onChange(selected);
     }
   };
