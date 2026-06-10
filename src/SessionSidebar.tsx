@@ -244,8 +244,10 @@ export default function SessionSidebar() {
     try {
       const store = await Store.load("preferences.json");
       const val = await store.get<string>(key);
+      console.log(`[getToolPref] key="${key}", value="${val}"`);
       return val ?? "";
-    } catch {
+    } catch (err) {
+      console.error(`[getToolPref] Failed to read "${key}":`, err);
       return "";
     }
   }
@@ -257,6 +259,7 @@ export default function SessionSidebar() {
     onUnconfigured?: () => void,
   ) {
     const appName = await getToolPref(preferenceKey);
+    console.log(`[launchTool] ${toolLabel}: appName="${appName}", workingDir="${workingDir}"`);
     if (!appName) {
       addToast({
         type: "info",
@@ -268,8 +271,11 @@ export default function SessionSidebar() {
       return;
     }
     try {
+      console.log(`[launchTool] Calling openPath("${workingDir}", "${appName}")`);
       await openPath(workingDir, appName);
-    } catch {
+      console.log(`[launchTool] openPath succeeded`);
+    } catch (err) {
+      console.error(`[launchTool] openPath failed:`, err);
       addToast({
         type: "error",
         message: `Failed to launch ${appName}. Is it installed?`,
