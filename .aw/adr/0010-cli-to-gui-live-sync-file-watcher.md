@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (amends ADR 0002's "no file watchers needed" consequence)
 
 ## Context
 
