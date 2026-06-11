@@ -17,6 +17,8 @@ pub struct McpHandler {
     pub layouts: Arc<Mutex<LayoutStore>>,
     pub on_session_changed: Option<Arc<dyn Fn() + Send + Sync>>,
     pub on_layouts_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    pub resolved_session_id: Option<String>,
+    pub resolution_source: String,
 }
 
 impl ServerHandler for McpHandler {
@@ -33,6 +35,7 @@ impl ServerHandler for McpHandler {
 
 impl McpHandler {
     rmcp::tool_box!(McpHandler {
+        current_session_info,
         session_list,
         session_create,
         session_rename,
@@ -250,14 +253,32 @@ impl McpHandler {
         }
     }
 
-    fn require_session_id() -> Result<String, rmcp::Error> {
+    fn require_session_id(&self) -> Result<String, rmcp::Error> {
+        if let Some(ref id) = self.resolved_session_id {
+            return Ok(id.clone());
+        }
         std::env::var("AIAW_SESSION_ID")
             .map_err(|_| rmcp::Error::invalid_params("AIAW_SESSION_ID environment variable is not set. Workspace tools require a session context.", None))
     }
 
+    #[tool(description = "Show the current session info including ID, name, working directory, and how it was resolved")]
+    async fn current_session_info(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let sessions = self.sessions.lock().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let session = sessions.get_by_id(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let info = serde_json::json!({
+            "session_id": session.id,
+            "name": session.name,
+            "working_directory": session.working_directory,
+            "source": self.resolution_source,
+        });
+        Ok(CallToolResult::success(vec![Content::json(&info)?]))
+    }
+
     #[tool(description = "List workspace instances for the current session")]
     async fn workspace_list(&self) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceList { session_id }, &state) {
             Ok(CommandResult::Workspaces(workspaces)) =>
@@ -269,7 +290,7 @@ impl McpHandler {
 
     #[tool(description = "Get the active workspace instance, or null when none is active")]
     async fn workspace_get_active(&self) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceGetActive { session_id }, &state) {
             Ok(CommandResult::Workspace(ws)) =>
@@ -287,7 +308,7 @@ impl McpHandler {
         #[tool(param)]
         template_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceAdd { session_id, template_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
@@ -305,7 +326,7 @@ impl McpHandler {
         #[tool(param)]
         workspace_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRemove { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
@@ -325,7 +346,7 @@ impl McpHandler {
         #[tool(param)]
         new_name: String,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state) {
             Ok(CommandResult::Unit(())) => {
@@ -343,7 +364,7 @@ impl McpHandler {
         #[tool(param)]
         workspace_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceSetActive { session_id, workspace_id }, &state) {
             Ok(CommandResult::Unit(())) => {
@@ -363,7 +384,7 @@ impl McpHandler {
         #[tool(param)]
         tree: LayoutTree,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state) {
             Ok(CommandResult::Unit(())) => {
@@ -381,7 +402,7 @@ impl McpHandler {
         #[tool(param)]
         workspace_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = Self::require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
         match execute(Command::WorkspaceReset { session_id, workspace_id }, &state) {
             Ok(CommandResult::Workspace(ws)) => {
@@ -411,6 +432,8 @@ mod tests {
             layouts: Arc::new(Mutex::new(layouts)),
             on_session_changed: None,
             on_layouts_changed: None,
+            resolved_session_id: None,
+            resolution_source: "env-var".to_string(),
         };
         (handler, dir)
     }
@@ -559,6 +582,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_requires_session_id() {
+        std::env::remove_var("AIAW_SESSION_ID");
         let (handler, _dir) = setup();
         let result = handler.workspace_list().await;
         assert!(result.is_err());
@@ -569,6 +593,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_get_active_requires_session_id() {
+        std::env::remove_var("AIAW_SESSION_ID");
         let (handler, _dir) = setup();
         let result = handler.workspace_get_active().await;
         assert!(result.is_err());
@@ -640,6 +665,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         layouts,
                         on_session_changed,
                         on_layouts_changed,
+                        resolved_session_id: None,
+                        resolution_source: "env-var".to_string(),
                     };
                     match serve_server(handler, rmcp::transport::io::stdio()).await {
                         Ok(running) => {

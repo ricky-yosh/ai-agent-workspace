@@ -6,5 +6,9 @@ edition = "2021"
 [dependencies]
 ai-agent-workspace-mcp = { path = "../mcp", default-features = false }
 ai-agent-workspace-core = { path = "../core" }
+dirs = "6"
 rmcp = { version = "0.1", features = ["transport-io"] }
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"

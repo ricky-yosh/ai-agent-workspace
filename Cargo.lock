@@ -89,7 +89,9 @@ version = "0.1.0"
 dependencies = [
  "ai-agent-workspace-core",
  "ai-agent-workspace-mcp",
+ "dirs",
  "rmcp",
+ "tempfile",
  "tokio",
 ]
 

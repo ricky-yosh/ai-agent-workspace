@@ -103,6 +103,14 @@ impl SessionRegistry {
         })
     }
 
+    pub fn new_with_sessions(file_path: PathBuf, sessions: Vec<Session>) -> Self {
+        SessionRegistry {
+            file_path,
+            sessions,
+            suppress_watcher: AtomicBool::new(false),
+        }
+    }
+
     pub fn create(&mut self, working_dir: &str, name: &str) -> Result<Session> {
         let now = now_iso();
         let session = Session {
