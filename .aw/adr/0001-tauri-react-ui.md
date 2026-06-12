@@ -15,7 +15,7 @@ The application needs a cross-platform desktop UI with a node-graph canvas for t
 
 Use **Tauri + React with React Flow** for the v1 desktop application.
 
-The Rust backend remains the core: the Command Layer, event store, session management, CLI, and both MCP servers all live in Rust. Tauri exposes these to the React frontend via its IPC bridge. React Flow handles the whiteboard canvas rendering. The terminal panel uses xterm.js. The diff viewer and markdown renderer use standard React libraries.
+The Rust backend remains the core: the Command Layer, event store, session management, and both MCP servers all live in Rust. Tauri exposes these to the React frontend via its IPC bridge. React Flow handles the whiteboard canvas rendering. The terminal panel uses xterm.js. The diff viewer and markdown renderer use standard React libraries.
 
 ## Consequences
 
