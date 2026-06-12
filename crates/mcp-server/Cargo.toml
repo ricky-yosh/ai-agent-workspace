@@ -1,5 +1,5 @@
 [package]
-name = "ai-agent-workspace-mcp-server"
+name = "aiaw-mcp-server"
 version = "0.1.0"
 edition = "2021"
 

@@ -7,7 +7,7 @@ use tempfile::TempDir;
 fn binary_path() -> std::path::PathBuf {
     std::env::current_dir()
         .unwrap()
-        .join("../../target/debug/ai-agent-workspace-mcp-server")
+        .join("../../target/debug/aiaw-mcp-server")
 }
 
 fn create_fixture(sessions_json: &str) -> TempDir {
