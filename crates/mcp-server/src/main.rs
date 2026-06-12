@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use ai_agent_workspace_mcp::McpHandler;
+use ai_agent_workspace_mcp::{McpHandler, session_resolution};
 use ai_agent_workspace_core::{SessionRegistry, LayoutStore};
 use rmcp::serve_server;
-
-mod session_resolution;
 
 #[tokio::main]
 async fn main() {
@@ -39,7 +37,8 @@ async fn main() {
         }
         Err(e) => {
             eprintln!("[mcp-server] {}", e);
-            std::process::exit(1);
+            eprintln!("[mcp-server] Session-scoped tools (workspace_*) will be unavailable until a session is resolved.");
+            (None, "unresolved".to_string())
         }
     };
 

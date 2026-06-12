@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -17,10 +18,11 @@ fn create_fixture(sessions_json: &str) -> TempDir {
     dir
 }
 
-fn read_stderr(child: &mut std::process::Child) -> String {
-    let stderr = child.stderr.take().unwrap();
-    let reader = BufReader::new(stderr);
-    reader.lines().map(|l| l.unwrap()).collect::<Vec<_>>().join("\n")
+fn read_stderr_file(path: &std::path::Path) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_) => String::new(),
+    }
 }
 
 #[test]
@@ -162,21 +164,31 @@ fn test_startup_no_match() {
     }"#);
 
     let tmp = std::env::temp_dir();
+    let stderr_file = fixture.path().join("stderr.txt");
+    let stderr_fd = File::create(&stderr_file).unwrap();
+
     let mut child = Command::new(&binary_path())
         .env("AIAW_SESSIONS_PATH", fixture.path().join("sessions.json"))
         .current_dir(&tmp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(stderr_fd)
         .spawn()
         .unwrap();
 
-    let status = child.wait().unwrap();
-    assert!(!status.success(), "Expected non-zero exit for no match");
+    thread::sleep(Duration::from_millis(500));
 
-    let stderr = read_stderr(&mut child);
+    match child.try_wait().unwrap() {
+        Some(status) => panic!("Server exited with status {:?} — should stay alive without session", status),
+        None => eprintln!("Server alive without resolved session"),
+    }
+
+    let stderr = read_stderr_file(&stderr_file);
     eprintln!("stderr: {}", stderr);
     assert!(stderr.contains("No session found"), "Expected 'No session found' in stderr, got: {}", stderr);
+
+    drop(child.stdin.take());
+    let _ = child.wait();
 }
 
 #[test]
@@ -211,21 +223,31 @@ fn test_startup_multiple_matches() {
         tmp_str, tmp_str
     ));
 
+    let stderr_file = fixture.path().join("stderr.txt");
+    let stderr_fd = File::create(&stderr_file).unwrap();
+
     let mut child = Command::new(&binary_path())
         .env("AIAW_SESSIONS_PATH", fixture.path().join("sessions.json"))
         .current_dir(&tmp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(stderr_fd)
         .spawn()
         .unwrap();
 
-    let status = child.wait().unwrap();
-    assert!(!status.success(), "Expected non-zero exit for multiple matches");
+    thread::sleep(Duration::from_millis(500));
 
-    let stderr = read_stderr(&mut child);
+    match child.try_wait().unwrap() {
+        Some(status) => panic!("Server exited with status {:?} — should stay alive with ambiguous sessions", status),
+        None => eprintln!("Server alive with ambiguous session resolution"),
+    }
+
+    let stderr = read_stderr_file(&stderr_file);
     eprintln!("stderr: {}", stderr);
     assert!(stderr.contains("Multiple sessions"), "Expected 'Multiple sessions' in stderr, got: {}", stderr);
     assert!(stderr.contains("Alpha"), "Expected candidate name 'Alpha' in stderr");
     assert!(stderr.contains("Beta"), "Expected candidate name 'Beta' in stderr");
+
+    drop(child.stdin.take());
+    let _ = child.wait();
 }

@@ -1,4 +1,5 @@
 pub mod error;
+pub mod session_resolution;
 
 use std::sync::{Arc, Mutex};
 use rmcp::{ServerHandler, tool};
@@ -257,8 +258,23 @@ impl McpHandler {
         if let Some(ref id) = self.resolved_session_id {
             return Ok(id.clone());
         }
-        std::env::var("AIAW_SESSION_ID")
-            .map_err(|_| rmcp::Error::invalid_params("AIAW_SESSION_ID environment variable is not set. Workspace tools require a session context.", None))
+        if let Ok(id) = std::env::var("AIAW_SESSION_ID") {
+            return Ok(id);
+        }
+        match std::env::current_dir() {
+            Ok(cwd) => {
+                match self.sessions.lock() {
+                    Ok(registry) => {
+                        match crate::session_resolution::resolve_session_id(None, &cwd, &registry) {
+                            Ok(id) => Ok(id),
+                            Err(e) => Err(rmcp::Error::invalid_params(format!("{}", e), None)),
+                        }
+                    }
+                    Err(e) => Err(rmcp::Error::internal_error(e.to_string(), None)),
+                }
+            }
+            Err(e) => Err(rmcp::Error::internal_error(format!("Cannot determine current directory: {}", e), None)),
+        }
     }
 
     #[tool(description = "Show the current session info including ID, name, working directory, and how it was resolved")]
