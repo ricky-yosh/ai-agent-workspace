@@ -582,8 +582,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_requires_session_id() {
+        let (mut handler, _dir) = setup();
+        handler.resolved_session_id = None;
         std::env::remove_var("AIAW_SESSION_ID");
-        let (handler, _dir) = setup();
         let result = handler.workspace_list().await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -593,8 +594,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_get_active_requires_session_id() {
+        let (mut handler, _dir) = setup();
+        handler.resolved_session_id = None;
         std::env::remove_var("AIAW_SESSION_ID");
-        let (handler, _dir) = setup();
         let result = handler.workspace_get_active().await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code.0, -32602);
@@ -602,7 +604,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_workspace_add_and_list_with_session() {
-        let (handler, _dir) = setup();
+        let (mut handler, _dir) = setup();
 
         let create_result = handler.session_create("/tmp/ws_test".into(), "WS Test".into()).await.unwrap();
         let create_text = extract_text(create_result);
@@ -610,7 +612,7 @@ mod tests {
         let session: serde_json::Value = serde_json::from_str(&create_text).unwrap();
         let session_id = session["id"].as_str().unwrap().to_string();
 
-        std::env::set_var("AIAW_SESSION_ID", &session_id);
+        handler.resolved_session_id = Some(session_id);
 
         let tree = LayoutTree {
             tree: ai_agent_workspace_core::LayoutNode::Panel {
@@ -633,8 +635,6 @@ mod tests {
         let active_result = handler.workspace_get_active().await.unwrap();
         let active_text = extract_text(active_result);
         assert!(active_text.contains("WS Template"));
-
-        std::env::remove_var("AIAW_SESSION_ID");
     }
 }
 
