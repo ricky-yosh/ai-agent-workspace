@@ -274,6 +274,54 @@ fn is_git_repo(path: String) -> bool {
     std::path::Path::new(&path).join(".git").exists()
 }
 
+const CLI_NAME: &str = "aiaw-mcp-server";
+const CLI_INSTALL_PATH: &str = "/usr/local/bin/aiaw-mcp-server";
+
+fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
+    let target = std::path::Path::new(CLI_INSTALL_PATH);
+
+    // Already installed and valid — nothing to do
+    if target.exists() || target.is_symlink() {
+        if let Ok(link) = std::fs::read_link(target) {
+            if link.exists() {
+                println!("[cli] {} already installed at {}", CLI_NAME, CLI_INSTALL_PATH);
+                return;
+            }
+        }
+    }
+
+    // Locate the binary inside the .app bundle's Resources/
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("[cli] Cannot locate app binary: {}", e);
+            return;
+        }
+    };
+    let resource = exe
+        .parent().and_then(|p| p.parent()) // MacOS/ → Contents/
+        .map(|p| p.join("Resources").join(CLI_NAME));
+
+    let resource = match resource {
+        Some(r) if r.exists() => r,
+        _ => {
+            println!("[cli] {} not found in app bundle — skipping CLI install (dev mode?)", CLI_NAME);
+            return;
+        }
+    };
+
+    // Attempt symlink
+    match std::os::unix::fs::symlink(&resource, target) {
+        Ok(()) => {
+            println!("[cli] Installed {} → {}", CLI_NAME, resource.display());
+        }
+        Err(e) => {
+            eprintln!("[cli] Failed to install {}: {}", CLI_NAME, e);
+            eprintln!("[cli] Manual install: sudo ln -sf \"{}\" {}", resource.display(), CLI_INSTALL_PATH);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::new().expect("Failed to initialize app state");
@@ -300,6 +348,9 @@ pub fn run() {
         .manage(watcher_state)
         .setup(|app| {
             let handle = app.handle().clone();
+
+            ensure_cli_installed(&handle);
+
             let state = app.state::<AppState>();
             let sessions_arc = state.sessions.clone();
             let layouts_arc = state.layouts.clone();
