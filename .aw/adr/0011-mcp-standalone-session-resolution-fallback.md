@@ -24,7 +24,7 @@ When `aiaw-mcp-server` (standalone mode only) starts without `AIAW_SESSION_ID`, 
 
 Resolution happens once at process startup, before any tools are served — failing fast with a clear, actionable error rather than guessing.
 
-This applies only to the standalone `aiaw-mcp-server` binary. Embedded mode has direct access to the active Session via `AppState` and performs no resolution. The `aiaws` CLI is unaffected — it takes explicit Session arguments per ADR 0008's command style.
+This applies only to the standalone `aiaw-mcp-server` binary. Embedded mode has direct access to the active Session via `AppState` and performs no resolution.
 
 ## Consequences
 

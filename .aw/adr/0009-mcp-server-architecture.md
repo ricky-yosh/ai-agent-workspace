@@ -95,7 +95,7 @@ When the app spawns a Terminal Panel's PTY for a Session, it injects an `AIAW_SE
 
 ### Crate structure
 
-Extends the workspace structure from ADR 0007 (`core`, `commands`, `cli`) with two additional crates:
+The MCP crates extend the workspace:
 
 ```
 crates/mcp/          Library crate (handler + optional Tauri plugin)

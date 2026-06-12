@@ -14,7 +14,7 @@ Wire `aiaw-mcp-server`'s startup sequence to call the resolution function from i
 - Call `resolve_session_id(env_session_id, cwd, &registry)`.
 - On `Ok(session_id)`, hold onto the resolved Session ID for the lifetime of the process (to be consumed by issue 03).
 - On `Err`:
-  - "no match" → print a message to stderr explaining no Session was found for this directory, and that the user should create one (`aiaws session create`) or set `AIAW_SESSION_ID`. Exit non-zero. No tools are served.
+  - "no match" → print a message to stderr explaining no Session was found for this directory, and that the user should create one or set `AIAW_SESSION_ID`. Exit non-zero. No tools are served.
   - "multiple matches" → print a message to stderr listing the candidate Session IDs/names and instructing the user to set `AIAW_SESSION_ID` to disambiguate. Exit non-zero. No tools are served.
 
 When `AIAW_SESSION_ID` is set, this resolution step must be a no-op pass-through — startup behavior is unchanged from before this issue.

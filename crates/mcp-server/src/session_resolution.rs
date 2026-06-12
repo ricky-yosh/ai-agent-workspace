@@ -17,7 +17,7 @@ impl std::fmt::Display for SessionResolutionError {
             SessionResolutionError::NoMatch { searched_cwd } => {
                 write!(
                     f,
-                    "No session found for directory '{}'. Create a session with `aiaws session create` or set AIAW_SESSION_ID.",
+                    "No session found for directory '{}'. Create a session in the AI Agent Workspace app or set AIAW_SESSION_ID.",
                     searched_cwd.display()
                 )
             }
@@ -202,7 +202,7 @@ mod tests {
         };
         let msg = format!("{}", err);
         assert!(msg.contains("/some/path"));
-        assert!(msg.contains("aiaws session create"));
+        assert!(msg.contains("AI Agent Workspace app"));
     }
 
     #[test]
