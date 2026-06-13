@@ -38,7 +38,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refreshSessions = useCallback(async () => {
     try {
       const list = await invoke<SessionSummary[]>("list_sessions");
-      console.log("[SessionContext] refreshSessions: got", list.length, "sessions:", list.map(s => s.name));
       setSessions(list);
     } catch (e) {
       console.error("[SessionContext] Failed to list sessions", e);
@@ -51,9 +50,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refreshSessions]);
 
   useEffect(() => {
-    console.log("[SessionContext] Setting up sessions-changed listener");
     const unlisten = listen("sessions-changed", () => {
-      console.log("[SessionContext] Received sessions-changed event, refreshing...");
       refreshSessions();
     });
     return () => { unlisten.then((fn) => fn()); };

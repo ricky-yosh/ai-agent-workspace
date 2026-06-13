@@ -207,7 +207,6 @@ export default function SessionSidebar() {
     : null;
 
   async function handleOpenInFinder() {
-    console.log("[ctx-menu] handleOpenInFinder called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     const path = contextSession.working_directory;
     try {
@@ -247,7 +246,6 @@ export default function SessionSidebar() {
     try {
       const store = await Store.load("preferences.json");
       const val = await store.get<string>(key);
-      console.log(`[getToolPref] key="${key}", value="${val}"`);
       return val ?? "";
     } catch (err) {
       console.error(`[getToolPref] Failed to read "${key}":`, err);
@@ -262,7 +260,6 @@ export default function SessionSidebar() {
     onUnconfigured?: () => void,
   ) {
     const appName = await getToolPref(preferenceKey);
-    console.log(`[launchTool] ${toolLabel}: appName="${appName}", workingDir="${workingDir}"`);
     if (!appName) {
       addToast({
         type: "info",
@@ -274,9 +271,7 @@ export default function SessionSidebar() {
       return;
     }
     try {
-      console.log(`[launchTool] Calling invoke("open_in_app", { path: "${workingDir}", appName: "${appName}" })`);
       await invoke("open_in_app", { path: workingDir, appName });
-      console.log(`[launchTool] invoke succeeded`);
     } catch (err) {
       console.error(`[launchTool] invoke failed:`, err);
       addToast({
@@ -291,7 +286,6 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInEditor() {
-    console.log("[ctx-menu] handleOpenInEditor called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     await launchTool(
       "external_editor",
@@ -303,7 +297,6 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInDiff() {
-    console.log("[ctx-menu] handleOpenInDiff called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     const isGit = await invoke<boolean>("is_git_repo", { path: contextSession.working_directory });
     if (!isGit) {
@@ -322,7 +315,6 @@ export default function SessionSidebar() {
   }
 
   async function handleOpenInTerminal() {
-    console.log("[ctx-menu] handleOpenInTerminal called, contextSession:", contextSession?.id);
     if (!contextSession) return;
     await launchTool(
       "external_terminal",
