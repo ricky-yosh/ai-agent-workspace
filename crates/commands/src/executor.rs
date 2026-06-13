@@ -41,11 +41,15 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
                 let mut store = state.layouts.lock()
                     .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
                 let layouts = store.list_layouts()?;
-                let default_tree = LayoutStore::default_layout();
                 let (template_id, template_name, default_tree) = if let Some(general) = layouts.iter().find(|l| l.name == "General") {
                     (general.id.clone(), general.name.clone(), general.tree.clone())
                 } else {
-                    let layout = store.save_layout("General", default_tree, true)?;
+                    let terminal_tree = LayoutTree {
+                        tree: LayoutNode::Panel {
+                            panel_type: "terminal".into(),
+                        },
+                    };
+                    let layout = store.save_layout("General", terminal_tree, true)?;
                     store.save()?;
                     (layout.id, layout.name, layout.tree)
                 };
@@ -173,7 +177,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
     }
 }
 
-use ai_agent_workspace_core::LayoutStore;
+use ai_agent_workspace_core::{LayoutNode, LayoutTree};
 
 #[cfg(test)]
 mod tests {
