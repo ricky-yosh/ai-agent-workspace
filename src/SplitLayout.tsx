@@ -380,7 +380,7 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
         onLayoutChange(updatedTree);
       }
 
-      const splitKey = `${JSON.stringify(path)}-${ratio}`;
+      const splitKey = JSON.stringify(path);
       const isActiveJoinPanel =
         joinState && pathsEqual(joinState.splitPath, path);
 
