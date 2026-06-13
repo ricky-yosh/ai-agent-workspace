@@ -10,6 +10,6 @@ function BlankPanel({ panelType }: PanelProps) {
   );
 }
 
-registerPanel("blank", BlankPanel);
+registerPanel("blank", "Blank", BlankPanel);
 
 export default BlankPanel;
