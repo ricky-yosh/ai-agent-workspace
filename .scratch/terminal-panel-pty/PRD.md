@@ -32,33 +32,47 @@ Add a "Terminal" panel type that runs a real PTY (pseudoterminal) inside a split
 ## Implementation Decisions
 
 - PTY backend: `portable-pty` crate (from wezterm). Spawns a login shell (`$SHELL -l`) or the user's configured `pty_command`.
-- Frontend rendering: `@xterm/xterm` with addons `@xterm/addon-fit`, `@xterm/addon-webgl`, `@xterm/addon-web-links`, `@xterm/addon-unicode11`.
-- IPC pattern: Tauri commands for writes (`pty_write(ptyId, data)`), Tauri events for reads (`pty-output` event with `{ ptyId, data }`). xterm.js `onData` → `invoke("pty_write")`. Rust reads PTY master in a background thread → `app.emit("pty-output")`.
-- PTY identification: each PTY gets a generated UUID. The frontend stores it in React state on the `TerminalPanel` component. All subsequent commands reference this ID.
-- PTY lifecycle: spawns when a panel is switched to `"terminal"`, persists through tab/session switches (process lives in background), auto-restarts on process exit (`exit` = reset), kills only when the panel node is removed from the layout tree OR switched to another type.
+- Frontend rendering: `@xterm/xterm` with addons `@xterm/addon-fit`, `@xterm/addon-webgl`, `@xterm/addon-web-links`, `@xterm/addon-unicode11`. xterm.js opens immediately on mount with a "connecting…" overlay; the overlay fades once the PTY is alive and output starts flowing.
+- IPC pattern: Tauri commands (`pty_spawn`, `pty_write`, `pty_resize`) and Tauri events (`pty-output`, `pty-restart`). Frontend subscribes to global events and filters by `ptyId`.
+- Tauri command API:
+  - `pty_spawn(workspace_id, path)` → `{ ptyId }` — idempotent: if a PTY already exists at (workspace, path), returns the existing UUID (adoption). Otherwise spawns a new one. Backend reads `pty_command` from Preferences, injects `AIAW_SESSION_ID`, sets cwd from the session's workingDirectory.
+  - `pty_write(ptyId, data)` — writes input to the PTY. xterm.js `onData` → `invoke("pty_write")`.
+  - `pty_resize(ptyId, cols, rows)` — resizes the PTY. Triggered by ResizeObserver with 100ms debounce.
+  - No `pty_kill` command — backend handles cleanup via tree diff on `update_workspace_tree`.
+- Tauri events:
+  - `pty-output { ptyId, data }` — output from PTY. Rust reads PTY master in a background thread → `app.emit("pty-output")`. Frontend filters by ptyId → `terminal.write(data)`.
+  - `pty-restart { oldPtyId, newPtyId, path }` — emitted when the backend auto-restarts a PTY on process exit. Visible panels show a "Process exited. Restarting…" message and switch to the new UUID. Hidden panels handle it silently (re-adopt on re-mount via idempotent `pty_spawn`).
+- PTY mapping: backend-owned `HashMap<(WorkspaceId, PanelPath), PtyHandle>` managed as Tauri state. No `pty_id` field in the layout tree — the tree remains purely structural. The panel's tree path (e.g. `[0, 1, 0]`) is the stable identifier; maintained by SplitLayout, provided to panels via React Context (`PanelContext`).
+- PTY lifecycle:
+  - **Spawn**: when TerminalPanel mounts, `pty_spawn(workspace_id, path)` is called. Idempotent — safe to call on every mount (initial or re-mount after tab switch).
+  - **Persist**: PTY process stays alive when the panel becomes invisible (tab/session switch). TerminalPanel unmounts on tab switch; PTY survives in the backend store. Re-mount → `pty_spawn` → idempotent adoption returns the same UUID.
+  - **Restart**: process exit triggers backend-driven auto-restart. Backend spawns a new PTY with a new UUID and updates its internal mapping. Emits `pty-restart` for the frontend to switch its event stream. If the panel is hidden, no event is received — but the mapping is already updated, so re-mount adoption gets the new UUID.
+  - **Cleanup**: when the frontend calls `update_workspace_tree`, the backend extracts all terminal panel paths from the new tree, diffs against its internal PTY mapping, and kills any PTY whose (workspace, path) is absent from the new tree. Handles both "panel removed via join" and "panel type changed to non-terminal." The PTY is bound to (workspace, path) — it only truly stops when its path disappears from the tree.
+- Panel context: `SplitLayout` provides `workspaceId` and `path` via React Context (`PanelContext`) when rendering each panel. TerminalPanel reads from context — no `PanelProps` expansion needed. Other panel types ignore the context.
 - Resize handling: `ResizeObserver` on the terminal container element. Calculates `cols`/`rows` from element dimensions and font metrics. Calls `pty_resize(ptyId, cols, rows)` with 100ms debounce.
-- Process exit: auto-restart immediately. No overlay, no confirmation — just respawn the same command.
-- Environment: inherit full parent environment + inject `AIAW_SESSION_ID` + `pwd` set to Session's workingDirectory.
+- Environment: inherit full parent environment + inject `AIAW_SESSION_ID` + `cwd` set to Session's workingDirectory (resolved from `workspace_id` by the backend).
+- Process exit: auto-restart immediate, backend-driven. When visible, xterm.js displays "Process exited. Restarting…" and switches to the new PTY's output stream. When hidden, restart is silent — the frontend reconnects via idempotent `pty_spawn` on re-mount.
 - Scrollback: xterm.js default scrollback buffer (1000 lines). Configurable later.
-- Code organization: PTY logic in `src-tauri/src/pty.rs` module. Tauri commands exposed in `src-tauri/src/lib.rs`. No new crate.
-- Preferences: new `pty_command` key in preferences store. Presets: "Default Shell ($SHELL)", "Claude Code" (`claude`), "Codex CLI" (`codex`), "Custom..." (free-text). Follows existing `ToolRow` component pattern from the External Tools preferences section.
+- Code organization: PTY logic in `src-tauri/src/pty.rs` module. Tauri commands and state management in `src-tauri/src/lib.rs`. PTY store as `Mutex<HashMap<(Uuid, Vec<usize>), PtyHandle>>` via `app.manage()`. No new crate.
+- Preferences: new `pty_command` key in preferences store. Presets: "Default Shell ($SHELL)", "Claude Code" (`claude`), "Codex CLI" (`codex`), "Custom..." (free-text). Follows existing `ToolRow` component pattern from the External Tools preferences section. Backend reads the preference in `pty_spawn` — frontend never passes a command.
 - Panel registration: `registerPanel("terminal", "Terminal", TerminalPanel)`.
 - The built-in "General" template seeds with a single `"terminal"` panel (replacing the former `"blank"` default). The redundant "Default" template is removed.
 - Font: use xterm.js defaults initially. Later configurable.
-- Dependencies: add `portable-pty` to `src-tauri/Cargo.toml`, add `@xterm/xterm` + 4 addons to `package.json`.
+- Dependencies: add `portable-pty` to `src-tauri/Cargo.toml`, add `@xterm/xterm` + 4 addons to `package.json`. No data model changes to the layout tree.
 
 ## Testing Decisions
 
-- Test `pty_spawn` Tauri command returns a valid UUID and the process is running.
-- Test `pty_write` sends data to the PTY and output appears via `pty-output` event.
-- Test `pty_resize` updates the PTY dimensions (verify via `stty size` inside the PTY).
-- Test process auto-restart: send `exit\n` via `pty_write`, verify `pty-output` emits new shell prompt.
+- Test `pty_spawn(workspace_id, path)` returns a valid UUID and the process is running. Test idempotency: second call with same (workspace_id, path) returns the same UUID.
+- Test `pty_write(ptyId, data)` sends data to the PTY and output appears via `pty-output` event.
+- Test `pty_resize(ptyId, cols, rows)` updates the PTY dimensions (verify via `stty size` inside the PTY).
+- Test backend-driven restart: send `exit\n` via `pty_write`, verify `pty-restart` event fires with old and new UUID, verify old PTY is dead and new PTY emits shell prompt via `pty-output`.
+- Test backend tree-diff cleanup: call `update_workspace_tree` with a tree missing a terminal panel path, verify its PTY is killed.
 - Test `AIAW_SESSION_ID` is set in the PTY environment (verify via `echo $AIAW_SESSION_ID`).
-- Test PTY survives workspace switch (frontend reconnection to same ptyId).
+- Test PTY survives workspace switch: switch tab, call `pty_spawn` again with same (workspace, path), verify returns same ptyId and process is still running.
 - Test xterm.js renders output correctly (verify terminal text matches expected output).
 - Test addons: fit resizes the terminal on container resize, web-links makes URLs clickable.
-- Test preferences: selecting a CLI tool preset spawns the correct command.
-- Test multiple terminal panels: two panels get distinct ptyIds, independent processes.
+- Test preferences: selecting a CLI tool preset causes next `pty_spawn` to spawn the correct command.
+- Test multiple terminal panels: two panels at different paths get distinct ptyIds, independent processes.
 - Good tests exercise Tauri command contracts and event payloads — not internal Rust struct fields.
 
 ## Out of Scope
