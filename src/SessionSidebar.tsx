@@ -134,7 +134,8 @@ export default function SessionSidebar() {
     });
   }
 
-  function handleResizeMouseDown() {
+  function handleResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
     isResizing.current = true;
     setIsResizingState(true);
     document.body.style.userSelect = "none";
