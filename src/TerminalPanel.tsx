@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "@xterm/xterm/css/xterm.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
@@ -91,6 +92,17 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
         invoke("pty_write", { ptyId: ptyIdRef.current, data });
       }
     });
+
+    const webview = getCurrentWebviewWindow();
+    const unlistenDragDrop = webview.onDragDropEvent((event) => {
+      if (event.payload.type === "drop" && event.payload.paths.length > 0 && ptyIdRef.current) {
+        const paths = event.payload.paths;
+        for (const path of paths) {
+          invoke("pty_write", { ptyId: ptyIdRef.current, data: path + " " });
+        }
+      }
+    });
+    unsubscribersRef.current.push(() => { unlistenDragDrop.then((fn) => fn()); });
 
     const resizeObserver = new ResizeObserver(() => {
       if (fitAddonRef.current) {
