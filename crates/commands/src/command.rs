@@ -19,6 +19,7 @@ pub enum Command {
     SessionClose {
         session_id: String,
     },
+    SessionDeleteAll,
     TemplateList,
     TemplateSave {
         name: String,
@@ -31,6 +32,7 @@ pub enum Command {
         layout_id: String,
         new_name: String,
     },
+    TemplateDeleteAll,
     WorkspaceList {
         session_id: String,
     },

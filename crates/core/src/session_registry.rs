@@ -212,6 +212,11 @@ impl SessionRegistry {
         Ok(())
     }
 
+    pub fn delete_all(&mut self) -> Result<()> {
+        self.sessions.clear();
+        Ok(())
+    }
+
     pub fn open(&mut self, id: &str) -> Result<Session> {
         let idx = self
             .find_index(id)

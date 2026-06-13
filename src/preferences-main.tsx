@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import ReactDOM from "react-dom/client";
 import { Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
+import { AlertTriangle } from "lucide-react";
 import "./Preferences.css";
 
 interface Preset {
@@ -151,38 +153,167 @@ function ToolRow({ label, presets, value, onChange, placeholder = "App name or b
 function PreferencesForm() {
   const { prefs, updatePref, loading } = usePreferences();
 
+  type Tab = "external-tools" | "danger-zone";
+  const [activeTab, setActiveTab] = useState<Tab>("external-tools");
+  const [deletingSessions, setDeletingSessions] = useState(false);
+  const [deletingTemplates, setDeletingTemplates] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"sessions" | "templates" | null>(null);
+
+  const handleConfirmDelete = async () => {
+    if (confirmAction === "sessions") {
+      setDeletingSessions(true);
+      try {
+        await invoke("delete_all_sessions");
+      } catch (err) {
+        console.error("Failed to delete all sessions:", err);
+      } finally {
+        setDeletingSessions(false);
+        setConfirmAction(null);
+      }
+    } else if (confirmAction === "templates") {
+      setDeletingTemplates(true);
+      try {
+        await invoke("delete_all_templates");
+      } catch (err) {
+        console.error("Failed to delete all templates:", err);
+      } finally {
+        setDeletingTemplates(false);
+        setConfirmAction(null);
+      }
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading preferences...</div>;
   }
 
   return (
     <>
-      <h2 className="preferences-header">External Tools</h2>
-      <ToolRow
-        label="Editor"
-        presets={EDITOR_PRESETS}
-        value={prefs.external_editor}
-        onChange={(v) => updatePref("external_editor", v)}
-      />
-      <ToolRow
-        label="Diff Tool"
-        presets={DIFF_TOOL_PRESETS}
-        value={prefs.external_diff_tool}
-        onChange={(v) => updatePref("external_diff_tool", v)}
-      />
-      <ToolRow
-        label="Terminal"
-        presets={TERMINAL_PRESETS}
-        value={prefs.external_terminal}
-        onChange={(v) => updatePref("external_terminal", v)}
-      />
-      <ToolRow
-        label="PTY Command"
-        presets={PTY_COMMAND_PRESETS}
-        value={prefs.pty_command}
-        onChange={(v) => updatePref("pty_command", v)}
-        placeholder="Command (e.g., claude, /bin/zsh)"
-      />
+      <div className="tabs">
+        <button
+          className={`tab ${activeTab === "external-tools" ? "tab-active" : ""}`}
+          onClick={() => setActiveTab("external-tools")}
+        >
+          External Tools
+        </button>
+        <button
+          className={`tab ${activeTab === "danger-zone" ? "tab-active" : ""}`}
+          onClick={() => setActiveTab("danger-zone")}
+        >
+          Danger Zone
+        </button>
+      </div>
+
+      {activeTab === "external-tools" && (
+        <>
+          <ToolRow
+            label="Editor"
+            presets={EDITOR_PRESETS}
+            value={prefs.external_editor}
+            onChange={(v) => updatePref("external_editor", v)}
+          />
+          <ToolRow
+            label="Diff Tool"
+            presets={DIFF_TOOL_PRESETS}
+            value={prefs.external_diff_tool}
+            onChange={(v) => updatePref("external_diff_tool", v)}
+          />
+          <ToolRow
+            label="Terminal"
+            presets={TERMINAL_PRESETS}
+            value={prefs.external_terminal}
+            onChange={(v) => updatePref("external_terminal", v)}
+          />
+          <ToolRow
+            label="PTY Command"
+            presets={PTY_COMMAND_PRESETS}
+            value={prefs.pty_command}
+            onChange={(v) => updatePref("pty_command", v)}
+            placeholder="Command (e.g., claude, /bin/zsh)"
+          />
+        </>
+      )}
+
+      {activeTab === "danger-zone" && (
+        <div className="danger-zone">
+          <p className="danger-warning">
+            These actions are irreversible. Proceed with caution.
+          </p>
+          <div className="danger-section">
+            <div className="danger-row">
+              <div>
+                <div className="danger-label">Delete All Sessions</div>
+                <div className="danger-desc">Removes every session from the sidebar.</div>
+              </div>
+              <button
+                className="danger-btn"
+                onClick={() => setConfirmAction("sessions")}
+                disabled={deletingSessions}
+              >
+                {deletingSessions ? "Deleting..." : "Delete All Sessions"}
+              </button>
+            </div>
+            <div className="danger-row">
+              <div>
+                <div className="danger-label">Delete All Templates</div>
+                <div className="danger-desc">Removes all custom templates. Built-in templates are preserved.</div>
+              </div>
+              <button
+                className="danger-btn"
+                onClick={() => setConfirmAction("templates")}
+                disabled={deletingTemplates}
+              >
+                {deletingTemplates ? "Deleting..." : "Delete All Templates"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmAction && (
+        <div
+          className="confirm-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmAction(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setConfirmAction(null);
+          }}
+        >
+          <div className="confirm-dialog" role="alertdialog" aria-modal="true">
+            <div className="confirm-icon">
+              <AlertTriangle size={28} strokeWidth={1.5} />
+            </div>
+            <div className="confirm-title">
+              {confirmAction === "sessions"
+                ? "Delete All Sessions?"
+                : "Delete All Templates?"}
+            </div>
+            <div className="confirm-message">
+              {confirmAction === "sessions"
+                ? "This will permanently remove every session from the sidebar. This cannot be undone."
+                : "This will permanently remove all custom templates. Built-in templates will be preserved. This cannot be undone."}
+            </div>
+            <div className="confirm-actions">
+              <button
+                className="confirm-cancel-btn"
+                onClick={() => setConfirmAction(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="confirm-delete-btn"
+                onClick={handleConfirmDelete}
+                disabled={confirmAction === "sessions" ? deletingSessions : deletingTemplates}
+              >
+                {(confirmAction === "sessions" ? deletingSessions : deletingTemplates)
+                  ? "Deleting..."
+                  : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

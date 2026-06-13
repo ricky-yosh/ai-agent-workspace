@@ -71,6 +71,13 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
             sessions.save()?;
             Ok(CommandResult::Session(session))
         }
+        Command::SessionDeleteAll => {
+            let mut sessions = state.sessions.lock()
+                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            sessions.delete_all()?;
+            sessions.save()?;
+            Ok(CommandResult::Unit(()))
+        }
         Command::TemplateList => {
             let store = state.layouts.lock()
                 .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
@@ -95,6 +102,13 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
             let mut store = state.layouts.lock()
                 .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
             store.rename_layout(&layout_id, &new_name)?;
+            store.save()?;
+            Ok(CommandResult::Unit(()))
+        }
+        Command::TemplateDeleteAll => {
+            let mut store = state.layouts.lock()
+                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            store.delete_all()?;
             store.save()?;
             Ok(CommandResult::Unit(()))
         }

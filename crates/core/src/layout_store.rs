@@ -124,6 +124,11 @@ impl LayoutStore {
         Ok(())
     }
 
+    pub fn delete_all(&mut self) -> Result<()> {
+        self.layouts.retain(|l| l.built_in);
+        Ok(())
+    }
+
     pub fn rename_layout(&mut self, id: &str, new_name: &str) -> Result<()> {
         let layout = self
             .layouts

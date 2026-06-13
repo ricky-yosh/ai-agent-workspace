@@ -86,6 +86,15 @@ fn close_session(state: tauri::State<AppState>, session_id: String) -> Result<Se
 }
 
 #[tauri::command]
+fn delete_all_sessions(state: tauri::State<AppState>) -> Result<(), String> {
+    match execute(Command::SessionDeleteAll, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
 fn list_layouts(state: tauri::State<AppState>) -> Result<Vec<Layout>, String> {
     match execute(Command::TemplateList, &state) {
         Ok(CommandResult::Layouts(l)) => Ok(l),
@@ -126,6 +135,15 @@ fn rename_layout(
 ) -> Result<(), String> {
     let cmd = Command::TemplateRename { layout_id, new_name };
     match execute(cmd, &state) {
+        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(_) => unreachable!(),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn delete_all_templates(state: tauri::State<AppState>) -> Result<(), String> {
+    match execute(Command::TemplateDeleteAll, &state) {
         Ok(CommandResult::Unit(())) => Ok(()),
         Ok(_) => unreachable!(),
         Err(e) => Err(e.to_string()),
@@ -523,7 +541,7 @@ pub fn run() {
                             tauri::WebviewUrl::App("preferences.html".into()),
                         )
                         .title("Preferences")
-                        .inner_size(520.0, 400.0)
+                        .inner_size(520.0, 480.0)
                         .resizable(false)
                         .build();
                     }
@@ -540,10 +558,12 @@ pub fn run() {
             delete_session,
             open_session,
             close_session,
+            delete_all_sessions,
             list_layouts,
             save_layout,
             delete_layout,
             rename_layout,
+            delete_all_templates,
             get_session_workspaces,
             get_active_workspace,
             add_workspace,
