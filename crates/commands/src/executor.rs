@@ -41,11 +41,11 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
                 let mut store = state.layouts.lock()
                     .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
                 let layouts = store.list_layouts()?;
-                let (template_id, template_name, default_tree) = if let Some(first) = layouts.first() {
-                    (first.id.clone(), first.name.clone(), first.tree.clone())
+                let default_tree = LayoutStore::default_layout();
+                let (template_id, template_name, default_tree) = if let Some(general) = layouts.iter().find(|l| l.name == "General") {
+                    (general.id.clone(), general.name.clone(), general.tree.clone())
                 } else {
-                    let default_tree = LayoutStore::default_layout();
-                    let layout = store.save_layout("General", default_tree)?;
+                    let layout = store.save_layout("General", default_tree, true)?;
                     store.save()?;
                     (layout.id, layout.name, layout.tree)
                 };
@@ -76,7 +76,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
         Command::TemplateSave { name, tree } => {
             let mut store = state.layouts.lock()
                 .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
-            let layout = store.save_layout(&name, tree)?;
+            let layout = store.save_layout(&name, tree, false)?;
             store.save()?;
             Ok(CommandResult::Layout(layout))
         }

@@ -80,6 +80,9 @@ impl From<ai_agent_workspace_core::LayoutError> for CommandError {
             ai_agent_workspace_core::LayoutError::NotFound(id) => {
                 CommandError::not_found("layout", &id)
             }
+            ai_agent_workspace_core::LayoutError::BuiltIn(name) => {
+                CommandError::invalid_input(&format!("Built-in layout cannot be modified: {}", name))
+            }
             ai_agent_workspace_core::LayoutError::Serialization(e) => {
                 CommandError::internal(&format!("serialization failed: {}", e))
             }

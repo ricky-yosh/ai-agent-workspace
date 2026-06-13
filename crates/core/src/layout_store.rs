@@ -36,12 +36,16 @@ pub struct Layout {
     pub id: String,
     pub name: String,
     pub tree: LayoutTree,
+    #[serde(default)]
+    pub built_in: bool,
 }
 
 #[derive(Debug, Error)]
 pub enum LayoutError {
     #[error("Layout not found: {0}")]
     NotFound(String),
+    #[error("Cannot modify built-in layout: {0}")]
+    BuiltIn(String),
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     #[error("IO error: {0}")]
@@ -84,11 +88,12 @@ impl LayoutStore {
         })
     }
 
-    pub fn save_layout(&mut self, name: &str, tree: LayoutTree) -> Result<Layout> {
+    pub fn save_layout(&mut self, name: &str, tree: LayoutTree, built_in: bool) -> Result<Layout> {
         let layout = Layout {
             id: Uuid::new_v4().to_string(),
             name: name.to_string(),
             tree,
+            built_in,
         };
         self.layouts.push(layout.clone());
         Ok(layout)
@@ -112,6 +117,9 @@ impl LayoutStore {
             .iter()
             .position(|l| l.id == id)
             .ok_or_else(|| LayoutError::NotFound(id.to_string()))?;
+        if self.layouts[idx].built_in {
+            return Err(LayoutError::BuiltIn(self.layouts[idx].name.clone()));
+        }
         self.layouts.remove(idx);
         Ok(())
     }
@@ -122,6 +130,9 @@ impl LayoutStore {
             .iter_mut()
             .find(|l| l.id == id)
             .ok_or_else(|| LayoutError::NotFound(id.to_string()))?;
+        if layout.built_in {
+            return Err(LayoutError::BuiltIn(layout.name.clone()));
+        }
         layout.name = new_name.to_string();
         Ok(())
     }
@@ -183,7 +194,7 @@ mod tests {
     fn test_save_layout() {
         let (mut store, _tmp) = setup();
         let tree = LayoutStore::default_layout();
-        let layout = store.save_layout("My Layout", tree.clone()).unwrap();
+        let layout = store.save_layout("My Layout", tree.clone(), false).unwrap();
         assert!(!layout.id.is_empty());
         assert_eq!(layout.name, "My Layout");
         assert_eq!(layout.tree, tree);
@@ -193,8 +204,8 @@ mod tests {
     fn test_list_layouts() {
         let (mut store, _tmp) = setup();
         let tree = LayoutStore::default_layout();
-        store.save_layout("Layout 1", tree.clone()).unwrap();
-        store.save_layout("Layout 2", tree.clone()).unwrap();
+        store.save_layout("Layout 1", tree.clone(), false).unwrap();
+        store.save_layout("Layout 2", tree.clone(), false).unwrap();
         let layouts = store.list_layouts().unwrap();
         assert_eq!(layouts.len(), 2);
     }
@@ -203,7 +214,7 @@ mod tests {
     fn test_get_layout() {
         let (mut store, _tmp) = setup();
         let tree = LayoutStore::default_layout();
-        let saved = store.save_layout("Test", tree).unwrap();
+        let saved = store.save_layout("Test", tree, false).unwrap();
         let found = store.get_layout(&saved.id).unwrap();
         assert_eq!(found.id, saved.id);
         assert_eq!(found.name, "Test");
@@ -213,8 +224,8 @@ mod tests {
     fn test_delete_layout() {
         let (mut store, _tmp) = setup();
         let tree = LayoutStore::default_layout();
-        let l1 = store.save_layout("A", tree.clone()).unwrap();
-        let l2 = store.save_layout("B", tree).unwrap();
+        let l1 = store.save_layout("A", tree.clone(), false).unwrap();
+        let l2 = store.save_layout("B", tree, false).unwrap();
         store.delete_layout(&l1.id).unwrap();
         let layouts = store.list_layouts().unwrap();
         assert_eq!(layouts.len(), 1);
@@ -263,7 +274,7 @@ mod tests {
 
         {
             let mut store = LayoutStore::new_with_path(file_path.clone()).unwrap();
-            store.save_layout("Persisted", tree.clone()).unwrap();
+            store.save_layout("Persisted", tree.clone(), false).unwrap();
             store.save().unwrap();
         }
 
@@ -282,5 +293,68 @@ mod tests {
         let file_path = temp_dir.path().join("layouts.json");
         let store = LayoutStore::new_with_path(file_path).unwrap();
         assert!(store.list_layouts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_cannot_delete_builtin() {
+        let (mut store, _tmp) = setup();
+        let tree = LayoutStore::default_layout();
+        let builtin = store.save_layout("General", tree, true).unwrap();
+        let result = store.delete_layout(&builtin.id);
+        assert!(result.is_err());
+        match result {
+            Err(LayoutError::BuiltIn(name)) => assert_eq!(name, "General"),
+            _ => panic!("Expected BuiltIn error"),
+        }
+    }
+
+    #[test]
+    fn test_cannot_rename_builtin() {
+        let (mut store, _tmp) = setup();
+        let tree = LayoutStore::default_layout();
+        let builtin = store.save_layout("General", tree, true).unwrap();
+        let result = store.rename_layout(&builtin.id, "Not General");
+        assert!(result.is_err());
+        match result {
+            Err(LayoutError::BuiltIn(name)) => assert_eq!(name, "General"),
+            _ => panic!("Expected BuiltIn error"),
+        }
+    }
+
+    #[test]
+    fn test_user_layout_is_not_builtin() {
+        let (mut store, _tmp) = setup();
+        let tree = LayoutStore::default_layout();
+        let layout = store.save_layout("Custom", tree, false).unwrap();
+        assert!(!layout.built_in);
+    }
+
+    #[test]
+    fn test_can_delete_user_layout() {
+        let (mut store, _tmp) = setup();
+        let tree = LayoutStore::default_layout();
+        let layout = store.save_layout("Custom", tree, false).unwrap();
+        assert!(store.delete_layout(&layout.id).is_ok());
+    }
+
+    #[test]
+    fn test_builtin_serialization_roundtrip() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("layouts.json");
+
+        {
+            let mut store = LayoutStore::new_with_path(file_path.clone()).unwrap();
+            let tree = LayoutStore::default_layout();
+            store.save_layout("General", tree, true).unwrap();
+            store.save().unwrap();
+        }
+
+        {
+            let store = LayoutStore::new_with_path(file_path.clone()).unwrap();
+            let layouts = store.list_layouts().unwrap();
+            assert_eq!(layouts.len(), 1);
+            assert_eq!(layouts[0].name, "General");
+            assert!(layouts[0].built_in);
+        }
     }
 }

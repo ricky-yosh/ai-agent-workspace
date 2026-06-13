@@ -652,6 +652,54 @@ mod tests {
         let active_text = extract_text(active_result);
         assert!(active_text.contains("WS Template"));
     }
+
+    #[tokio::test]
+    async fn test_cannot_delete_builtin_template() {
+        let (handler, _dir) = setup();
+        let tree = LayoutTree {
+            tree: ai_agent_workspace_core::LayoutNode::Panel {
+                panel_type: "blank".into(),
+            },
+        };
+        let builtin = handler.layouts.lock().unwrap().save_layout("General", tree, true).unwrap();
+        let result = handler.template_delete(builtin.id.clone()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code.0, -32602);
+        assert!(err.message.contains("Built-in"));
+    }
+
+    #[tokio::test]
+    async fn test_cannot_rename_builtin_template() {
+        let (handler, _dir) = setup();
+        let tree = LayoutTree {
+            tree: ai_agent_workspace_core::LayoutNode::Panel {
+                panel_type: "blank".into(),
+            },
+        };
+        let builtin = handler.layouts.lock().unwrap().save_layout("General", tree, true).unwrap();
+        let result = handler.template_rename(builtin.id.clone(), "Not General".into()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.code.0, -32602);
+        assert!(err.message.contains("Built-in"));
+    }
+
+    #[tokio::test]
+    async fn test_builtin_shows_in_list() {
+        let (handler, _dir) = setup();
+        let tree = LayoutTree {
+            tree: ai_agent_workspace_core::LayoutNode::Panel {
+                panel_type: "blank".into(),
+            },
+        };
+        let _builtin = handler.layouts.lock().unwrap().save_layout("General", tree, true).unwrap();
+        let result = handler.template_list().await.unwrap();
+        let text = extract_text(result);
+        assert!(text.contains("General"));
+        assert!(text.contains("built_in"));
+        assert!(text.contains("true"));
+    }
 }
 
 #[cfg(feature = "tauri-integration")]

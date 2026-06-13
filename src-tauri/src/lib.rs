@@ -332,7 +332,7 @@ pub fn run() {
     let mut layouts = app_state.layouts.lock().expect("lock poisoned");
     if layouts.list_layouts().map_or(true, |l| l.is_empty()) {
         let default_tree = LayoutStore::default_layout();
-        layouts.save_layout("Default", default_tree).expect("Failed to seed default layout");
+        layouts.save_layout("Default", default_tree, true).expect("Failed to seed default layout");
         layouts.save().expect("Failed to save seeded layout");
     }
     drop(layouts);
