@@ -124,6 +124,10 @@
   padding: 0;
 }
 
+.sidebar-collapsed-session .session-icon {
+  border-radius: 5px;
+}
+
 .sidebar-collapsed-session .session-state-dot {
   display: block;
   position: absolute;
@@ -294,9 +298,13 @@
 .session-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   flex: 1;
+}
+
+.session-info .session-icon {
+  flex-shrink: 0;
 }
 
 .session-name {

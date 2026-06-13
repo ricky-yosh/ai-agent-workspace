@@ -45,6 +45,46 @@ pub struct SessionSummary {
     pub created_at: String,
     pub updated_at: String,
     pub reachable: bool,
+    pub project_type: String,
+}
+
+fn detect_project_type(working_dir: &str) -> String {
+    let path = std::path::Path::new(working_dir);
+    if !path.exists() {
+        return "generic".to_string();
+    }
+    let markers: &[(&[&str], &str)] = &[
+        (&["Cargo.toml"], "rust"),
+        (&["go.mod"], "go"),
+        (&["pyproject.toml", "setup.py", "requirements.txt", "Pipfile", ".python-version"], "python"),
+        (&["package.json"], "node"),
+        (&["pom.xml", "build.gradle", "build.gradle.kts"], "java"),
+        (&["Gemfile"], "ruby"),
+        (&["composer.json"], "php"),
+        (&["Package.swift"], "swift"),
+        (&["CMakeLists.txt", "Makefile"], "c-cpp"),
+        (&["*.sln", "*.csproj"], "dotnet"),
+    ];
+    for (files, ptype) in markers {
+        for file in *files {
+            if file.starts_with('*') {
+                let suffix = &file[1..];
+                if let Ok(entries) = fs::read_dir(path) {
+                    for entry in entries.flatten() {
+                        if entry.path().extension().map_or(false, |e| e == &suffix[1..]) {
+                            return ptype.to_string();
+                        }
+                    }
+                }
+            } else if path.join(file).exists() {
+                return ptype.to_string();
+            }
+        }
+    }
+    if path.join(".git").exists() {
+        return "git".to_string();
+    }
+    "generic".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +173,7 @@ impl SessionRegistry {
             .iter()
             .map(|s| {
                 let reachable = std::path::Path::new(&s.working_directory).exists();
+                let project_type = detect_project_type(&s.working_directory);
                 SessionSummary {
                     id: s.id.clone(),
                     name: s.name.clone(),
@@ -142,6 +183,7 @@ impl SessionRegistry {
                     created_at: s.created_at.clone(),
                     updated_at: s.updated_at.clone(),
                     reachable,
+                    project_type,
                 }
             })
             .collect();

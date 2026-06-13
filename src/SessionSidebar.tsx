@@ -7,6 +7,7 @@ import { useSessions, type SessionSummary } from "./SessionContext";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
+import { SessionIcon } from "./SessionVisuals";
 import "./SessionSidebar.css";
 import "./ContextMenu.css";
 
@@ -418,6 +419,11 @@ export default function SessionSidebar() {
                       title={!s.reachable ? "Directory not found" : undefined}
                     >
                     <div className="session-info">
+                      <SessionIcon
+                        sessionId={s.id}
+                        projectType={s.project_type}
+                        size={18}
+                      />
                       <span
                         className={`session-state-dot session-state-dot-${s.state.toLowerCase()} session-state-dot-inline`}
                         aria-hidden="true"
@@ -480,7 +486,11 @@ export default function SessionSidebar() {
                   title={`${s.name} — ${s.state}`}
                   aria-label={`${s.name}, ${s.state}`}
                 >
-                  {s.name.charAt(0).toUpperCase()}
+                  <SessionIcon
+                    sessionId={s.id}
+                    projectType={s.project_type}
+                    size={22}
+                  />
                   <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
                 </button>
               ))}

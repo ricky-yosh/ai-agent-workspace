@@ -11,6 +11,7 @@ export interface SessionSummary {
   created_at: string;
   updated_at: string;
   reachable: boolean;
+  project_type: string;
 }
 
 interface SessionContextValue {
