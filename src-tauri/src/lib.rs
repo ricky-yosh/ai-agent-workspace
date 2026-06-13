@@ -6,9 +6,12 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, LayoutStore, LayoutTree,
+    Layout, LayoutTree, LayoutNode,
 };
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+
+mod pty;
+use pty::{PtyStore, PtySpawnResult, cleanup_orphaned_ptys};
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -213,19 +216,49 @@ fn set_active_workspace(
     }
 }
 
+fn collect_terminal_paths(node: &LayoutNode, prefix: &mut Vec<usize>) -> Vec<Vec<usize>> {
+    let mut result = Vec::new();
+    match node {
+        LayoutNode::Panel { panel_type } => {
+            if panel_type == "terminal" {
+                result.push(prefix.clone());
+            }
+        }
+        LayoutNode::Split { children, .. } => {
+            for (i, child) in children.iter().enumerate() {
+                prefix.push(i);
+                result.extend(collect_terminal_paths(child, prefix));
+                prefix.pop();
+            }
+        }
+    }
+    result
+}
+
 #[tauri::command]
 fn update_workspace_tree(
     state: tauri::State<AppState>,
+    pty_store: tauri::State<PtyStore>,
     session_id: String,
     workspace_id: String,
     tree: LayoutTree,
 ) -> Result<(), String> {
-    let cmd = Command::WorkspaceUpdateTree { session_id, workspace_id, tree };
+    let terminal_paths = collect_terminal_paths(&tree.tree, &mut Vec::new());
+
+    let cmd = Command::WorkspaceUpdateTree {
+        session_id,
+        workspace_id: workspace_id.clone(),
+        tree,
+    };
     match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
+        Ok(CommandResult::Unit(())) => {}
         Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
+        Err(e) => return Err(e.to_string()),
     }
+
+    cleanup_orphaned_ptys(&pty_store, &workspace_id, &terminal_paths);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -272,6 +305,56 @@ fn open_in_app(path: String, app_name: String) -> Result<(), String> {
 #[tauri::command]
 fn is_git_repo(path: String) -> bool {
     std::path::Path::new(&path).join(".git").exists()
+}
+
+#[tauri::command]
+fn pty_spawn(
+    state: tauri::State<PtyStore>,
+    app: tauri::AppHandle,
+    workspace_id: String,
+    path: Vec<usize>,
+    session_id: String,
+) -> Result<PtySpawnResult, String> {
+    let pty_command = {
+        use tauri_plugin_store::StoreExt;
+        let store = app.store("preferences.json").map_err(|e| e.to_string())?;
+        store.get("pty_command").and_then(|v| v.as_str().map(String::from))
+    };
+
+    let sessions = {
+        let app_state = app.state::<AppState>();
+        let sessions = app_state.sessions.lock().map_err(|e| e.to_string())?;
+        sessions.get_by_id(&session_id).map_err(|e| e.to_string())?
+    };
+
+    pty::pty_spawn(
+        &state,
+        app,
+        workspace_id,
+        path,
+        pty_command,
+        session_id,
+        sessions.working_directory,
+    )
+}
+
+#[tauri::command]
+fn pty_write(
+    state: tauri::State<PtyStore>,
+    pty_id: String,
+    data: String,
+) -> Result<(), String> {
+    pty::pty_write(&state, &pty_id, data.as_bytes())
+}
+
+#[tauri::command]
+fn pty_resize(
+    state: tauri::State<PtyStore>,
+    pty_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    pty::pty_resize(&state, &pty_id, cols, rows)
 }
 
 const CLI_NAME: &str = "aiaw-mcp-server";
@@ -329,15 +412,10 @@ pub fn run() {
     app_state.sessions.lock().expect("lock poisoned")
         .demote_running_to_paused().expect("Failed to demote running sessions");
 
-    let mut layouts = app_state.layouts.lock().expect("lock poisoned");
-    if layouts.list_layouts().map_or(true, |l| l.is_empty()) {
-        let default_tree = LayoutStore::default_layout();
-        layouts.save_layout("Default", default_tree, true).expect("Failed to seed default layout");
-        layouts.save().expect("Failed to save seeded layout");
-    }
-    drop(layouts);
+    drop(app_state.layouts.lock().expect("lock poisoned"));
 
     let watcher_state: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
+    let pty_store = PtyStore::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -346,6 +424,7 @@ pub fn run() {
         .plugin(ai_agent_workspace_mcp::init())
         .manage(app_state)
         .manage(watcher_state)
+        .manage(pty_store)
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -476,6 +555,9 @@ pub fn run() {
             open_preferences,
             open_in_app,
             is_git_repo,
+            pty_spawn,
+            pty_write,
+            pty_resize,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
