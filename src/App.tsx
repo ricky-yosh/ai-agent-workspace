@@ -11,6 +11,7 @@ import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider } from "./ToastContext";
 import { ToastContainer } from "./Toast";
 import "./BlankPanel";
+import "./TerminalPanel";
 import "./App.css";
 import "./Toast.css";
 
@@ -84,11 +85,8 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   }, [activeSessionId]);
 
   useEffect(() => {
-    console.log("[MainArea] Setting up event listeners");
-    const unlistenSessions = listen("sessions-changed", () => {
-      console.log("[MainArea] Received sessions-changed event");
+const unlistenSessions = listen("sessions-changed", () => {
       if (activeSessionId) {
-        console.log("[MainArea] Re-fetching workspaces for session:", activeSessionId);
         invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId })
           .then(setWorkspaces)
           .catch(console.error);
@@ -98,7 +96,6 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
       }
     });
     const unlistenLayouts = listen("layouts-changed", () => {
-      console.log("[MainArea] Received layouts-changed event");
       refreshTemplates();
     });
     return () => {
@@ -298,6 +295,8 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
       <div className="tab-content">
         {activeWorkspace ? (
           <SplitLayout
+            workspaceId={activeWorkspace.id}
+            sessionId={activeSessionId}
             tree={activeWorkspace.current_tree}
             onLayoutChange={handleWorkspaceTreeChange}
             focusedPath={focusedPath}

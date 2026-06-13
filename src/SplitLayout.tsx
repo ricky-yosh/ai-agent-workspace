@@ -4,6 +4,7 @@ import "allotment/dist/style.css";
 import { getPanel } from "./panelRegistry";
 import PanelTypeSelector from "./PanelTypeSelector";
 import SashContextMenu from "./SashContextMenu";
+import { PanelContext } from "./PanelContext";
 import "./SplitLayout.css";
 
 interface SplitData {
@@ -31,6 +32,8 @@ export interface Layout {
 }
 
 interface SplitLayoutProps {
+  workspaceId: string;
+  sessionId: string;
   tree: LayoutTree;
   onLayoutChange?: (tree: LayoutTree) => void;
   focusedPath?: number[] | null;
@@ -84,7 +87,7 @@ function getNodeAtPath(node: LayoutNode, path: number[]): LayoutNode | null {
   return getNodeAtPath(node.split.children[idx], rest);
 }
 
-export default function SplitLayout({ tree, onLayoutChange, focusedPath, onFocusedPathChange, zoomedPath }: SplitLayoutProps) {
+export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChange, focusedPath, onFocusedPathChange, zoomedPath }: SplitLayoutProps) {
   interface SplitDragState {
     path: number[];
     corner: "tl" | "tr" | "bl" | "br";
@@ -467,7 +470,9 @@ export default function SplitLayout({ tree, onLayoutChange, focusedPath, onFocus
         )}
         <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
           {PanelComponent ? (
-            <PanelComponent panelType={panel_type} />
+            <PanelContext.Provider value={{ workspaceId, sessionId, path }}>
+              <PanelComponent panelType={panel_type} />
+            </PanelContext.Provider>
           ) : (
             panel_type
           )}

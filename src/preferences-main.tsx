@@ -32,6 +32,12 @@ const TERMINAL_PRESETS: Preset[] = [
   { label: "Hyper", bundleName: "Hyper" },
 ];
 
+const PTY_COMMAND_PRESETS: Preset[] = [
+  { label: "Default Shell ($SHELL)", bundleName: "$SHELL" },
+  { label: "Claude Code", bundleName: "claude" },
+  { label: "Codex CLI", bundleName: "codex" },
+];
+
 const CUSTOM_SENTINEL = "__custom__";
 
 function usePreferences() {
@@ -40,6 +46,7 @@ function usePreferences() {
     external_editor: "",
     external_diff_tool: "",
     external_terminal: "",
+    pty_command: "$SHELL",
   });
   const [loading, setLoading] = useState(true);
 
@@ -51,15 +58,17 @@ function usePreferences() {
           autoSave: 300,
         });
         setStore(s);
-        const [editor, diffTool, terminal] = await Promise.all([
+        const [editor, diffTool, terminal, ptyCommand] = await Promise.all([
           s.get<string>("external_editor"),
           s.get<string>("external_diff_tool"),
           s.get<string>("external_terminal"),
+          s.get<string>("pty_command"),
         ]);
         setPrefs({
           external_editor: editor ?? "",
           external_diff_tool: diffTool ?? "",
           external_terminal: terminal ?? "",
+          pty_command: ptyCommand ?? "$SHELL",
         });
       } catch (err) {
         console.error("Failed to load preferences:", err);
@@ -92,9 +101,10 @@ interface ToolRowProps {
   presets: Preset[];
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
 }
 
-function ToolRow({ label, presets, value, onChange }: ToolRowProps) {
+function ToolRow({ label, presets, value, onChange, placeholder = "App name or bundle ID" }: ToolRowProps) {
   const [customMode, setCustomMode] = useState(false);
 
   const isCustom =
@@ -129,7 +139,7 @@ function ToolRow({ label, presets, value, onChange }: ToolRowProps) {
         <input
           className="tool-input"
           type="text"
-          placeholder="App name or bundle ID"
+          placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -165,6 +175,13 @@ function PreferencesForm() {
         presets={TERMINAL_PRESETS}
         value={prefs.external_terminal}
         onChange={(v) => updatePref("external_terminal", v)}
+      />
+      <ToolRow
+        label="PTY Command"
+        presets={PTY_COMMAND_PRESETS}
+        value={prefs.pty_command}
+        onChange={(v) => updatePref("pty_command", v)}
+        placeholder="Command (e.g., claude, /bin/zsh)"
       />
     </>
   );
