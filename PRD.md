@@ -1,188 +1,305 @@
-# PRD: MCP Server (v1)
+# PRD: Migrate Persistence from JSON to SQLite
 
 ## Problem Statement
 
-AI agents running inside the Terminal Panel (Claude Code, Codex, etc.) have no way to interact with the AI Agent Workspace — they cannot create sessions, list templates, add workspace instances, or modify layout trees. The app's backend is fully functional (the Command Layer exposes 18 operations and the CLI exercises them all), but there is no MCP interface for AI agents to call these same operations programmatically. Without the MCP server, the "AI agent as collaborator" vision is blocked — the agent can only observe the repository, not manipulate the workspace.
+The current persistence layer uses JSON files (`sessions.json`, `layouts.json`) as a database. This has created an entire subsystem of complexity — atomic temp-file writes, reload logic, file watchers, `suppress_watcher` flags, `WatcherStore` traits, reload loop prevention, and cross-process synchronization via `Arc<Mutex<>>` — that exists solely because persistence is file-based. The architecture does not scale: every workspace mutation rewrites the entire session, read operations serialize through a global mutex, and the file watcher is a fragile synchronization mechanism between processes.
 
 ## Solution
 
-Add a monolithic in-process MCP server as a Tauri plugin in a new `crates/mcp` crate. The MCP server exposes all 18 existing Command variants as MCP tools — one tool per Command. When the app spawns a Terminal Panel PTY, it injects `AIAW_SESSION_ID` into the shell environment, and the MCP server (launched as a child process) inherits this variable to attribute all operations to the correct Session. The MCP server shares `AppState` with the Tauri app so mutations appear instantly in the GUI.
+Replace JSON-file persistence with a single SQLite database. Normalize workspaces into their own table. Introduce concrete repository structs for typed query access. Return typed domain events from the command executor so Tauri and MCP can translate them independently. Delete the file watcher, `SessionRegistry`, `LayoutStore`, `WatcherStore`, and all associated reload/suppress infrastructure.
 
 ## User Stories
 
-1. As an AI agent running inside a Session's Terminal Panel, I want to call `session_create` via MCP stdio, so that I can create new Sessions programmatically.
-2. As an AI agent, I want to call `session_list` via MCP stdio, so that I can discover what Sessions exist.
-3. As an AI agent, I want to call `session_rename` via MCP stdio, so that I can rename Sessions I created.
-4. As an AI agent, I want to call `session_delete` via MCP stdio, so that I can clean up Sessions.
-5. As an AI agent, I want to call `session_open` via MCP stdio, so that I can open a Session and trigger its auto-initialization (default template + workspace).
-6. As an AI agent, I want to call `session_close` via MCP stdio, so that I can close a Session.
-7. As an AI agent, I want to call `template_list` via MCP stdio, so that I can see available Layout Templates.
-8. As an AI agent, I want to call `template_save` via MCP stdio, so that I can create new Layout Templates programmatically.
-9. As an AI agent, I want to call `template_delete` via MCP stdio, so that I can remove unwanted templates.
-10. As an AI agent, I want to call `template_rename` via MCP stdio, so that I can rename templates.
-11. As an AI agent, I want to call `workspace_list` via MCP stdio, so that I can see a Session's Workspace Instances.
-12. As an AI agent, I want to call `workspace_get_active` via MCP stdio, so that I can discover which workspace is active in a Session.
-13. As an AI agent, I want to call `workspace_add` via MCP stdio, so that I can add a Workspace Instance to a Session from a template.
-14. As an AI agent, I want to call `workspace_remove` via MCP stdio, so that I can remove Workspace Instances.
-15. As an AI agent, I want to call `workspace_rename` via MCP stdio, so that I can rename Workspace Instances.
-16. As an AI agent, I want to call `workspace_set_active` via MCP stdio, so that I can switch between Workspace Instances.
-17. As an AI agent, I want to call `workspace_update_tree` via MCP stdio, so that I can modify a workspace's panel layout.
-18. As an AI agent, I want to call `workspace_reset` via MCP stdio, so that I can reset a workspace back to its template.
-19. As a developer, I want the MCP server to share AppState with the Tauri app, so that MCP mutations appear instantly in the GUI without file watcher latency.
-20. As a developer, I want the MCP server to emit Tauri events after each mutation, so that the frontend listeners refresh automatically.
-21. As a developer, I want the MCP server to run in-process as a Tauri plugin, so that it has direct access to the Command Layer.
-22. As a user, I want the MCP server to automatically know which Session it's serving via the `AIAW_SESSION_ID` env var, so that I never need to pass a session ID explicitly to the agent.
-23. As a developer, I want the MCP tools to accept the same parameters as the Command enum variants, so that understanding one interface teaches the other.
-24. As a developer, I want MCP errors to return structured JSON with error codes and messages, so that AI agents can handle failures gracefully.
+1. As a developer, I want sessions stored in SQLite, so that queries are indexed and I don't rewrite entire files for single-field updates
+2. As a developer, I want workspaces in their own table with a `session_id` foreign key, so that workspace mutations don't require loading and rewriting the parent session
+3. As a developer, I want a migration framework from day one, so that future schema changes are versioned and safe
+4. As a developer, I want a `Database` struct that opens a fresh `rusqlite::Connection` per command, so that SQLite's WAL concurrency works without a shared mutex
+5. As a developer, I want concrete repository structs (`SessionRepository`, `WorkspaceRepository`, `LayoutRepository`) accessed via `db.sessions()`, `db.workspaces()`, `db.layouts()`, so that SQL is centralized and command handlers stay clean
+6. As a developer, I want the executor to return `ExecutionOutcome { result, events }`, so that the command layer produces typed domain events without knowing about Tauri or MCP
+7. As a Tauri developer, I want the Tauri layer to translate `DomainEvent` variants into `"sessions-changed"` and `"layouts-changed"` events, so that the React frontend works unchanged
+8. As an MCP developer, I want the MCP layer to translate `DomainEvent` variants into the existing callback pattern, so that tool behavior is preserved
+9. As a developer, I want `AppState` to hold only `Database` (which holds `db_path: PathBuf`), so that there are no mutexes, no `Arc` wrapping, and no global locks
+10. As a developer, I want `SessionRegistry`, `LayoutStore`, and `WatcherStore` deleted entirely, so that the old persistence subsystem is not partially retained
+11. As a developer, I want file watcher infrastructure removed from `src-tauri/src/lib.rs`, so that `notify::Watcher`, `WatcherStore`, `reload_if_changed`, and `suppress_watcher` are gone
+12. As a developer, I want `lock_both()` and canonical lock ordering removed from the executor, so that deadlock prevention code is no longer needed
+13. As a developer, I want `AtomicBool` suppression flags removed from repositories, so that watcher-feedback-loop prevention is gone
+14. As a developer, I want the MCP server to wrap persistence calls in `tokio::task::spawn_blocking`, so that the async MCP runtime can call synchronous rusqlite
+15. As a developer, I want the `sessions` table to have an index on `working_directory`, so that session-by-directory lookups are O(1)
+16. As a developer, I want the `workspaces` table to have an index on `session_id`, so that listing workspaces for a session is O(1)
+17. As a developer, I want the `workspaces` table to have an index on `template_id`, so that template-based queries are efficient
+18. As a developer, I want `LayoutTree` stored as JSON text in the `current_tree` column, so that the recursive tree structure is preserved without premature normalization
+19. As a developer, I want timestamps stored as integer epoch milliseconds, so that they are sortable and unambiguous
+20. As a developer, I want the `template_id` foreign key on workspaces to be nullable, so that a deleted template doesn't break existing workspaces
+21. As a developer, I want `ON DELETE CASCADE` on `workspaces.session_id`, so that deleting a session automatically removes its workspaces
+22. As a developer, I want `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` set on every connection, so that concurrent reads work and write contention is handled gracefully
+23. As a developer, I want the crate structure preserved (`core`, `commands`, `mcp`, `mcp-server`, `src-tauri`), so that dependency direction stays clean
+24. As a developer, I want `serde` and `serde_json` retained in `core` for `LayoutTree` serialization, so that the JSON-in-SQLite pattern works
+25. As a developer, I want `tempfile` retained in dev-dependencies for in-memory SQLite testing, so that tests are isolated and fast
 
 ## Implementation Decisions
 
-### Crate structure
+### Module Structure
 
-A new `crates/mcp` crate is added to the Cargo workspace. It depends on `crates/commands` (for the Command enum, `execute()`, and `AppState`) and on `rmcp` (the Rust MCP SDK). The Tauri app (`src-tauri`) depends on `crates/mcp` and registers it as a plugin.
+All repositories and database infrastructure live in `crates/core`. The `commands` crate depends on `core` for repository access. The dependency direction is preserved: `core` has no knowledge of `commands`, `mcp`, or `tauri`.
 
-**Root `Cargo.toml`** — add `crates/mcp` to workspace members.
+```
+crates/core/src/
+├── database/
+│   ├── mod.rs          -- Database struct, connection factory
+│   ├── schema.rs       -- CREATE TABLE statements, indices
+│   └── migrations.rs   -- Schema versioning, migrate() function
+├── repositories/
+│   ├── mod.rs
+│   ├── session_repository.rs
+│   ├── workspace_repository.rs
+│   └── layout_repository.rs
+├── domain/
+│   ├── mod.rs
+│   ├── session.rs      -- Session, SessionState, SessionSummary
+│   ├── workspace.rs    -- Workspace (replaces WorkspaceInstance)
+│   ├── layout.rs       -- Layout, LayoutTree, LayoutNode, Direction
+│   └── events.rs       -- DomainEvent, ExecutionOutcome
+├── lib.rs              -- Re-exports
+```
 
-**`crates/mcp/Cargo.toml`** — depends on `rmcp` (with `macros` feature), `ai-agent-workspace-commands`, `ai-agent-workspace-core`, `tauri`, `tokio`, `serde`, `serde_json`.
-
-### `crates/mcp/src/lib.rs` — Tauri plugin
-
-Exports an `init()` function returning `TauriPlugin<R>` built with `plugin::Builder::new("mcp")`. In the `setup()` hook:
-
-1. Get `AppState` from `app.state::<AppState>()` and clone the `Arc<Mutex<SessionRegistry>>`, `Arc<Mutex<LayoutStore>>`, and `AppHandle` (via `app.handle().clone()`).
-2. Build an `McpHandler` struct holding these three Arcs.
-3. `tokio::spawn` (on Tauri's built-in async runtime) an async task that calls `serve_server(handler, stdio()).await` to start listening for MCP requests on stdin/stdout.
-4. No TCP transport for v1.
-
-### `crates/mcp/src/tools.rs` — Tool handlers (McpHandler struct)
-
-A single `McpHandler` struct annotated with `#[tool_handler]` from `rmcp`. The struct holds cloned `Arc`s for `SessionRegistry`, `LayoutStore`, and `AppHandle`.
-
-Each tool is an async method with the `#[tool]` attribute:
+### Database Module
 
 ```rust
-#[derive(Clone, tool_handler::ToolHandler)]
-struct McpHandler {
-    sessions: Arc<Mutex<SessionRegistry>>,
-    layouts: Arc<Mutex<LayoutStore>>,
-    app_handle: AppHandle,
-}
-
-impl McpHandler {
-    #[tool]
-    async fn session_list(&self) -> Result<Vec<SessionSummary>, McpError> {
-        // Lock sessions, call execute(SessionList), map result/error
-    }
-    // ... 17 more tools
+pub struct Database {
+    db_path: PathBuf,
 }
 ```
 
-Each tool method:
-1. Reads `AIAW_SESSION_ID` from `std::env::var()` to determine the current Session.
-2. Constructs a `Command` variant with the tool's arguments.
-3. Locks the appropriate Mutex, calls `execute(command, &mut state)`.
-4. Maps `CommandResult` to the tool's return type.
-5. Maps `CommandError` to an MCP error response.
+`Database` exposes:
+- `new(db_path) -> Database`
+- `connection() -> Result<Connection>` — opens a fresh connection with WAL, foreign_keys, busy_timeout
+- `sessions(&self, conn: &Connection) -> SessionRepository`
+- `workspaces(&self, conn: &Connection) -> WorkspaceRepository`
+- `layouts(&self, conn: &Connection) -> LayoutRepository`
 
-The 18 tools (following CLI naming convention):
+Connection is opened per-command execution. No shared connection. No mutex.
 
-| Tool name | Command variant | Parameters |
-|---|---|---|
-| `session_create` | `SessionCreate` | `working_dir` (absolute path), `name` |
-| `session_list` | `SessionList` | none |
-| `session_rename` | `SessionRename` | `session_id`, `new_name` |
-| `session_delete` | `SessionDelete` | `session_id` |
-| `session_open` | `SessionOpen` | `session_id` |
-| `session_close` | `SessionClose` | `session_id` |
-| `template_list` | `TemplateList` | none |
-| `template_save` | `TemplateSave` | `name`, `tree` |
-| `template_delete` | `TemplateDelete` | `layout_id` |
-| `template_rename` | `TemplateRename` | `layout_id`, `new_name` |
-| `workspace_list` | `WorkspaceList` | `session_id` |
-| `workspace_get_active` | `WorkspaceGetActive` | `session_id` |
-| `workspace_add` | `WorkspaceAdd` | `session_id`, `template_id` |
-| `workspace_remove` | `WorkspaceRemove` | `session_id`, `workspace_id` |
-| `workspace_rename` | `WorkspaceRename` | `session_id`, `workspace_id`, `new_name` |
-| `workspace_set_active` | `WorkspaceSetActive` | `session_id`, `workspace_id` |
-| `workspace_update_tree` | `WorkspaceUpdateTree` | `session_id`, `workspace_id`, `tree` |
-| `workspace_reset` | `WorkspaceReset` | `session_id`, `workspace_id` |
+### Schema
 
-### Shared state pattern
+```sql
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
 
-`AppState` already uses `Arc<Mutex<SessionRegistry>>` and `Arc<Mutex<LayoutStore>>` (changed for the file watcher). The MCP plugin clones these `Arc`s into the background thread, so both the Tauri main thread and the MCP listener thread share the same Mutex-protected state.
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    working_directory TEXT NOT NULL,
+    state TEXT NOT NULL,
+    active_workspace_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 
-### GUI event emission
+CREATE TABLE IF NOT EXISTS workspaces (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    template_id TEXT REFERENCES layouts(id),
+    current_tree TEXT NOT NULL
+);
 
-After each successful `execute()` call, the tool handler emits the appropriate Tauri event via the cloned `AppHandle`:
-- `sessions-changed` — after session mutations (create, rename, delete, open, close) and workspace mutations (add, remove, rename, set active, update tree, reset)
-- `layouts-changed` — after template mutations (save, delete, rename)
+CREATE TABLE IF NOT EXISTS layouts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tree TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 
-These match the existing event names emitted by the file watcher, so no new frontend listeners are needed.
+CREATE INDEX IF NOT EXISTS idx_sessions_working_directory ON sessions(working_directory);
+CREATE INDEX IF NOT EXISTS idx_workspaces_session_id ON workspaces(session_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_template_id ON workspaces(template_id);
+```
 
-### Session orientation
+### Repository Interfaces
 
-The MCP server inherits `AIAW_SESSION_ID` from the PTY shell environment. Tools that require a session context always use the env var — v1 does not accept explicit `session_id` overrides from the agent. Tools that don't require session context (like `template_list`, `template_save`, `template_delete`, `template_rename`) operate globally without any session ID.
+`SessionRepository`:
+- `create(name, working_dir) -> Result<Session>`
+- `get(id) -> Result<Option<Session>>` — joins workspaces
+- `list() -> Result<Vec<SessionSummary>>`
+- `rename(id, new_name) -> Result<()>`
+- `delete(id) -> Result<()>`
+- `delete_all() -> Result<()>`
+- `set_state(id, state) -> Result<()>`
+- `set_active_workspace(id, workspace_id) -> Result<()>`
 
-### rmcp integration
+`WorkspaceRepository`:
+- `create(session_id, name, template_id, tree) -> Result<Workspace>`
+- `get(id) -> Result<Option<Workspace>>`
+- `list_by_session(session_id) -> Result<Vec<Workspace>>`
+- `rename(id, new_name) -> Result<()>`
+- `delete(id) -> Result<()>`
+- `update_tree(id, tree) -> Result<()>`
 
-The `rmcp` crate (https://github.com/modelcontextprotocol/rust-sdk) provides:
+`LayoutRepository`:
+- `create(name, tree) -> Result<Layout>`
+- `get(id) -> Result<Option<Layout>>`
+- `list() -> Result<Vec<Layout>>`
+- `rename(id, new_name) -> Result<()>`
+- `delete(id) -> Result<()>`
+- `delete_all() -> Result<()>`
 
-- `#[tool]` attribute macro for declaring tool methods on a handler struct (requires `macros` feature on the dependency)
-- `#[tool_handler]` derive macro that generates the `ServerHandler` trait implementation for the handler struct
-- `serve_server(handler, transport).await` — async function that runs the MCP server over a transport
-- `rmcp::transport::io::stdio()` — returns the stdio transport for stdio-based MCP
-- `rmcp::ErrorData` trait — implement for the local error type to convert to JSON-RPC errors
-- Tool method parameters must derive `Serialize + Deserialize` (and optionally `schemars::JsonSchema`)
-- Tool methods must be async and return `Result<T, impl Into<rmcp::ErrorData>>`
+### Executor Refactor
 
-The MCP server constructs the `McpHandler`, then `tokio::spawn(serve_server(handler, stdio()))` from the plugin's `setup()` hook.
+The `execute` function signature changes from:
 
-### Error mapping
+```rust
+pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, CommandError>
+```
 
-`CommandError` maps to MCP JSON-RPC error codes:
+to:
 
-| CommandError field | JSON-RPC error | Mapping |
-|---|---|---|
-| `error: "not_found"` | code `-32001` | Entity not found |
-| `error: "already_exists"` | code `-32002` | Duplicate entity |
-| `error: "invalid_input"` | code `-32602` | Invalid params |
-| Other `error` values | code `-32000` | Generic server error |
+```rust
+pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, CommandError>
+```
 
-The JSON-RPC `data` field contains a structured object with `error` (the kind string), `entity`, and `id` from the `CommandError`. This gives AI agents enough context to understand and potentially recover from errors.
+Each command arm:
+1. Opens a connection via `state.db.connection()`
+2. Creates repositories via `state.db.sessions(&conn)` etc.
+3. Performs mutations
+4. Returns `ExecutionOutcome { result, events }`
+
+Multi-step operations (e.g., `WorkspaceAdd` — verify session exists, insert workspace, update active_workspace_id) use `conn.transaction()`.
+
+### DomainEvent Variants
+
+```rust
+pub enum DomainEvent {
+    SessionsChanged,
+    LayoutsChanged,
+    WorkspaceChanged { session_id: String },
+}
+```
+
+Coarse-grained for v1. Finer-grained variants (SessionCreated, WorkspaceAdded, etc.) can be added later without breaking the pattern.
+
+### AppState Refactor
+
+```rust
+pub struct AppState {
+    pub db: Database,
+}
+```
+
+No `Arc<Mutex<>>`. No `SessionRegistry`. No `LayoutStore`. `AppState` is cheaply cloneable (contains only `PathBuf`).
+
+### Tauri Event Bridge
+
+In `src-tauri/src/lib.rs`:
+- After `execute()`, iterate `outcome.events` and emit Tauri events
+- `DomainEvent::SessionsChanged` → `app.emit("sessions-changed", ())`
+- `DomainEvent::LayoutsChanged` → `app.emit("layouts-changed", ())`
+- `DomainEvent::WorkspaceChanged { .. }` → `app.emit("sessions-changed", ())` (frontend compatibility)
+
+### MCP Event Bridge
+
+In `crates/mcp/src/lib.rs`:
+- After `execute()` (via `spawn_blocking`), iterate `outcome.events` and invoke existing callbacks
+- Same mapping as Tauri but through `on_session_changed` / `on_layouts_changed` callbacks
+
+### Deletions
+
+Remove entirely:
+- `crates/core/src/session_registry.rs`
+- `crates/core/src/layout_store.rs`
+- `WatcherStore` trait and implementations in `src-tauri/src/lib.rs`
+- File watcher setup (`notify::recommended_watcher`, `handle_watcher_event`, `reload_if_changed`)
+- `suppress_watcher` / `AtomicBool` fields
+- `lock_both()` and canonical lock ordering in executor
+- `save()` / `reload()` methods on old stores
+- `notify` dependency from `src-tauri/Cargo.toml`
+
+### Dependencies
+
+Add to `crates/core/Cargo.toml`:
+- `rusqlite = { version = "0.40", features = ["bundled"] }`
+
+Remove from `src-tauri/Cargo.toml`:
+- `notify = "6"`
+
+Retain in `crates/core/Cargo.toml`:
+- `serde`, `serde_json` (for LayoutTree serialization)
+- `uuid` (for ID generation)
+- `chrono` (for epoch milliseconds)
+- `thiserror`
+
+Retain in dev-dependencies:
+- `tempfile`
 
 ## Testing Decisions
 
-### What makes a good test
+Good tests verify external behavior through the public interface, not implementation details. Use in-memory SQLite (`Connection::open_in_memory()`) for isolation and speed.
 
-Tests verify that each MCP tool correctly dispatches to the Command Layer and returns the expected result. Tests use temporary directories for isolation (same pattern as existing core and commands tests). Tests verify error cases (invalid session ID, missing template, etc.) return proper MCP error responses.
+### Database Tests (Required)
 
-### Modules tested
+- `migration_creates_all_tables` — verify `sessions`, `workspaces`, `layouts`, `schema_version` exist after `migrate()`
+- `migration_is_idempotent` — run `migrate()` twice, verify no errors
+- `connection_sets_pragmas` — verify WAL mode, foreign keys, busy_timeout are active
 
-- **`crates/mcp/src/tools.rs`** — Test each of the 18 tool methods on `McpHandler`. Create a fresh `AppState` with a temp directory and a Tauri `App`/`AppHandle` test instance, construct `McpHandler`, call the async tool method with known inputs, await the result, assert the returned data matches the expected core output. Test error propagation: when the underlying `execute()` returns an error, the tool method returns an `McpError` with the correct JSON-RPC code and data.
-- **`crates/mcp/src/lib.rs`** — Test plugin setup: verify `init()` returns a valid `TauriPlugin`, verify state is accessible in `setup()`, verify the handler struct can be constructed.
+### Repository Tests (Required)
 
-### Prior art
+`SessionRepository`:
+- `create_session`
+- `get_session_joins_workspaces`
+- `list_sessions`
+- `delete_session`
+- `rename_session`
+- `delete_session_cascades_workspaces` — critical FK behavior test
 
-The existing tests in `crates/commands/src/executor.rs` test the `execute()` function with `AppState` backed by temp directories. The MCP tool handler tests follow the same pattern — each test creates `AppState`, calls the tool function, and asserts the result.
+`WorkspaceRepository`:
+- `create_workspace`
+- `list_by_session`
+- `delete_workspace`
+- `update_tree`
+
+`LayoutRepository`:
+- `create_layout`
+- `list_layouts`
+- `delete_layout`
+
+### Executor Tests (Required)
+
+These verify application behavior, not persistence internals:
+- `workspace_add_creates_default_active_workspace`
+- `workspace_reset_restores_template_tree`
+- `session_delete_removes_all_workspaces`
+- `workspace_set_active_updates_session`
+- `template_delete_does_not_break_workspaces`
+
+### Event Tests (Required)
+
+- `session_create_returns_sessions_changed_event`
+- `workspace_add_returns_workspace_changed_event`
+- `layout_save_returns_layouts_changed_event`
+- `read_only_commands_return_empty_events` (SessionList, WorkspaceList, etc.)
+
+### Bridge Tests (Minimal)
+
+- `domain_event_maps_to_tauri_event_name`
+- `domain_event_maps_to_mcp_callback`
 
 ## Out of Scope
 
-- Whiteboard operations (create_card, create_edge, create_frame, etc.) — no corresponding Commands exist yet.
-- Codebase intelligence tools (find_symbol, find_references, build_code_map) — no corresponding Commands exist yet.
-- TCP transport — stdio only for v1. TCP can be added later as a config option on the plugin builder.
-- Tool name prefixing (`workspace.*`, `codebase.*`) — all 18 v1 tools are workspace/session/template operations; prefixing is deferred until codebase tools are added.
-- Frontend changes — the frontend already has event listeners for `sessions-changed` and `layouts-changed`; no new listeners needed.
-- MCP capabilities beyond tools (resources, prompts) — v1 is tools-only.
-- MCP server lifecycle management — the server starts with the app and stops when the app exits. No start/stop controls.
-- Remote agent authentication — TCP is out of scope for v1.
-- `AIAW_SESSION_ID` fallback logic — v1 requires the env var to be set. Future: allow explicit session_id parameter as override.
+- Migration of existing JSON data — users start fresh
+- Async persistence (sqlx) — rusqlite is synchronous per ADR 0001
+- Trait-based repository abstractions — concrete structs only
+- Finer-grained domain events (SessionCreated, WorkspaceAdded, etc.) — coarse-grained for v1
+- Frontend changes — React code works unchanged via same event names
+- PostgreSQL support
+- Panel metadata indexing or search
+- Workspace snapshots or versioning
+- Connection pooling
 
 ## Further Notes
 
-- The MCP server is a pure adapter layer — it adds no new business logic. Every tool is a thin wrapper: receive MCP request → construct `Command` → call `execute()` → return `CommandResult` as MCP response.
-- The `tree` parameter for `template_save` and `workspace_update_tree` accepts a `LayoutTree` JSON object directly (the same struct shape as the Command variant), not a JSON string. The MCP protocol natively deserializes JSON objects into structs.
-- `session_create` is a global operation that does not use `AIAW_SESSION_ID` — the agent must supply an absolute `working_dir`. The agent is responsible for providing a valid path (typically the PTY's current working directory).
-- `workspace_get_active` returns `null` (not an error) when a Session has no active workspace. This matches the Command Layer behavior where `execute()` returns `Ok(Unit(()))` in this case.
-- The `suppress_watcher` flag in SessionRegistry and LayoutStore is set during `save()`, so MCP-initiated writes don't trigger redundant file watcher reloads. The Tauri event emission handles GUI updates directly.
-- The MCP plugin does not use `invoke_handler()` (no `#[tauri::command]` functions exposed to the frontend). It's purely a background server started in `setup()`.
-- If the Tauri app is not running, the MCP server is unavailable. This is acceptable — the MCP's purpose is to manipulate the workspace the user is viewing.
+The `commands` crate's public interface (`Command`, `CommandResult`, `CommandError`) remains largely unchanged. Callers (Tauri commands, MCP tools) adapt to `ExecutionOutcome` wrapping but the command enum itself is stable.
+
+The `mcp-server` standalone binary constructs its own `AppState` with `Database` directly, same pattern as today but without `Arc<Mutex<>>`.
+
+WAL mode enables concurrent readers with a single writer. For this desktop application's workload (user-driven actions, occasional MCP writes), SQLite will not be a bottleneck. The per-command connection model avoids replacing one mutex problem with another.
