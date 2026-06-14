@@ -16,6 +16,13 @@ fn lock_layouts(state: &AppState) -> Result<MutexGuard<'_, LayoutStore>, Command
         .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))
 }
 
+/// Lock both stores in canonical order (sessions first, then layouts) to prevent deadlocks.
+fn lock_both(state: &AppState) -> Result<(MutexGuard<'_, SessionRegistry>, MutexGuard<'_, LayoutStore>), CommandError> {
+    let sessions = lock_sessions(state)?;
+    let layouts = lock_layouts(state)?;
+    Ok((sessions, layouts))
+}
+
 fn ensure_default_workspace(session_id: &str, sessions: &mut SessionRegistry, state: &AppState) -> Result<(), CommandError> {
     let mut store = lock_layouts(state)?;
     let layouts = store.list_layouts()?;
@@ -129,8 +136,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
             }
         }
         Command::WorkspaceAdd { session_id, template_id } => {
-            let mut sessions = lock_sessions(state)?;
-            let store = lock_layouts(state)?;
+            let (mut sessions, store) = lock_both(state)?;
             let template = store.get_layout(&template_id)?;
             drop(store);
             let ws = sessions.add_workspace(&session_id, &template_id, &template.name, template.tree)?;
@@ -162,16 +168,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceReset { session_id, workspace_id } => {
-            let mut sessions = lock_sessions(state)?;
+            let (mut sessions, store) = lock_both(state)?;
             let template_id = sessions.get_workspaces(&session_id)?
                 .iter().find(|w| w.id == workspace_id)
                 .ok_or_else(|| CommandError::not_found("workspace", &workspace_id))?
                 .template_id.clone();
 
-            let default_tree = {
-                let store = lock_layouts(state)?;
-                store.get_layout(&template_id)?.tree
-            };
+            let default_tree = store.get_layout(&template_id)?.tree;
+            drop(store);
 
             sessions.reset_workspace_to_template(&session_id, &workspace_id, default_tree)?;
             sessions.save()?;
@@ -188,14 +192,19 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
 mod tests {
     use super::*;
     use crate::state::AppState;
+    use tempfile::TempDir;
 
-    fn setup() -> AppState {
-        AppState::new().expect("Failed to create AppState")
+    fn setup() -> (AppState, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let sessions_path = temp_dir.path().join("sessions.json");
+        let layouts_path = temp_dir.path().join("layouts.json");
+        let state = AppState::new_with_paths(sessions_path, layouts_path);
+        (state, temp_dir)
     }
 
     #[test]
     fn test_session_create_and_list() {
-        let state = setup();
+        let (state, _tmp) = setup();
         let result = execute(
             Command::SessionCreate {
                 working_dir: "/tmp/test".to_string(),
