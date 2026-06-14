@@ -12,6 +12,65 @@ use serde_json;
 #[cfg(feature = "tauri-integration")]
 use tauri::{Emitter, Manager};
 
+#[cfg(feature = "tauri-integration")]
+fn make_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Option<Arc<dyn Fn() + Send + Sync>> {
+    let h = handle.clone();
+    Some(Arc::new(move || { let _ = h.emit(event, ()); }) as Arc<dyn Fn() + Send + Sync>)
+}
+
+macro_rules! run_mcp_command {
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, callback: $cb:expr) => {
+        match execute($cmd, $state) {
+            Ok(CommandResult::$variant($bind)) => {
+                if let Some(cb) = &$cb { cb(); }
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json) => {
+        match execute($cmd, $state) {
+            Ok(CommandResult::$variant($bind)) => {
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, callback: $cb:expr) => {
+        match execute($cmd, $state) {
+            Ok(CommandResult::$variant($bind)) => {
+                if let Some(cb) = &$cb { cb(); }
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty) => {
+        match execute($cmd, $state) {
+            Ok(CommandResult::$variant($bind)) => {
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json_or_null) => {
+        match execute($cmd, $state) {
+            Ok(CommandResult::$variant($bind)) => {
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(CommandResult::Unit(_)) => {
+                Ok(CallToolResult::success(vec![Content::json(&serde_json::Value::Null)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+}
+
 #[derive(Clone)]
 pub struct McpHandler {
     pub sessions: Arc<Mutex<SessionRegistry>>,
@@ -59,199 +118,62 @@ impl McpHandler {
 
     #[tool(description = "List all sessions")]
     async fn session_list(&self) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionList, &state) {
-            Ok(CommandResult::Sessions(sessions)) => {
-                Ok(CallToolResult::success(vec![Content::json(&sessions)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionList, &state, Sessions, sessions, json)
     }
 
     #[tool(description = "Create a new session")]
-    async fn session_create(
-        &self,
-        #[tool(param)]
-        working_dir: String,
-        #[tool(param)]
-        name: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionCreate { working_dir, name }, &state) {
-            Ok(CommandResult::Session(session)) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&session)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn session_create(&self, #[tool(param)] working_dir: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionCreate { working_dir, name }, &state, Session, session, json, callback: self.on_session_changed)
     }
 
     #[tool(description = "Rename a session")]
-    async fn session_rename(
-        &self,
-        #[tool(param)]
-        session_id: String,
-        #[tool(param)]
-        new_name: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionRename { session_id, new_name }, &state) {
-            Ok(CommandResult::Session(session)) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&session)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn session_rename(&self, #[tool(param)] session_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionRename { session_id, new_name }, &state, Session, session, json, callback: self.on_session_changed)
     }
 
     #[tool(description = "Delete a session")]
-    async fn session_delete(
-        &self,
-        #[tool(param)]
-        session_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionDelete { session_id }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn session_delete(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionDelete { session_id }, &state, Unit, _, empty, callback: self.on_session_changed)
     }
 
     #[tool(description = "Open a session (set as active)")]
-    async fn session_open(
-        &self,
-        #[tool(param)]
-        session_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionOpen { session_id }, &state) {
-            Ok(CommandResult::Session(session)) => {
-                Ok(CallToolResult::success(vec![Content::json(&session)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn session_open(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionOpen { session_id }, &state, Session, session, json)
     }
 
     #[tool(description = "Close the active session")]
-    async fn session_close(
-        &self,
-        #[tool(param)]
-        session_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::SessionClose { session_id }, &state) {
-            Ok(CommandResult::Session(session)) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&session)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn session_close(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::SessionClose { session_id }, &state, Session, session, json, callback: self.on_session_changed)
     }
 
     #[tool(description = "List all layout templates")]
     async fn template_list(&self) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::TemplateList, &state) {
-            Ok(CommandResult::Layouts(layouts)) => {
-                Ok(CallToolResult::success(vec![Content::json(&layouts)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::TemplateList, &state, Layouts, layouts, json)
     }
 
     #[tool(description = "Save a layout template")]
-    async fn template_save(
-        &self,
-        #[tool(param)]
-        name: String,
-        #[tool(param)]
-        tree: LayoutTree,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::TemplateSave { name, tree }, &state) {
-            Ok(CommandResult::Layout(layout)) => {
-                if let Some(cb) = &self.on_layouts_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&layout)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn template_save(&self, #[tool(param)] name: String, #[tool(param)] tree: LayoutTree) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::TemplateSave { name, tree }, &state, Layout, layout, json, callback: self.on_layouts_changed)
     }
 
     #[tool(description = "Delete a layout template")]
-    async fn template_delete(
-        &self,
-        #[tool(param)]
-        layout_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::TemplateDelete { layout_id }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_layouts_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn template_delete(&self, #[tool(param)] layout_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::TemplateDelete { layout_id }, &state, Unit, _, empty, callback: self.on_layouts_changed)
     }
 
     #[tool(description = "Rename a layout template")]
-    async fn template_rename(
-        &self,
-        #[tool(param)]
-        layout_id: String,
-        #[tool(param)]
-        new_name: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let state = AppState {
-            sessions: self.sessions.clone(),
-            layouts: self.layouts.clone(),
-        };
-        match execute(Command::TemplateRename { layout_id, new_name }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_layouts_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+    async fn template_rename(&self, #[tool(param)] layout_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
+        run_mcp_command!(Command::TemplateRename { layout_id, new_name }, &state, Unit, _, empty, callback: self.on_layouts_changed)
     }
 
     fn require_session_id(&self) -> Result<String, rmcp::Error> {
@@ -261,20 +183,12 @@ impl McpHandler {
         if let Ok(id) = std::env::var("AIAW_SESSION_ID") {
             return Ok(id);
         }
-        match std::env::current_dir() {
-            Ok(cwd) => {
-                match self.sessions.lock() {
-                    Ok(registry) => {
-                        match crate::session_resolution::resolve_session_id(None, &cwd, &registry) {
-                            Ok(id) => Ok(id),
-                            Err(e) => Err(rmcp::Error::invalid_params(format!("{}", e), None)),
-                        }
-                    }
-                    Err(e) => Err(rmcp::Error::internal_error(e.to_string(), None)),
-                }
-            }
-            Err(e) => Err(rmcp::Error::internal_error(format!("Cannot determine current directory: {}", e), None)),
-        }
+        let cwd = std::env::current_dir()
+            .map_err(|e| rmcp::Error::internal_error(format!("Cannot determine current directory: {}", e), None))?;
+        let registry = self.sessions.lock()
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        crate::session_resolution::resolve_session_id(None, &cwd, &registry)
+            .map_err(|e| rmcp::Error::invalid_params(format!("{}", e), None))
     }
 
     #[tool(description = "Show the current session info including ID, name, working directory, and how it was resolved")]
@@ -296,138 +210,56 @@ impl McpHandler {
     async fn workspace_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceList { session_id }, &state) {
-            Ok(CommandResult::Workspaces(workspaces)) =>
-                Ok(CallToolResult::success(vec![Content::json(&workspaces)?])),
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceList { session_id }, &state, Workspaces, workspaces, json)
     }
 
     #[tool(description = "Get the active workspace instance, or null when none is active")]
     async fn workspace_get_active(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceGetActive { session_id }, &state) {
-            Ok(CommandResult::Workspace(ws)) =>
-                Ok(CallToolResult::success(vec![Content::json(&ws)?])),
-            Ok(CommandResult::Unit(())) =>
-                Ok(CallToolResult::success(vec![Content::json(&serde_json::Value::Null)?])),
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceGetActive { session_id }, &state, Workspace, ws, json_or_null)
     }
 
     #[tool(description = "Add a workspace instance from a template")]
-    async fn workspace_add(
-        &self,
-        #[tool(param)]
-        template_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_add(&self, #[tool(param)] template_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceAdd { session_id, template_id }, &state) {
-            Ok(CommandResult::Workspace(ws)) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&ws)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceAdd { session_id, template_id }, &state, Workspace, ws, json, callback: self.on_session_changed)
     }
 
     #[tool(description = "Remove a workspace instance")]
-    async fn workspace_remove(
-        &self,
-        #[tool(param)]
-        workspace_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_remove(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceRemove { session_id, workspace_id }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceRemove { session_id, workspace_id }, &state, Unit, _, empty, callback: self.on_session_changed)
     }
 
     #[tool(description = "Rename a workspace instance")]
-    async fn workspace_rename(
-        &self,
-        #[tool(param)]
-        workspace_id: String,
-        #[tool(param)]
-        new_name: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_rename(&self, #[tool(param)] workspace_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state, Unit, _, empty, callback: self.on_session_changed)
     }
 
     #[tool(description = "Set a workspace as the active workspace")]
-    async fn workspace_set_active(
-        &self,
-        #[tool(param)]
-        workspace_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_set_active(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceSetActive { session_id, workspace_id }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceSetActive { session_id, workspace_id }, &state, Unit, _, empty, callback: self.on_session_changed)
     }
 
     #[tool(description = "Update the layout tree of a workspace instance")]
-    async fn workspace_update_tree(
-        &self,
-        #[tool(param)]
-        workspace_id: String,
-        #[tool(param)]
-        tree: LayoutTree,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_update_tree(&self, #[tool(param)] workspace_id: String, #[tool(param)] tree: LayoutTree) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state) {
-            Ok(CommandResult::Unit(())) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state, Unit, _, empty, callback: self.on_session_changed)
     }
 
     #[tool(description = "Reset a workspace instance to the template layout")]
-    async fn workspace_reset(
-        &self,
-        #[tool(param)]
-        workspace_id: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    async fn workspace_reset(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { sessions: self.sessions.clone(), layouts: self.layouts.clone() };
-        match execute(Command::WorkspaceReset { session_id, workspace_id }, &state) {
-            Ok(CommandResult::Workspace(ws)) => {
-                if let Some(cb) = &self.on_session_changed { cb(); }
-                Ok(CallToolResult::success(vec![Content::json(&ws)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
+        run_mcp_command!(Command::WorkspaceReset { session_id, workspace_id }, &state, Workspace, ws, json, callback: self.on_session_changed)
     }
 }
 
@@ -711,14 +543,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let layouts = state.layouts.clone();
             let handle = app.app_handle().clone();
 
-            let on_session_changed = {
-                let h = handle.clone();
-                Some(Arc::new(move || { let _ = h.emit("sessions-changed", ()); }) as Arc<dyn Fn() + Send + Sync>)
-            };
-            let on_layouts_changed = {
-                let h = handle.clone();
-                Some(Arc::new(move || { let _ = h.emit("layouts-changed", ()); }) as Arc<dyn Fn() + Send + Sync>)
-            };
+            let on_session_changed = make_change_callback(&handle, "sessions-changed");
+            let on_layouts_changed = make_change_callback(&handle, "layouts-changed");
 
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new()

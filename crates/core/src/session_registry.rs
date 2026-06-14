@@ -112,6 +112,20 @@ pub struct SessionRegistry {
     suppress_watcher: AtomicBool,
 }
 
+fn load_sessions_from_file(path: &std::path::Path) -> Result<Vec<Session>> {
+    if path.exists() {
+        let content = fs::read_to_string(path)?;
+        if content.trim().is_empty() {
+            Ok(Vec::new())
+        } else {
+            let sessions_file: SessionsFile = serde_json::from_str(&content)?;
+            Ok(sessions_file.sessions)
+        }
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
 }
@@ -124,17 +138,7 @@ impl SessionRegistry {
     }
 
     pub fn new_with_path(file_path: PathBuf) -> Result<Self> {
-        let sessions = if file_path.exists() {
-            let content = fs::read_to_string(&file_path)?;
-            if content.trim().is_empty() {
-                Vec::new()
-            } else {
-                let sessions_file: SessionsFile = serde_json::from_str(&content)?;
-                sessions_file.sessions
-            }
-        } else {
-            Vec::new()
-        };
+        let sessions = load_sessions_from_file(&file_path)?;
 
         Ok(SessionRegistry {
             file_path,
@@ -195,19 +199,30 @@ impl SessionRegistry {
         self.sessions.iter().position(|s| s.id == id)
     }
 
+    fn resolve_session(&self, session_id: &str) -> Result<usize> {
+        self.find_index(session_id)
+            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))
+    }
+
+    fn resolve_workspace(&self, session_id: &str, workspace_id: &str) -> Result<(usize, usize)> {
+        let session_idx = self.resolve_session(session_id)?;
+        let workspace_idx = self.sessions[session_idx]
+            .workspaces
+            .iter()
+            .position(|w| w.id == workspace_id)
+            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
+        Ok((session_idx, workspace_idx))
+    }
+
     pub fn rename(&mut self, id: &str, new_name: &str) -> Result<Session> {
-        let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        let idx = self.resolve_session(id)?;
         self.sessions[idx].name = new_name.to_string();
         self.sessions[idx].updated_at = now_iso();
         Ok(self.sessions[idx].clone())
     }
 
     pub fn delete(&mut self, id: &str) -> Result<()> {
-        let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        let idx = self.resolve_session(id)?;
         self.sessions.remove(idx);
         Ok(())
     }
@@ -218,27 +233,21 @@ impl SessionRegistry {
     }
 
     pub fn open(&mut self, id: &str) -> Result<Session> {
-        let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        let idx = self.resolve_session(id)?;
         self.sessions[idx].state = SessionState::Running;
         self.sessions[idx].updated_at = now_iso();
         Ok(self.sessions[idx].clone())
     }
 
     pub fn close(&mut self, id: &str) -> Result<Session> {
-        let idx = self
-            .find_index(id)
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))?;
+        let idx = self.resolve_session(id)?;
         self.sessions[idx].state = SessionState::Paused;
         self.sessions[idx].updated_at = now_iso();
         Ok(self.sessions[idx].clone())
     }
 
     pub fn add_workspace(&mut self, session_id: &str, template_id: &str, template_name: &str, default_tree: LayoutTree) -> Result<WorkspaceInstance> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let idx = self.resolve_session(session_id)?;
         let ws = WorkspaceInstance {
             id: Uuid::new_v4().to_string(),
             name: template_name.to_string(),
@@ -255,16 +264,9 @@ impl SessionRegistry {
     }
 
     pub fn remove_workspace(&mut self, session_id: &str, workspace_id: &str) -> Result<()> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
-        let session = &mut self.sessions[idx];
-        let pos = session
-            .workspaces
-            .iter()
-            .position(|w| w.id == workspace_id)
-            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
-        session.workspaces.remove(pos);
+        let (session_idx, workspace_idx) = self.resolve_workspace(session_id, workspace_id)?;
+        let session = &mut self.sessions[session_idx];
+        session.workspaces.remove(workspace_idx);
         if session.active_workspace_id.as_deref() == Some(workspace_id) {
             session.active_workspace_id = session.workspaces.first().map(|w| w.id.clone());
         }
@@ -273,74 +275,43 @@ impl SessionRegistry {
     }
 
     pub fn rename_workspace(&mut self, session_id: &str, workspace_id: &str, new_name: &str) -> Result<()> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
-        let ws = self.sessions[idx]
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == workspace_id)
-            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
-        ws.name = new_name.to_string();
-        self.sessions[idx].updated_at = now_iso();
+        let (session_idx, workspace_idx) = self.resolve_workspace(session_id, workspace_id)?;
+        self.sessions[session_idx].workspaces[workspace_idx].name = new_name.to_string();
+        self.sessions[session_idx].updated_at = now_iso();
         Ok(())
     }
 
     pub fn set_active_workspace(&mut self, session_id: &str, workspace_id: &str) -> Result<()> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
-        if !self.sessions[idx].workspaces.iter().any(|w| w.id == workspace_id) {
+        let session_idx = self.resolve_session(session_id)?;
+        if !self.sessions[session_idx].workspaces.iter().any(|w| w.id == workspace_id) {
             return Err(RegistryError::NotFound(workspace_id.to_string()));
         }
-        self.sessions[idx].active_workspace_id = Some(workspace_id.to_string());
-        self.sessions[idx].updated_at = now_iso();
+        self.sessions[session_idx].active_workspace_id = Some(workspace_id.to_string());
+        self.sessions[session_idx].updated_at = now_iso();
         Ok(())
     }
 
     pub fn update_workspace_tree(&mut self, session_id: &str, workspace_id: &str, tree: LayoutTree) -> Result<()> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
-        let ws = self.sessions[idx]
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == workspace_id)
-            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
-        ws.current_tree = tree;
-        self.sessions[idx].updated_at = now_iso();
+        let (session_idx, workspace_idx) = self.resolve_workspace(session_id, workspace_id)?;
+        self.sessions[session_idx].workspaces[workspace_idx].current_tree = tree;
+        self.sessions[session_idx].updated_at = now_iso();
         Ok(())
     }
 
     pub fn reset_workspace_to_template(&mut self, session_id: &str, workspace_id: &str, default_tree: LayoutTree) -> Result<()> {
-        let idx = self
-            .find_index(session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
-        let ws = self.sessions[idx]
-            .workspaces
-            .iter_mut()
-            .find(|w| w.id == workspace_id)
-            .ok_or_else(|| RegistryError::NotFound(workspace_id.to_string()))?;
-        ws.current_tree = default_tree;
-        self.sessions[idx].updated_at = now_iso();
+        let (session_idx, workspace_idx) = self.resolve_workspace(session_id, workspace_id)?;
+        self.sessions[session_idx].workspaces[workspace_idx].current_tree = default_tree;
+        self.sessions[session_idx].updated_at = now_iso();
         Ok(())
     }
 
     pub fn get_workspaces(&self, session_id: &str) -> Result<&Vec<WorkspaceInstance>> {
-        let idx = self
-            .sessions
-            .iter()
-            .position(|s| s.id == session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let idx = self.resolve_session(session_id)?;
         Ok(&self.sessions[idx].workspaces)
     }
 
     pub fn get_active_workspace(&self, session_id: &str) -> Result<WorkspaceInstance> {
-        let idx = self
-            .sessions
-            .iter()
-            .position(|s| s.id == session_id)
-            .ok_or_else(|| RegistryError::NotFound(session_id.to_string()))?;
+        let idx = self.resolve_session(session_id)?;
         let ws_id = self.sessions[idx]
             .active_workspace_id
             .as_ref()
@@ -354,11 +325,8 @@ impl SessionRegistry {
     }
 
     pub fn get_by_id(&self, id: &str) -> Result<Session> {
-        self.sessions
-            .iter()
-            .find(|s| s.id == id)
-            .cloned()
-            .ok_or_else(|| RegistryError::NotFound(id.to_string()))
+        let idx = self.resolve_session(id)?;
+        Ok(self.sessions[idx].clone())
     }
 
     pub fn demote_running_to_paused(&mut self) -> Result<()> {
@@ -394,17 +362,7 @@ impl SessionRegistry {
     }
 
     pub fn reload(&mut self) -> Result<()> {
-        if self.file_path.exists() {
-            let content = fs::read_to_string(&self.file_path)?;
-            if content.trim().is_empty() {
-                self.sessions = Vec::new();
-            } else {
-                let sessions_file: SessionsFile = serde_json::from_str(&content)?;
-                self.sessions = sessions_file.sessions;
-            }
-        } else {
-            self.sessions = Vec::new();
-        }
+        self.sessions = load_sessions_from_file(&self.file_path)?;
         Ok(())
     }
 }

@@ -55,43 +55,36 @@ impl CommandError {
     }
 }
 
-impl From<ai_agent_workspace_core::RegistryError> for CommandError {
-    fn from(err: ai_agent_workspace_core::RegistryError) -> Self {
-        match err {
-            ai_agent_workspace_core::RegistryError::NotFound(id) => {
-                CommandError::not_found("session", &id)
-            }
-            ai_agent_workspace_core::RegistryError::Serialization(e) => {
-                CommandError::internal(&format!("serialization failed: {}", e))
-            }
-            ai_agent_workspace_core::RegistryError::Io(e) => {
-                CommandError::internal(&format!("io error: {}", e))
-            }
-            ai_agent_workspace_core::RegistryError::NoDataDir => {
-                CommandError::internal("no data directory found")
+macro_rules! from_core_error {
+    ($crate_name:ident :: $error_name:ident, $entity:literal) => {
+        from_core_error!($crate_name::$error_name, $entity, );
+    };
+    ($crate_name:ident :: $error_name:ident, $entity:literal, $($extra_arms:tt)*) => {
+        impl From<$crate_name::$error_name> for CommandError {
+            fn from(err: $crate_name::$error_name) -> Self {
+                match err {
+                    $crate_name::$error_name::NotFound(id) => {
+                        CommandError::not_found($entity, &id)
+                    },
+                    $($extra_arms)*
+                    $crate_name::$error_name::Serialization(e) => {
+                        CommandError::internal(&format!("serialization failed: {}", e))
+                    },
+                    $crate_name::$error_name::Io(e) => {
+                        CommandError::internal(&format!("io error: {}", e))
+                    },
+                    $crate_name::$error_name::NoDataDir => {
+                        CommandError::internal("no data directory found")
+                    },
+                }
             }
         }
-    }
+    };
 }
 
-impl From<ai_agent_workspace_core::LayoutError> for CommandError {
-    fn from(err: ai_agent_workspace_core::LayoutError) -> Self {
-        match err {
-            ai_agent_workspace_core::LayoutError::NotFound(id) => {
-                CommandError::not_found("layout", &id)
-            }
-            ai_agent_workspace_core::LayoutError::BuiltIn(name) => {
-                CommandError::invalid_input(&format!("Built-in layout cannot be modified: {}", name))
-            }
-            ai_agent_workspace_core::LayoutError::Serialization(e) => {
-                CommandError::internal(&format!("serialization failed: {}", e))
-            }
-            ai_agent_workspace_core::LayoutError::Io(e) => {
-                CommandError::internal(&format!("io error: {}", e))
-            }
-            ai_agent_workspace_core::LayoutError::NoDataDir => {
-                CommandError::internal("no data directory found")
-            }
-        }
-    }
-}
+from_core_error!(ai_agent_workspace_core::RegistryError, "session");
+from_core_error!(ai_agent_workspace_core::LayoutError, "layout",
+    ai_agent_workspace_core::LayoutError::BuiltIn(name) => {
+        CommandError::invalid_input(&format!("Built-in layout cannot be modified: {}", name))
+    },
+);

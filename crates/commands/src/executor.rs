@@ -1,136 +1,135 @@
+use std::sync::MutexGuard;
+
 use crate::command::Command;
 use crate::result::CommandResult;
 use crate::error::CommandError;
 use crate::state::AppState;
+use ai_agent_workspace_core::{LayoutNode, LayoutTree, LayoutStore, SessionRegistry};
+
+fn lock_sessions(state: &AppState) -> Result<MutexGuard<'_, SessionRegistry>, CommandError> {
+    state.sessions.lock()
+        .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))
+}
+
+fn lock_layouts(state: &AppState) -> Result<MutexGuard<'_, LayoutStore>, CommandError> {
+    state.layouts.lock()
+        .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))
+}
+
+fn ensure_default_workspace(session_id: &str, sessions: &mut SessionRegistry, state: &AppState) -> Result<(), CommandError> {
+    let mut store = lock_layouts(state)?;
+    let layouts = store.list_layouts()?;
+    let (template_id, template_name, default_tree) = if let Some(general) = layouts.iter().find(|l| l.name == "General") {
+        (general.id.clone(), general.name.clone(), general.tree.clone())
+    } else {
+        let terminal_tree = LayoutTree {
+            tree: LayoutNode::Panel {
+                panel_type: "terminal".into(),
+            },
+        };
+        let layout = store.save_layout("General", terminal_tree, true)?;
+        store.save()?;
+        (layout.id, layout.name, layout.tree)
+    };
+    drop(store);
+
+    sessions.add_workspace(session_id, &template_id, &template_name, default_tree)?;
+    Ok(())
+}
 
 pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, CommandError> {
     match command {
         Command::SessionCreate { working_dir, name } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             let session = sessions.create(&working_dir, &name)?;
             sessions.save()?;
             Ok(CommandResult::Session(session))
         }
         Command::SessionList => {
-            let sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let sessions = lock_sessions(state)?;
             let list = sessions.list()?;
             Ok(CommandResult::Sessions(list))
         }
         Command::SessionRename { session_id, new_name } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             let session = sessions.rename(&session_id, &new_name)?;
             sessions.save()?;
             Ok(CommandResult::Session(session))
         }
         Command::SessionDelete { session_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.delete(&session_id)?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::SessionOpen { session_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             let session = sessions.open(&session_id)?;
 
             if session.workspaces.is_empty() {
-                let mut store = state.layouts.lock()
-                    .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
-                let layouts = store.list_layouts()?;
-                let (template_id, template_name, default_tree) = if let Some(general) = layouts.iter().find(|l| l.name == "General") {
-                    (general.id.clone(), general.name.clone(), general.tree.clone())
-                } else {
-                    let terminal_tree = LayoutTree {
-                        tree: LayoutNode::Panel {
-                            panel_type: "terminal".into(),
-                        },
-                    };
-                    let layout = store.save_layout("General", terminal_tree, true)?;
-                    store.save()?;
-                    (layout.id, layout.name, layout.tree)
-                };
-                drop(store);
-
-                sessions.add_workspace(&session_id, &template_id, &template_name, default_tree)?;
-                sessions.save()?;
-            } else {
-                sessions.save()?;
+                ensure_default_workspace(&session_id, &mut *sessions, state)?;
             }
 
+            sessions.save()?;
             let result = sessions.get_by_id(&session_id)?;
             Ok(CommandResult::Session(result))
         }
         Command::SessionClose { session_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             let session = sessions.close(&session_id)?;
             sessions.save()?;
             Ok(CommandResult::Session(session))
         }
         Command::SessionDeleteAll => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.delete_all()?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::TemplateList => {
-            let store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let store = lock_layouts(state)?;
             let layouts = store.list_layouts()?;
             Ok(CommandResult::Layouts(layouts))
         }
         Command::TemplateSave { name, tree } => {
-            let mut store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut store = lock_layouts(state)?;
             let layout = store.save_layout(&name, tree, false)?;
             store.save()?;
             Ok(CommandResult::Layout(layout))
         }
         Command::TemplateDelete { layout_id } => {
-            let mut store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut store = lock_layouts(state)?;
             store.delete_layout(&layout_id)?;
             store.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::TemplateRename { layout_id, new_name } => {
-            let mut store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut store = lock_layouts(state)?;
             store.rename_layout(&layout_id, &new_name)?;
             store.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::TemplateDeleteAll => {
-            let mut store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut store = lock_layouts(state)?;
             store.delete_all()?;
             store.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceList { session_id } => {
-            let sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let sessions = lock_sessions(state)?;
             let workspaces = sessions.get_workspaces(&session_id)?.clone();
             Ok(CommandResult::Workspaces(workspaces))
         }
         Command::WorkspaceGetActive { session_id } => {
-            let sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let sessions = lock_sessions(state)?;
             match sessions.get_active_workspace(&session_id) {
                 Ok(ws) => Ok(CommandResult::Workspace(ws)),
                 Err(_) => Ok(CommandResult::Unit(())),
             }
         }
         Command::WorkspaceAdd { session_id, template_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
-            let store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
+            let store = lock_layouts(state)?;
             let template = store.get_layout(&template_id)?;
             drop(store);
             let ws = sessions.add_workspace(&session_id, &template_id, &template.name, template.tree)?;
@@ -138,48 +137,41 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
             Ok(CommandResult::Workspace(ws))
         }
         Command::WorkspaceRemove { session_id, workspace_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.remove_workspace(&session_id, &workspace_id)?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceRename { session_id, workspace_id, new_name } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.rename_workspace(&session_id, &workspace_id, &new_name)?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceSetActive { session_id, workspace_id } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.set_active_workspace(&session_id, &workspace_id)?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceUpdateTree { session_id, workspace_id, tree } => {
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+            let mut sessions = lock_sessions(state)?;
             sessions.update_workspace_tree(&session_id, &workspace_id, tree)?;
             sessions.save()?;
             Ok(CommandResult::Unit(()))
         }
         Command::WorkspaceReset { session_id, workspace_id } => {
-            let template_id = {
-                let sessions = state.sessions.lock()
-                    .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
-                sessions.get_workspaces(&session_id)?
-                    .iter().find(|w| w.id == workspace_id)
-                    .ok_or_else(|| CommandError::not_found("workspace", &workspace_id))?
-                    .template_id.clone()
+            let mut sessions = lock_sessions(state)?;
+            let template_id = sessions.get_workspaces(&session_id)?
+                .iter().find(|w| w.id == workspace_id)
+                .ok_or_else(|| CommandError::not_found("workspace", &workspace_id))?
+                .template_id.clone();
+
+            let default_tree = {
+                let store = lock_layouts(state)?;
+                store.get_layout(&template_id)?.tree
             };
-            let store = state.layouts.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
-            let default_tree = store.get_layout(&template_id)?.tree;
-            drop(store);
-            let mut sessions = state.sessions.lock()
-                .map_err(|e| CommandError::internal(&format!("lock poisoned: {}", e)))?;
+
             sessions.reset_workspace_to_template(&session_id, &workspace_id, default_tree)?;
             sessions.save()?;
             let ws = sessions.get_workspaces(&session_id)?
@@ -190,8 +182,6 @@ pub fn execute(command: Command, state: &AppState) -> Result<CommandResult, Comm
         }
     }
 }
-
-use ai_agent_workspace_core::{LayoutNode, LayoutTree};
 
 #[cfg(test)]
 mod tests {

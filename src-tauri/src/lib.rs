@@ -6,232 +6,194 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, LayoutTree, LayoutNode,
+    Layout, LayoutTree, LayoutNode, LayoutStore,
 };
+use ai_agent_workspace_core::session_registry::SessionRegistry;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 mod pty;
 use pty::{PtyStore, PtySpawnResult, cleanup_orphaned_ptys};
 
+const PREFERENCES_WINDOW_LABEL: &str = "preferences";
+const EVENT_SESSIONS_CHANGED: &str = "sessions-changed";
+const EVENT_LAYOUTS_CHANGED: &str = "layouts-changed";
+const SESSIONS_FILE: &str = "sessions.json";
+const LAYOUTS_FILE: &str = "layouts.json";
+const APP_DATA_DIR_NAME: &str = "AI Agent Workspace";
+const CLI_NAME: &str = "aiaw-mcp-server";
+const CLI_INSTALL_PATH: &str = "/usr/local/bin/aiaw-mcp-server";
+const PREFERENCES_WINDOW_SIZE: (f64, f64) = (520.0, 480.0);
+
+// Shared command-execution macro. Generates a #[tauri::command] fn that
+// wraps execute(Command::..., &state) with a single Ok arm.
+macro_rules! command_handler {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $result_variant:ident, $result_ty:ty,
+     $($param:ident: $pty:ty),* $(,)?) => {
+        #[tauri::command]
+        fn $fn_name(state: tauri::State<AppState>, $($param: $pty,)* ) -> Result<$result_ty, String> {
+            let cmd = Command::$cmd_variant { $($field),* };
+            match execute(cmd, &state) {
+                Ok(CommandResult::$result_variant(x)) => Ok(x),
+                Ok(_) => Err(format!(
+                    "Unexpected command result variant for {}",
+                    stringify!($cmd_variant)
+                )),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    };
+    ($fn_name:ident, $cmd_variant:ident,
+     $result_variant:ident, $result_ty:ty) => {
+        #[tauri::command]
+        fn $fn_name(state: tauri::State<AppState>) -> Result<$result_ty, String> {
+            match execute(Command::$cmd_variant, &state) {
+                Ok(CommandResult::$result_variant(x)) => Ok(x),
+                Ok(_) => Err(format!(
+                    "Unexpected command result variant for {}",
+                    stringify!($cmd_variant)
+                )),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    };
+}
+
+macro_rules! session_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Session, Session, $($param: $pty),*);
+    };
+}
+
+macro_rules! unit_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Unit, (), $($param: $pty),*);
+    };
+    ($fn_name:ident, $cmd_variant:ident) => {
+        command_handler!($fn_name, $cmd_variant, Unit, ());
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! sessions_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Sessions, Vec<SessionSummary>, $($param: $pty),*);
+    };
+    ($fn_name:ident, $cmd_variant:ident) => {
+        command_handler!($fn_name, $cmd_variant, Sessions, Vec<SessionSummary>);
+    };
+}
+
+macro_rules! list_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Sessions, Vec<SessionSummary>, $($param: $pty),*);
+    };
+    ($fn_name:ident, $cmd_variant:ident) => {
+        command_handler!($fn_name, $cmd_variant, Sessions, Vec<SessionSummary>);
+    };
+}
+
+macro_rules! single_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Layout, Layout, $($param: $pty),*);
+    };
+}
+
+macro_rules! layouts_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Layouts, Vec<Layout>, $($param: $pty),*);
+    };
+    ($fn_name:ident, $cmd_variant:ident) => {
+        command_handler!($fn_name, $cmd_variant, Layouts, Vec<Layout>);
+    };
+}
+
+macro_rules! workspace_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Workspace, WorkspaceInstance, $($param: $pty),*);
+    };
+}
+
+macro_rules! workspaces_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $($param:ident: $pty:ty),* $(,)?) => {
+        command_handler!($fn_name, $cmd_variant { $($field),* }, Workspaces, Vec<WorkspaceInstance>, $($param: $pty),*);
+    };
+}
+
+macro_rules! option_return {
+    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
+     $some_variant:ident,
+     $($param:ident: $pty:ty),* $(,)?) => {
+        #[tauri::command]
+        fn $fn_name(state: tauri::State<AppState>, $($param: $pty,)* ) -> Result<Option<WorkspaceInstance>, String> {
+            let cmd = Command::$cmd_variant { $($field),* };
+            match execute(cmd, &state) {
+                Ok(CommandResult::$some_variant(ws)) => Ok(Some(ws)),
+                Ok(CommandResult::Unit(())) => Ok(None),
+                Ok(_) => Err(format!(
+                    "Unexpected command result variant for {}",
+                    stringify!($cmd_variant)
+                )),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+    };
+}
+
+macro_rules! unit_void_return {
+    ($cmd_variant:ident { $($field:ident $(: $val:expr)?),* $(,)? }, $state:ident) => {
+        match execute(Command::$cmd_variant { $($field $(: $val)?),* }, &$state) {
+            Ok(CommandResult::Unit(())) => {}
+            Ok(_) => return Err(format!(
+                "Unexpected command result variant for {}",
+                stringify!($cmd_variant)
+            )),
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+}
+
+// ── Session commands ────────────────────────────────────────────────
+
+session_return!(create_session, SessionCreate { working_dir, name }, working_dir: String, name: String);
+list_return!(list_sessions, SessionList);
+session_return!(rename_session, SessionRename { session_id, new_name }, session_id: String, new_name: String);
+unit_return!(delete_session, SessionDelete { session_id }, session_id: String);
+session_return!(open_session, SessionOpen { session_id }, session_id: String);
+session_return!(close_session, SessionClose { session_id }, session_id: String);
+unit_return!(delete_all_sessions, SessionDeleteAll);
+
+// ── Layout / template commands ──────────────────────────────────────
+
+layouts_return!(list_layouts, TemplateList);
+single_return!(save_layout, TemplateSave { name, tree }, name: String, tree: LayoutTree);
+unit_return!(delete_layout, TemplateDelete { layout_id }, layout_id: String);
+unit_return!(rename_layout, TemplateRename { layout_id, new_name }, layout_id: String, new_name: String);
+unit_return!(delete_all_templates, TemplateDeleteAll);
+
+// ── Workspace commands ──────────────────────────────────────────────
+
+workspaces_return!(get_session_workspaces, WorkspaceList { session_id }, session_id: String);
+option_return!(get_active_workspace, WorkspaceGetActive { session_id }, Workspace, session_id: String);
+workspace_return!(add_workspace, WorkspaceAdd { session_id, template_id }, session_id: String, template_id: String);
+unit_return!(remove_workspace, WorkspaceRemove { session_id, workspace_id }, session_id: String, workspace_id: String);
+unit_return!(rename_workspace, WorkspaceRename { session_id, workspace_id, new_name }, session_id: String, workspace_id: String, new_name: String);
+unit_return!(set_active_workspace, WorkspaceSetActive { session_id, workspace_id }, session_id: String, workspace_id: String);
+workspace_return!(reset_workspace_to_template, WorkspaceReset { session_id, workspace_id }, session_id: String, workspace_id: String);
+
+// ── Non-macro commands ──────────────────────────────────────────────
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! The IPC bridge works.", name)
-}
-
-#[tauri::command]
-fn create_session(
-    state: tauri::State<AppState>,
-    working_dir: String,
-    name: String,
-) -> Result<Session, String> {
-    let cmd = Command::SessionCreate { working_dir, name };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Session(s)) => Ok(s),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn list_sessions(state: tauri::State<AppState>) -> Result<Vec<SessionSummary>, String> {
-    match execute(Command::SessionList, &state) {
-        Ok(CommandResult::Sessions(s)) => Ok(s),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn rename_session(
-    state: tauri::State<AppState>,
-    session_id: String,
-    new_name: String,
-) -> Result<Session, String> {
-    let cmd = Command::SessionRename { session_id, new_name };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Session(s)) => Ok(s),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn delete_session(state: tauri::State<AppState>, session_id: String) -> Result<(), String> {
-    let cmd = Command::SessionDelete { session_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn open_session(state: tauri::State<AppState>, session_id: String) -> Result<Session, String> {
-    let cmd = Command::SessionOpen { session_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Session(s)) => Ok(s),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn close_session(state: tauri::State<AppState>, session_id: String) -> Result<Session, String> {
-    let cmd = Command::SessionClose { session_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Session(s)) => Ok(s),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn delete_all_sessions(state: tauri::State<AppState>) -> Result<(), String> {
-    match execute(Command::SessionDeleteAll, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn list_layouts(state: tauri::State<AppState>) -> Result<Vec<Layout>, String> {
-    match execute(Command::TemplateList, &state) {
-        Ok(CommandResult::Layouts(l)) => Ok(l),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn save_layout(
-    state: tauri::State<AppState>,
-    name: String,
-    tree: LayoutTree,
-) -> Result<Layout, String> {
-    let cmd = Command::TemplateSave { name, tree };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Layout(l)) => Ok(l),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn delete_layout(state: tauri::State<AppState>, layout_id: String) -> Result<(), String> {
-    let cmd = Command::TemplateDelete { layout_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn rename_layout(
-    state: tauri::State<AppState>,
-    layout_id: String,
-    new_name: String,
-) -> Result<(), String> {
-    let cmd = Command::TemplateRename { layout_id, new_name };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn delete_all_templates(state: tauri::State<AppState>) -> Result<(), String> {
-    match execute(Command::TemplateDeleteAll, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn get_session_workspaces(
-    state: tauri::State<AppState>,
-    session_id: String,
-) -> Result<Vec<WorkspaceInstance>, String> {
-    let cmd = Command::WorkspaceList { session_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Workspaces(w)) => Ok(w),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn get_active_workspace(
-    state: tauri::State<AppState>,
-    session_id: String,
-) -> Result<Option<WorkspaceInstance>, String> {
-    let cmd = Command::WorkspaceGetActive { session_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Workspace(ws)) => Ok(Some(ws)),
-        Ok(CommandResult::Unit(())) => Ok(None),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn add_workspace(
-    state: tauri::State<AppState>,
-    session_id: String,
-    template_id: String,
-) -> Result<WorkspaceInstance, String> {
-    let cmd = Command::WorkspaceAdd { session_id, template_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Workspace(w)) => Ok(w),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn remove_workspace(
-    state: tauri::State<AppState>,
-    session_id: String,
-    workspace_id: String,
-) -> Result<(), String> {
-    let cmd = Command::WorkspaceRemove { session_id, workspace_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn rename_workspace(
-    state: tauri::State<AppState>,
-    session_id: String,
-    workspace_id: String,
-    new_name: String,
-) -> Result<(), String> {
-    let cmd = Command::WorkspaceRename { session_id, workspace_id, new_name };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn set_active_workspace(
-    state: tauri::State<AppState>,
-    session_id: String,
-    workspace_id: String,
-) -> Result<(), String> {
-    let cmd = Command::WorkspaceSetActive { session_id, workspace_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => Ok(()),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
 }
 
 fn collect_terminal_paths(node: &LayoutNode, prefix: &mut Vec<usize>) -> Vec<Vec<usize>> {
@@ -263,49 +225,37 @@ fn update_workspace_tree(
 ) -> Result<(), String> {
     let terminal_paths = collect_terminal_paths(&tree.tree, &mut Vec::new());
 
-    let cmd = Command::WorkspaceUpdateTree {
-        session_id,
-        workspace_id: workspace_id.clone(),
-        tree,
-    };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Unit(())) => {}
-        Ok(_) => unreachable!(),
-        Err(e) => return Err(e.to_string()),
-    }
+    unit_void_return!(
+        WorkspaceUpdateTree { session_id: session_id.clone(), workspace_id: workspace_id.clone(), tree },
+        state
+    );
 
     cleanup_orphaned_ptys(&pty_store, &workspace_id, &terminal_paths);
 
     Ok(())
 }
 
-#[tauri::command]
-fn reset_workspace_to_template(
-    state: tauri::State<AppState>,
-    session_id: String,
-    workspace_id: String,
-) -> Result<WorkspaceInstance, String> {
-    let cmd = Command::WorkspaceReset { session_id, workspace_id };
-    match execute(cmd, &state) {
-        Ok(CommandResult::Workspace(w)) => Ok(w),
-        Ok(_) => unreachable!(),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-#[tauri::command]
-fn open_preferences(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(window) = app.webview_windows().get("preferences") {
+fn focus_or_open_preferences(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.webview_windows().get(PREFERENCES_WINDOW_LABEL) {
         let _ = window.set_focus();
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(&app, "preferences", tauri::WebviewUrl::App("preferences.html".into()))
+    tauri::WebviewWindowBuilder::new(
+        app,
+        PREFERENCES_WINDOW_LABEL,
+        tauri::WebviewUrl::App("preferences.html".into()),
+    )
         .title("Preferences")
-        .inner_size(520.0, 400.0)
+        .inner_size(PREFERENCES_WINDOW_SIZE.0, PREFERENCES_WINDOW_SIZE.1)
         .resizable(false)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn open_preferences(app: tauri::AppHandle) -> Result<(), String> {
+    focus_or_open_preferences(&app)
 }
 
 #[tauri::command]
@@ -384,13 +334,11 @@ fn pty_kill(
     pty::pty_kill(&state, &workspace_id, &path)
 }
 
-const CLI_NAME: &str = "aiaw-mcp-server";
-const CLI_INSTALL_PATH: &str = "/usr/local/bin/aiaw-mcp-server";
+// ── CLI install ─────────────────────────────────────────────────────
 
-fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
+fn ensure_cli_installed() {
     let target = std::path::Path::new(CLI_INSTALL_PATH);
 
-    // Already installed and valid — nothing to do
     if target.exists() || target.is_symlink() {
         if let Ok(link) = std::fs::read_link(target) {
             if link.exists() {
@@ -400,7 +348,6 @@ fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
         }
     }
 
-    // Locate the binary inside the .app bundle's Resources/
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
@@ -409,7 +356,7 @@ fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
         }
     };
     let resource = exe
-        .parent().and_then(|p| p.parent()) // MacOS/ → Contents/
+        .parent().and_then(|p| p.parent())
         .map(|p| p.join("Resources").join(CLI_NAME));
 
     let resource = match resource {
@@ -420,7 +367,6 @@ fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
         }
     };
 
-    // Attempt symlink
     match std::os::unix::fs::symlink(&resource, target) {
         Ok(()) => {
             println!("[cli] Installed {} → {}", CLI_NAME, resource.display());
@@ -432,10 +378,89 @@ fn ensure_cli_installed(_app_handle: &tauri::AppHandle) {
     }
 }
 
+// ── File-watcher helpers ────────────────────────────────────────────
+
+use std::sync::Arc;
+
+trait WatcherStore {
+    fn suppress_watcher(&self) -> bool;
+    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>>;
+}
+
+impl WatcherStore for SessionRegistry {
+    fn suppress_watcher(&self) -> bool {
+        self.should_suppress_watcher()
+    }
+    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        self.reload().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+}
+
+impl WatcherStore for LayoutStore {
+    fn suppress_watcher(&self) -> bool {
+        self.should_suppress_watcher()
+    }
+    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        self.reload().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    }
+}
+
+fn reload_if_changed<T: WatcherStore>(
+    store: &Arc<Mutex<T>>,
+    label: &str,
+) -> bool {
+    let mut s = match store.lock() {
+        Ok(s) => s,
+        Err(_) => return true,
+    };
+    if s.suppress_watcher() {
+        println!("[watcher] Skipping {} reload (internal write)", label);
+        false
+    } else {
+        println!("[watcher] Reloading {} from disk", label);
+        if let Err(e) = s.reload_disk() {
+            eprintln!("[watcher] Failed to reload {}: {}", label, e);
+        }
+        true
+    }
+}
+
+fn handle_watcher_event(
+    event: notify::Event,
+    sessions: Arc<Mutex<SessionRegistry>>,
+    layouts: Arc<Mutex<LayoutStore>>,
+    handle: tauri::AppHandle,
+) {
+    for path in &event.paths {
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+
+        match file_name {
+            SESSIONS_FILE => {
+                if reload_if_changed(&sessions, "sessions") {
+                    let _ = handle.emit(EVENT_SESSIONS_CHANGED, ());
+                }
+            }
+            LAYOUTS_FILE => {
+                if reload_if_changed(&layouts, "layouts") {
+                    let _ = handle.emit(EVENT_LAYOUTS_CHANGED, ());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ── Application entry point ─────────────────────────────────────────
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_state = AppState::new().expect("Failed to initialize app state");
 
+    // On startup, any sessions that were left in Running state from a
+    // previous run are demoted to Paused so the UI reflects the real
+    // process status. The layouts lock is acquired and immediately
+    // dropped to ensure the data directory and layouts file are created
+    // before the file watcher starts.
     app_state.sessions.lock().expect("lock poisoned")
         .demote_running_to_paused().expect("Failed to demote running sessions");
 
@@ -455,45 +480,20 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            ensure_cli_installed(&handle);
+            ensure_cli_installed();
 
             let state = app.state::<AppState>();
             let sessions_arc = state.sessions.clone();
             let layouts_arc = state.layouts.clone();
 
-            let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-                match &res {
-                    Ok(event) => {
-                        for path in &event.paths {
-                            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                                if file_name == "sessions.json" {
-                                    if let Ok(mut sessions) = sessions_arc.lock() {
-                                        if sessions.should_suppress_watcher() {
-                                            println!("[watcher] Skipping sessions reload (internal write)");
-                                            continue;
-                                        }
-                                        println!("[watcher] Reloading sessions from disk");
-                                        if let Err(e) = sessions.reload() {
-                                            eprintln!("[watcher] Failed to reload sessions: {}", e);
-                                        }
-                                    }
-                                    let _ = handle.emit("sessions-changed", ());
-                                } else if file_name == "layouts.json" {
-                                    if let Ok(mut layouts) = layouts_arc.lock() {
-                                        if layouts.should_suppress_watcher() {
-                                            println!("[watcher] Skipping layouts reload (internal write)");
-                                            continue;
-                                        }
-                                        println!("[watcher] Reloading layouts from disk");
-                                        if let Err(e) = layouts.reload() {
-                                            eprintln!("[watcher] Failed to reload layouts: {}", e);
-                                        }
-                                    }
-                                    let _ = handle.emit("layouts-changed", ());
-                                }
-                            }
-                        }
-                    }
+            let mut watcher = notify::recommended_watcher(move |res: std::result::Result<notify::Event, notify::Error>| {
+                match res {
+                    Ok(event) => handle_watcher_event(
+                        event,
+                        sessions_arc.clone(),
+                        layouts_arc.clone(),
+                        handle.clone(),
+                    ),
                     Err(e) => {
                         eprintln!("[watcher] Error: {}", e);
                     }
@@ -501,7 +501,7 @@ pub fn run() {
             }).expect("Failed to create file watcher");
 
             if let Some(data_dir) = dirs::data_dir() {
-                let watch_path = data_dir.join("AI Agent Workspace");
+                let watch_path = data_dir.join(APP_DATA_DIR_NAME);
                 println!("[watcher] Watch path: {:?}", watch_path);
                 println!("[watcher] Watch path exists: {}", watch_path.exists());
                 if watch_path.exists() {
@@ -541,19 +541,7 @@ pub fn run() {
 
             app.on_menu_event(move |app, event| {
                 if event.id().as_ref() == "open_preferences" {
-                    if let Some(window) = app.webview_windows().get("preferences") {
-                        let _ = window.set_focus();
-                    } else {
-                        let _ = tauri::WebviewWindowBuilder::new(
-                            app,
-                            "preferences",
-                            tauri::WebviewUrl::App("preferences.html".into()),
-                        )
-                        .title("Preferences")
-                        .inner_size(520.0, 480.0)
-                        .resizable(false)
-                        .build();
-                    }
+                    let _ = focus_or_open_preferences(app);
                 }
             });
 

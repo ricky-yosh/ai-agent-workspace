@@ -62,6 +62,19 @@ pub struct LayoutStore {
     suppress_watcher: AtomicBool,
 }
 
+fn load_layouts_from_file(path: &std::path::Path) -> Result<Vec<Layout>> {
+    if path.exists() {
+        let content = fs::read_to_string(path)?;
+        if content.trim().is_empty() {
+            Ok(Vec::new())
+        } else {
+            Ok(serde_json::from_str(&content)?)
+        }
+    } else {
+        Ok(Vec::new())
+    }
+}
+
 impl LayoutStore {
     pub fn new() -> Result<Self> {
         let data_dir = dirs::data_dir().ok_or(LayoutError::NoDataDir)?;
@@ -70,16 +83,7 @@ impl LayoutStore {
     }
 
     pub fn new_with_path(file_path: PathBuf) -> Result<Self> {
-        let layouts = if file_path.exists() {
-            let content = fs::read_to_string(&file_path)?;
-            if content.trim().is_empty() {
-                Vec::new()
-            } else {
-                serde_json::from_str(&content)?
-            }
-        } else {
-            Vec::new()
-        };
+        let layouts = load_layouts_from_file(&file_path)?;
 
         Ok(LayoutStore {
             file_path,
@@ -169,16 +173,7 @@ impl LayoutStore {
     }
 
     pub fn reload(&mut self) -> Result<()> {
-        if self.file_path.exists() {
-            let content = fs::read_to_string(&self.file_path)?;
-            if content.trim().is_empty() {
-                self.layouts = Vec::new();
-            } else {
-                self.layouts = serde_json::from_str(&content)?;
-            }
-        } else {
-            self.layouts = Vec::new();
-        }
+        self.layouts = load_layouts_from_file(&self.file_path)?;
         Ok(())
     }
 }
