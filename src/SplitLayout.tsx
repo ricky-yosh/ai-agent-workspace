@@ -6,18 +6,20 @@ import PanelTypeSelector from "./PanelTypeSelector";
 import SashContextMenu from "./SashContextMenu";
 import { PanelContext } from "./PanelContext";
 import "./SplitLayout.css";
+import { pathsEqual } from "./utils/pathUtils";
+import { updateRatio, replaceNode, getNodeAtPath } from "./utils/layoutTreeUtils";
 
-interface SplitData {
+export interface SplitData {
   direction: "vertical" | "horizontal";
   ratio: number;
   children: LayoutNode[];
 }
 
-interface PanelData {
+export interface PanelData {
   panel_type: string;
 }
 
-type LayoutNode =
+export type LayoutNode =
   | { split: SplitData }
   | { panel: PanelData };
 
@@ -41,100 +43,50 @@ interface SplitLayoutProps {
   zoomedPath?: number[] | null;
 }
 
-function updateRatio(node: LayoutNode, path: number[], newRatio: number): LayoutNode {
-  if (path.length === 0 && "split" in node) {
-    return { split: { ...node.split, ratio: newRatio } };
-  }
-  if ("split" in node) {
-    const [idx, ...rest] = path;
-    return {
-      split: {
-        ...node.split,
-        children: node.split.children.map((child, i) =>
-          i === idx ? updateRatio(child, rest, newRatio) : child
-        ),
-      },
-    };
-  }
-  return node;
+interface SplitDragState {
+  path: number[];
+  corner: "tl" | "tr" | "bl" | "br";
+  direction: "vertical" | "horizontal";
+  rect: { left: number; top: number; width: number; height: number };
+  startX: number;
+  startY: number;
+  cursorX: number;
+  cursorY: number;
+  dragDistance: number;
 }
 
-function replaceNode(node: LayoutNode, path: number[], newNode: LayoutNode): LayoutNode {
-  if (path.length === 0 || !("split" in node)) return newNode;
-  const [idx, ...rest] = path;
-  return {
-    split: {
-      ...node.split,
-      children: node.split.children.map((child, i) =>
-        i === idx ? replaceNode(child, rest, newNode) : child
-      ),
-    },
-  };
+interface JoinState {
+  splitPath: number[];
+  consumerIndex: 0 | 1;
+  direction: "vertical" | "horizontal";
+  inCancelZone: boolean;
 }
 
-function pathsEqual(a: number[] | null | undefined, b: number[] | null | undefined): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.length !== b.length) return false;
-  return a.every((v, i) => v === b[i]);
+function computeDirection(
+  corner: "tl" | "tr" | "bl" | "br",
+  relX: number,
+  relY: number
+): "vertical" | "horizontal" {
+  switch (corner) {
+    case "tl": return relX > relY ? "vertical" : "horizontal";
+    case "tr": return (1 - relX) > relY ? "vertical" : "horizontal";
+    case "bl": return relX > (1 - relY) ? "vertical" : "horizontal";
+    case "br": return (1 - relX) > (1 - relY) ? "vertical" : "horizontal";
+  }
 }
 
-function getNodeAtPath(node: LayoutNode, path: number[]): LayoutNode | null {
-  if (path.length === 0) return node;
-  if (!("split" in node)) return null;
-  const [idx, ...rest] = path;
-  if (idx < 0 || idx >= node.split.children.length) return null;
-  return getNodeAtPath(node.split.children[idx], rest);
+function findSplitContainer(splitPath: number[]): Element | null {
+  return document.querySelector(
+    `[data-split-path='${JSON.stringify(splitPath)}']`
+  );
 }
 
-export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChange, focusedPath, onFocusedPathChange, zoomedPath }: SplitLayoutProps) {
-  interface SplitDragState {
-    path: number[];
-    corner: "tl" | "tr" | "bl" | "br";
-    direction: "vertical" | "horizontal";
-    rect: { left: number; top: number; width: number; height: number };
-    startX: number;
-    startY: number;
-    cursorX: number;
-    cursorY: number;
-    dragDistance: number;
-  }
-
-  function computeDirection(
-    corner: "tl" | "tr" | "bl" | "br",
-    relX: number,
-    relY: number
-  ): "vertical" | "horizontal" {
-    switch (corner) {
-      case "tl": return relX > relY ? "vertical" : "horizontal";
-      case "tr": return (1 - relX) > relY ? "vertical" : "horizontal";
-      case "bl": return relX > (1 - relY) ? "vertical" : "horizontal";
-      case "br": return (1 - relX) > (1 - relY) ? "vertical" : "horizontal";
-    }
-  }
-
-  interface JoinState {
-    splitPath: number[];
-    consumerIndex: 0 | 1;
-    direction: "vertical" | "horizontal";
-    inCancelZone: boolean;
-  }
-
+function useSplitDrag(
+  treeRef: React.MutableRefObject<LayoutTree>,
+  onLayoutChangeRef: React.MutableRefObject<((tree: LayoutTree) => void) | undefined>,
+) {
   const [splitDrag, setSplitDrag] = useState<SplitDragState | null>(null);
   const splitDragRef = useRef<SplitDragState | null>(null);
-
-  const [joinState, setJoinState] = useState<JoinState | null>(null);
-  const joinStateRef = useRef<JoinState | null>(null);
-  function cleanupJoinMode() {
-    document.body.style.cursor = "";
-    joinStateRef.current = null;
-    setJoinState(null);
-  }
-
-  const onLayoutChangeRef = useRef(onLayoutChange);
-  onLayoutChangeRef.current = onLayoutChange;
-  const treeRef = useRef(tree);
-  treeRef.current = tree;
 
   useEffect(() => {
     if (!splitDrag) return;
@@ -225,6 +177,33 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
     };
   }, [splitDrag]);
 
+  return { splitDrag, splitDragRef, setSplitDrag };
+}
+
+function useJoinMode(
+  treeRef: React.MutableRefObject<LayoutTree>,
+  onLayoutChangeRef: React.MutableRefObject<((tree: LayoutTree) => void) | undefined>,
+) {
+  const [joinState, setJoinState] = useState<JoinState | null>(null);
+  const joinStateRef = useRef<JoinState | null>(null);
+
+  function cleanupJoinMode() {
+    document.body.style.cursor = "";
+    joinStateRef.current = null;
+    setJoinState(null);
+  }
+
+  function startJoinMode(splitPath: number[], direction: "vertical" | "horizontal") {
+    const state: JoinState = {
+      splitPath,
+      consumerIndex: 1,
+      direction,
+      inCancelZone: false,
+    };
+    joinStateRef.current = state;
+    setJoinState(state);
+  }
+
   useEffect(() => {
     if (!joinState) return;
 
@@ -232,9 +211,7 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
       const state = joinStateRef.current;
       if (!state || !onLayoutChangeRef.current) return;
 
-      const container = document.querySelector(
-        `[data-split-path='${JSON.stringify(state.splitPath)}']`
-      );
+      const container = findSplitContainer(state.splitPath);
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
@@ -277,9 +254,7 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
         return;
       }
 
-      const container = document.querySelector(
-        `[data-split-path='${JSON.stringify(state.splitPath)}']`
-      );
+      const container = findSplitContainer(state.splitPath);
       if (container) {
         const rect = container.getBoundingClientRect();
         const { direction, ratio } = splitNode.split;
@@ -330,6 +305,159 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
     };
   }, [joinState]);
 
+  return { joinState, startJoinMode };
+}
+
+function renderSplitNode(
+  node: LayoutNode & { split: SplitData },
+  path: number[],
+  treeRef: React.MutableRefObject<LayoutTree>,
+  onLayoutChange: ((tree: LayoutTree) => void) | undefined,
+  joinState: JoinState | null,
+  startJoinMode: (splitPath: number[], direction: "vertical" | "horizontal") => void,
+  renderChild: (node: LayoutNode, path: number[]) => React.ReactNode,
+): React.ReactNode {
+  const { direction, ratio, children } = node.split;
+  const firstSize = Math.round(ratio * 100);
+  const sizes = [firstSize, 100 - firstSize];
+  const panes = children.slice(0, 2);
+
+  function handleDragEnd(sizes: number[]) {
+    if (!onLayoutChange) return;
+    const newRatio = sizes[0] / (sizes[0] + sizes[1]);
+    const updatedTree: LayoutTree = {
+      tree: updateRatio(treeRef.current.tree, path, newRatio),
+    };
+    onLayoutChange(updatedTree);
+  }
+
+  const splitKey = JSON.stringify(path);
+  const isActiveJoinPanel = joinState && pathsEqual(joinState.splitPath, path);
+
+  return (
+    <SashContextMenu
+      splitPath={path}
+      onSashDoubleClick={(sp, _x, _y) => {
+        const n = getNodeAtPath(treeRef.current.tree, sp);
+        if (!n || !("split" in n)) return;
+        startJoinMode(sp, n.split.direction);
+      }}
+      joinArrow={
+        isActiveJoinPanel && !joinState.inCancelZone
+          ? { direction, consumerIndex: joinState.consumerIndex, ratio }
+          : null
+      }
+    >
+      <Allotment
+        key={splitKey}
+        vertical={direction === "horizontal"}
+        defaultSizes={sizes}
+        onDragEnd={handleDragEnd}
+        minSize={50}
+      >
+        {panes.map((child, i) => {
+          const isConsumed =
+            isActiveJoinPanel && !joinState.inCancelZone && joinState.consumerIndex === i;
+          return (
+            <div
+              key={i}
+              className={`split-layout-pane${isConsumed ? " join-consumed" : ""}`}
+            >
+              {renderChild(child, [...path, i])}
+            </div>
+          );
+        })}
+      </Allotment>
+    </SashContextMenu>
+  );
+}
+
+function renderPanelNode(
+  node: LayoutNode & { panel: PanelData },
+  path: number[],
+  workspaceId: string,
+  sessionId: string,
+  focusedPath: number[] | null | undefined,
+  onFocusedPathChange: ((path: number[]) => void) | undefined,
+  splitDrag: SplitDragState | null,
+  treeRef: React.MutableRefObject<LayoutTree>,
+  onLayoutChange: ((tree: LayoutTree) => void) | undefined,
+  onCornerDragStart: (e: React.MouseEvent, dragPath: number[], corner: "tl" | "tr" | "bl" | "br") => void,
+): React.ReactNode {
+  const { panel_type } = node.panel;
+  const PanelComponent = getPanel(panel_type);
+
+  return (
+    <div
+      className={`split-layout-panel-outer${pathsEqual(focusedPath, path) ? " focused" : ""}`}
+      onMouseDown={() => onFocusedPathChange?.(path)}
+    >
+      {!splitDrag && (
+        <>
+          <div
+            className="corner-handle corner-tl"
+            onMouseDown={(e) => onCornerDragStart(e, path, "tl")}
+          />
+          <div
+            className="corner-handle corner-tr"
+            onMouseDown={(e) => onCornerDragStart(e, path, "tr")}
+          />
+          <div
+            className="corner-handle corner-bl"
+            onMouseDown={(e) => onCornerDragStart(e, path, "bl")}
+          />
+          <div
+            className="corner-handle corner-br"
+            onMouseDown={(e) => onCornerDragStart(e, path, "br")}
+          />
+          <PanelTypeSelector
+            currentType={panel_type}
+            onTypeSelect={(newType) => {
+              if (!onLayoutChange) return;
+              const newNode: LayoutNode = { panel: { panel_type: newType } };
+              const newTree: LayoutTree = {
+                tree: replaceNode(treeRef.current.tree, path, newNode),
+              };
+              onLayoutChange(newTree);
+            }}
+          />
+        </>
+      )}
+      <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
+        {PanelComponent ? (
+          <PanelContext.Provider value={{ workspaceId, sessionId, path }}>
+            <PanelComponent panelType={panel_type} />
+          </PanelContext.Provider>
+        ) : (
+          panel_type
+        )}
+      </div>
+      {splitDrag && pathsEqual(splitDrag.path, path) && splitDrag.dragDistance >= 24 && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 15, pointerEvents: "none" }}>
+          <div
+            style={{
+              position: "absolute",
+              background: "var(--accent-color)",
+              ...(splitDrag.direction === "vertical"
+                ? { left: `${Math.max(0, Math.min(1, (splitDrag.cursorX - splitDrag.rect.left) / splitDrag.rect.width)) * 100}%`, top: 0, width: 2, height: "100%" }
+                : { top: `${Math.max(0, Math.min(1, (splitDrag.cursorY - splitDrag.rect.top) / splitDrag.rect.height)) * 100}%`, left: 0, height: 2, width: "100%" }),
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChange, focusedPath, onFocusedPathChange, zoomedPath }: SplitLayoutProps) {
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  onLayoutChangeRef.current = onLayoutChange;
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+
+  const { splitDrag, splitDragRef, setSplitDrag } = useSplitDrag(treeRef, onLayoutChangeRef);
+  const { joinState, startJoinMode } = useJoinMode(treeRef, onLayoutChangeRef);
+
   if (zoomedPath && zoomedPath.length > 0) {
     const zoomedNode = getNodeAtPath(tree.tree, zoomedPath);
     if (zoomedNode) return <div className="split-layout">{renderNode(zoomedNode)}</div>;
@@ -364,131 +492,9 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
 
   function renderNode(node: LayoutNode, path: number[] = []): React.ReactNode {
     if ("split" in node) {
-      const { direction, ratio, children } = node.split;
-      const firstSize = Math.round(ratio * 100);
-      const sizes = [firstSize, 100 - firstSize];
-      const panes = children.slice(0, 2);
-      function handleDragEnd(sizes: number[]) {
-        if (!onLayoutChange) return;
-        const newRatio = sizes[0] / (sizes[0] + sizes[1]);
-        const updatedTree: LayoutTree = {
-          tree: updateRatio(treeRef.current.tree, path, newRatio),
-        };
-        onLayoutChange(updatedTree);
-      }
-
-      const splitKey = JSON.stringify(path);
-      const isActiveJoinPanel =
-        joinState && pathsEqual(joinState.splitPath, path);
-
-      return (
-        <SashContextMenu
-          splitPath={path}
-          onSashDoubleClick={(sp, _x, _y) => {
-            const node = getNodeAtPath(treeRef.current.tree, sp);
-            if (!node || !("split" in node)) return;
-            const joinStateData: JoinState = {
-              splitPath: sp,
-              consumerIndex: 1,
-              direction: node.split.direction,
-              inCancelZone: false,
-            };
-            joinStateRef.current = joinStateData;
-            setJoinState(joinStateData);
-          }}
-          joinArrow={
-            isActiveJoinPanel && !joinState.inCancelZone
-              ? { direction, consumerIndex: joinState.consumerIndex, ratio }
-              : null
-          }
-        >
-          <Allotment
-            key={splitKey}
-            vertical={direction === "horizontal"}
-            defaultSizes={sizes}
-            onDragEnd={handleDragEnd}
-            minSize={50}
-          >
-            {panes.map((child, i) => {
-              const isConsumed =
-                isActiveJoinPanel && !joinState.inCancelZone && joinState.consumerIndex === i;
-              return (
-                <div
-                  key={i}
-                  className={`split-layout-pane${isConsumed ? " join-consumed" : ""}`}
-                >
-                  {renderNode(child, [...path, i])}
-                </div>
-              );
-            })}
-          </Allotment>
-        </SashContextMenu>
-      );
+      return renderSplitNode(node, path, treeRef, onLayoutChange, joinState, startJoinMode, renderNode);
     }
-
-    const { panel_type } = node.panel;
-    const PanelComponent = getPanel(panel_type);
-
-    return (
-      <div
-        className={`split-layout-panel-outer${pathsEqual(focusedPath, path) ? " focused" : ""}`}
-        onMouseDown={() => onFocusedPathChange?.(path)}
-      >
-        {!splitDrag && (
-          <>
-            <div
-              className="corner-handle corner-tl"
-              onMouseDown={(e) => handleCornerDragStart(e, path, "tl")}
-            />
-            <div
-              className="corner-handle corner-tr"
-              onMouseDown={(e) => handleCornerDragStart(e, path, "tr")}
-            />
-            <div
-              className="corner-handle corner-bl"
-              onMouseDown={(e) => handleCornerDragStart(e, path, "bl")}
-            />
-            <div
-              className="corner-handle corner-br"
-              onMouseDown={(e) => handleCornerDragStart(e, path, "br")}
-            />
-            <PanelTypeSelector
-              currentType={panel_type}
-              onTypeSelect={(newType) => {
-                if (!onLayoutChange) return;
-                const newNode: LayoutNode = { panel: { panel_type: newType } };
-                const newTree: LayoutTree = {
-                  tree: replaceNode(treeRef.current.tree, path, newNode),
-                };
-                onLayoutChange(newTree);
-              }}
-            />
-          </>
-        )}
-        <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
-          {PanelComponent ? (
-            <PanelContext.Provider value={{ workspaceId, sessionId, path }}>
-              <PanelComponent panelType={panel_type} />
-            </PanelContext.Provider>
-          ) : (
-            panel_type
-          )}
-        </div>
-        {splitDrag && pathsEqual(splitDrag.path, path) && splitDrag.dragDistance >= 24 && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 15, pointerEvents: "none" }}>
-            <div
-              style={{
-                position: "absolute",
-                background: "var(--accent-color)",
-                ...(splitDrag.direction === "vertical"
-                  ? { left: `${Math.max(0, Math.min(1, (splitDrag.cursorX - splitDrag.rect.left) / splitDrag.rect.width)) * 100}%`, top: 0, width: 2, height: "100%" }
-                  : { top: `${Math.max(0, Math.min(1, (splitDrag.cursorY - splitDrag.rect.top) / splitDrag.rect.height)) * 100}%`, left: 0, height: 2, width: "100%" }),
-              }}
-            />
-          </div>
-        )}
-      </div>
-    );
+    return renderPanelNode(node, path, workspaceId, sessionId, focusedPath, onFocusedPathChange, splitDrag, treeRef, onLayoutChange, handleCornerDragStart);
   }
 
   return (

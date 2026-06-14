@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import SplitLayout from "./SplitLayout";
@@ -10,10 +9,15 @@ import type { Layout, LayoutTree } from "./SplitLayout";
 import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider } from "./ToastContext";
 import { ToastContainer } from "./Toast";
+import { pathsEqual } from "./utils/pathUtils";
+import { useEventListener } from "./hooks/useEventListener";
+import { useTauriEvent } from "./hooks/useTauriEvent";
+import { Dialog } from "./components/Dialog";
 import "./BlankPanel";
 import "./TerminalPanel";
 import "./App.css";
 import "./Toast.css";
+import "./Dialog.css";
 
 interface WorkspaceInstance {
   id: string;
@@ -22,24 +26,222 @@ interface WorkspaceInstance {
   current_tree: LayoutTree;
 }
 
-function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
-  const { activeSessionId } = useSessions();
+interface Shortcut {
+  key?: string;
+  code?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  handler: () => void;
+  ignoreInputs?: boolean;
+}
+
+function useKeyboardShortcuts(shortcuts: Shortcut[]) {
+  const shortcutsRef = useRef(shortcuts);
+  shortcutsRef.current = shortcuts;
+
+  const handler = useCallback((e: KeyboardEvent) => {
+    for (const s of shortcutsRef.current) {
+      const inInput = !!(e.target instanceof HTMLElement && (e.target as HTMLElement).closest?.("input, textarea, [contenteditable]"));
+      if (s.ignoreInputs && inInput) continue;
+      if ((s.ctrl ?? false) !== e.ctrlKey) continue;
+      if ((s.meta ?? false) !== e.metaKey) continue;
+      if ((s.shift ?? false) !== e.shiftKey) continue;
+      if ((s.alt ?? false) !== e.altKey) continue;
+      if (s.key !== undefined && e.key !== s.key) continue;
+      if (s.code !== undefined && e.code !== s.code) continue;
+      e.preventDefault();
+      s.handler();
+      return;
+    }
+  }, []);
+
+  useEventListener(document, "keydown", handler, []);
+}
+
+function useWorkspaceManager(activeSessionId: string | null) {
   const [workspaces, setWorkspaces] = useState<WorkspaceInstance[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeSessionId) {
+      setLoading(true);
+      Promise.all([
+        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }),
+        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }),
+      ]).then(([wsList, active]) => {
+        setWorkspaces(wsList);
+        setActiveWorkspace(active);
+      }).catch(() => {
+        setWorkspaces([]);
+        setActiveWorkspace(null);
+      }).finally(() => setLoading(false));
+    } else {
+      setWorkspaces([]);
+      setActiveWorkspace(null);
+      setLoading(false);
+    }
+  }, [activeSessionId]);
+
+  useTauriEvent("sessions-changed", () => {
+    if (activeSessionId) {
+      invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId })
+        .then(setWorkspaces)
+        .catch(console.error);
+      invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId })
+        .then(setActiveWorkspace)
+        .catch(console.error);
+    }
+  }, [activeSessionId]);
+
+  const handleWorkspaceTreeChange = useCallback((newTree: LayoutTree) => {
+    if (!activeWorkspace) return;
+    setActiveWorkspace({ ...activeWorkspace, current_tree: newTree });
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === activeWorkspace.id ? { ...w, current_tree: newTree } : w
+      )
+    );
+    invoke("update_workspace_tree", {
+      sessionId: activeSessionId,
+      workspaceId: activeWorkspace.id,
+      tree: newTree,
+    }).catch(console.error);
+  }, [activeWorkspace, activeSessionId]);
+
+  const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
+    if (!activeSessionId) return;
+    invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId })
+      .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }))
+      .then(setActiveWorkspace)
+      .catch(console.error);
+  }, [activeSessionId]);
+
+  const handleAddWorkspace = useCallback((templateId: string) => {
+    if (!activeSessionId) return;
+    invoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId })
+      .then((ws) => {
+        setWorkspaces((prev) => [...prev, ws]);
+        return invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id })
+          .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }));
+      })
+      .then((active) => setActiveWorkspace(active))
+      .catch(console.error);
+  }, [activeSessionId]);
+
+  const handleCloseWorkspace = useCallback((workspaceId: string) => {
+    if (!activeSessionId) return;
+    invoke("remove_workspace", { sessionId: activeSessionId, workspaceId })
+      .then(() => {
+        setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
+        if (activeWorkspace?.id === workspaceId) {
+          return invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId });
+        }
+        return null;
+      })
+      .then((newActive) => {
+        if (newActive !== null) setActiveWorkspace(newActive as WorkspaceInstance | null);
+      })
+      .catch(console.error);
+  }, [activeSessionId, activeWorkspace]);
+
+  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
+    if (!activeSessionId) return;
+    invoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName })
+      .then(() => {
+        setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, name: newName } : w)));
+        if (activeWorkspace?.id === workspaceId) {
+          setActiveWorkspace((prev) => prev ? { ...prev, name: newName } : null);
+        }
+      })
+      .catch(console.error);
+  }, [activeSessionId, activeWorkspace]);
+
+  const handleResetToTemplate = useCallback((workspaceId: string) => {
+    if (!activeSessionId) return;
+    invoke<WorkspaceInstance>("reset_workspace_to_template", {
+      sessionId: activeSessionId,
+      workspaceId,
+    }).then((ws) => {
+      setActiveWorkspace(ws);
+      setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? ws : w)));
+    }).catch(console.error);
+  }, [activeSessionId]);
+
+  const handleCycleWorkspace = useCallback((dir: 1 | -1) => {
+    if (workspaces.length < 2 || !activeWorkspace) return;
+    const idx = workspaces.findIndex((w) => w.id === activeWorkspace.id);
+    if (idx < 0) return;
+    const next = workspaces[(idx + dir + workspaces.length) % workspaces.length];
+    handleWorkspaceSwitch(next.id);
+  }, [workspaces, activeWorkspace, handleWorkspaceSwitch]);
+
+  return {
+    workspaces,
+    activeWorkspace,
+    loading,
+    handleWorkspaceTreeChange,
+    handleWorkspaceSwitch,
+    handleAddWorkspace,
+    handleCloseWorkspace,
+    handleRenameWorkspace,
+    handleResetToTemplate,
+    handleCycleWorkspace,
+  };
+}
+
+function SaveAsTemplateDialog({
+  open,
+  onClose,
+  onConfirm,
+  name,
+  setName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  name: string;
+  setName: (v: string) => void;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} title="Save as Template">
+      <input
+        className="dialog-input"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onConfirm();
+        }}
+        placeholder="Template name..."
+        style={{ boxSizing: "border-box", width: "100%", marginBottom: 16 }}
+      />
+      <div className="dialog-actions">
+        <button className="dialog-btn" onClick={onClose}>Cancel</button>
+        <button className="dialog-btn dialog-btn-primary" onClick={onConfirm}>Save</button>
+      </div>
+    </Dialog>
+  );
+}
+
+function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
+  const { activeSessionId } = useSessions();
+  const {
+    workspaces, activeWorkspace, loading,
+    handleWorkspaceTreeChange, handleWorkspaceSwitch,
+    handleAddWorkspace, handleCloseWorkspace,
+    handleRenameWorkspace, handleResetToTemplate,
+    handleCycleWorkspace,
+  } = useWorkspaceManager(activeSessionId);
+
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   const [saveAsTarget, setSaveAsTarget] = useState<LayoutTree | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [focusedPath, setFocusedPath] = useState<number[] | null>(null);
   const [zoomedPath, setZoomedPath] = useState<number[] | null>(null);
-
-  function pathsEqual(a: number[] | null, b: number[] | null): boolean {
-    if (a === b) return true;
-    if (!a || !b) return false;
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => v === b[i]);
-  }
 
   const toggleZoom = useCallback(() => {
     if (!focusedPath) return;
@@ -64,68 +266,7 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
     refreshTemplates();
   }, [refreshTemplates]);
 
-  useEffect(() => {
-    if (activeSessionId) {
-      setLoading(true);
-      Promise.all([
-        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }),
-        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }),
-      ]).then(([wsList, active]) => {
-        setWorkspaces(wsList);
-        setActiveWorkspace(active);
-      }).catch(() => {
-        setWorkspaces([]);
-        setActiveWorkspace(null);
-      }).finally(() => setLoading(false));
-    } else {
-      setWorkspaces([]);
-      setActiveWorkspace(null);
-      setLoading(false);
-    }
-  }, [activeSessionId]);
-
-  useEffect(() => {
-const unlistenSessions = listen("sessions-changed", () => {
-      if (activeSessionId) {
-        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId })
-          .then(setWorkspaces)
-          .catch(console.error);
-        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId })
-          .then(setActiveWorkspace)
-          .catch(console.error);
-      }
-    });
-    const unlistenLayouts = listen("layouts-changed", () => {
-      refreshTemplates();
-    });
-    return () => {
-      unlistenSessions.then((fn) => fn());
-      unlistenLayouts.then((fn) => fn());
-    };
-  }, [activeSessionId, refreshTemplates]);
-
-  const handleWorkspaceTreeChange = (newTree: LayoutTree) => {
-    if (!activeWorkspace) return;
-    setActiveWorkspace({ ...activeWorkspace, current_tree: newTree });
-    setWorkspaces((prev) =>
-      prev.map((w) =>
-        w.id === activeWorkspace.id ? { ...w, current_tree: newTree } : w
-      )
-    );
-    invoke("update_workspace_tree", {
-      sessionId: activeSessionId,
-      workspaceId: activeWorkspace.id,
-      tree: newTree,
-    }).catch(console.error);
-  };
-
-  const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId })
-      .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }))
-      .then(setActiveWorkspace)
-      .catch(console.error);
-  }, [activeSessionId]);
+  useTauriEvent("layouts-changed", useCallback(() => refreshTemplates(), [refreshTemplates]));
 
   const handleSaveAsTemplate = useCallback((tree: LayoutTree) => {
     setSaveAsTarget(tree);
@@ -140,34 +281,6 @@ const unlistenSessions = listen("sessions-changed", () => {
       .catch(console.error);
   }, [saveAsTarget, saveAsName, refreshTemplates]);
 
-  useEffect(() => {
-    if (!saveAsTarget) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setSaveAsTarget(null);
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [saveAsTarget]);
-
-  const handleCycleWorkspace = useCallback((dir: 1 | -1) => {
-    if (workspaces.length < 2 || !activeWorkspace) return;
-    const idx = workspaces.findIndex((w) => w.id === activeWorkspace.id);
-    if (idx < 0) return;
-    const next = workspaces[(idx + dir + workspaces.length) % workspaces.length];
-    handleWorkspaceSwitch(next.id);
-  }, [workspaces, activeWorkspace, handleWorkspaceSwitch]);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey && e.key === "Tab") {
-        e.preventDefault();
-        handleCycleWorkspace(e.shiftKey ? -1 : 1);
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [handleCycleWorkspace]);
-
   const handleDeleteTemplate = useCallback((layoutId: string) => {
     invoke("delete_layout", { layoutId })
       .then(() => refreshTemplates())
@@ -180,56 +293,10 @@ const unlistenSessions = listen("sessions-changed", () => {
       .catch(console.error);
   }, [refreshTemplates]);
 
-  const handleResetToTemplate = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    invoke<WorkspaceInstance>("reset_workspace_to_template", {
-      sessionId: activeSessionId,
-      workspaceId,
-    }).then((ws) => {
-      setActiveWorkspace(ws);
-      setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? ws : w)));
-    }).catch(console.error);
-  }, [activeSessionId]);
-
-  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
-    if (!activeSessionId) return;
-    invoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName })
-      .then(() => {
-        setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, name: newName } : w)));
-        if (activeWorkspace?.id === workspaceId) {
-          setActiveWorkspace((prev) => prev ? { ...prev, name: newName } : null);
-        }
-      })
-      .catch(console.error);
-  }, [activeSessionId, activeWorkspace]);
-
-  const handleCloseWorkspace = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    invoke("remove_workspace", { sessionId: activeSessionId, workspaceId })
-      .then(() => {
-        setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
-        if (activeWorkspace?.id === workspaceId) {
-          return invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId });
-        }
-        return null;
-      })
-      .then((newActive) => {
-        if (newActive !== null) setActiveWorkspace(newActive as WorkspaceInstance | null);
-      })
-      .catch(console.error);
-  }, [activeSessionId, activeWorkspace]);
-
-  const handleAddWorkspace = useCallback((templateId: string) => {
-    if (!activeSessionId) return;
-    invoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId })
-      .then((ws) => {
-        setWorkspaces((prev) => [...prev, ws]);
-        return invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id })
-          .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }));
-      })
-      .then((active) => setActiveWorkspace(active))
-      .catch(console.error);
-  }, [activeSessionId]);
+  useKeyboardShortcuts([
+    { key: "Tab", ctrl: true, handler: () => handleCycleWorkspace(1) },
+    { key: "Tab", ctrl: true, shift: true, handler: () => handleCycleWorkspace(-1) },
+  ]);
 
   if (!activeSessionId) {
     return (
@@ -269,29 +336,13 @@ const unlistenSessions = listen("sessions-changed", () => {
           onClose={() => setTemplateManagerOpen(false)}
         />
       )}
-      {saveAsTarget && (
-        <div className="dialog-overlay" onClick={() => setSaveAsTarget(null)}>
-          <div className="dialog" onClick={(e) => e.stopPropagation()} style={{ width: 320 }}>
-            <div className="dialog-title">Save as Template</div>
-            <input
-              className="dialog-input"
-              autoFocus
-              value={saveAsName}
-              onChange={(e) => setSaveAsName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmSaveAsTemplate();
-                if (e.key === "Escape") setSaveAsTarget(null);
-              }}
-              placeholder="Template name..."
-              style={{ boxSizing: "border-box", width: "100%", marginBottom: 16 }}
-            />
-            <div className="dialog-actions">
-              <button className="dialog-btn" onClick={() => setSaveAsTarget(null)}>Cancel</button>
-              <button className="dialog-btn dialog-btn-primary" onClick={confirmSaveAsTemplate}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SaveAsTemplateDialog
+        open={saveAsTarget !== null}
+        onClose={() => setSaveAsTarget(null)}
+        onConfirm={confirmSaveAsTemplate}
+        name={saveAsName}
+        setName={setSaveAsName}
+      />
       <div className="tab-content">
         {activeWorkspace ? (
           <SplitLayout
@@ -342,59 +393,17 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
       .catch(console.error);
   }, [activeSessionId, setActiveSessionId, refreshSessions]);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const inInput = !!(e.target instanceof HTMLElement && (e.target as HTMLElement).closest?.("input, textarea, [contenteditable]"));
-
-      if (
-        e.key === "?" &&
-        !e.metaKey && !e.ctrlKey && !e.altKey &&
-        !inInput
-      ) {
-        e.preventDefault();
-        setShowShortcuts((v) => !v);
-        return;
-      }
-
-      if (e.metaKey && e.shiftKey && (e.code === "BracketRight" || e.code === "BracketLeft")) {
-        e.preventDefault();
-        handleCycle(e.code === "BracketRight" ? 1 : -1);
-        return;
-      }
-
-      if (e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && !inInput) {
-        e.preventDefault();
-        handleCycle(e.key === "ArrowDown" ? 1 : -1);
-        return;
-      }
-
-      if (e.metaKey && e.shiftKey && e.key === "Enter") {
-        e.preventDefault();
-        toggleZoomRef.current?.();
-        return;
-      }
-
-      if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !inInput) {
-        if (e.key === "n") {
-          e.preventDefault();
-          setShowNewSessionDialog(true);
-          return;
-        }
-        if (e.key === "w") {
-          e.preventDefault();
-          handleCloseSession();
-          return;
-        }
-        if (e.code === "Backslash") {
-          e.preventDefault();
-          setSidebarCollapsed(!sidebarCollapsed);
-          return;
-        }
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [handleCycle, handleCloseSession, setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed, toggleZoomRef]);
+  useKeyboardShortcuts([
+    { key: "?", handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
+    { code: "BracketRight", meta: true, shift: true, handler: () => handleCycle(1) },
+    { code: "BracketLeft", meta: true, shift: true, handler: () => handleCycle(-1) },
+    { key: "ArrowDown", meta: true, alt: true, handler: () => handleCycle(1), ignoreInputs: true },
+    { key: "ArrowUp", meta: true, alt: true, handler: () => handleCycle(-1), ignoreInputs: true },
+    { key: "Enter", meta: true, shift: true, handler: () => toggleZoomRef.current?.() },
+    { key: "n", meta: true, handler: () => setShowNewSessionDialog(true), ignoreInputs: true },
+    { key: "w", meta: true, handler: handleCloseSession, ignoreInputs: true },
+    { code: "Backslash", meta: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), ignoreInputs: true },
+  ]);
 
   return showShortcuts ? <ShortcutsModal onClose={() => setShowShortcuts(false)} /> : null;
 }

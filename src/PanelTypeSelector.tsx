@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { listPanelTypes, getPanelLabel } from "./panelRegistry";
+import { useClickOutside } from "./hooks/useClickOutside";
 
 interface PanelTypeSelectorProps {
   currentType: string;
@@ -17,16 +18,7 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
 
   const currentLabel = getPanelLabel(currentType) ?? currentType;
 
-  useEffect(() => {
-    if (!open) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [open]);
+  useClickOutside(ref, () => setOpen(false));
 
   return (
     <div ref={ref} style={{ position: "absolute", top: 4, left: 4, zIndex: 20 }}>

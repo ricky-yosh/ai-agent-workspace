@@ -1,66 +1,120 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
 import { SessionIcon } from "./SessionVisuals";
+import { useClickOutside } from "./hooks/useClickOutside";
+import { useEventListener } from "./hooks/useEventListener";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { Dialog } from "./components/Dialog";
 import "./SessionSidebar.css";
 import "./ContextMenu.css";
+import "./Dialog.css";
 
 function folderNameOf(path: string): string {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
   return parts[parts.length - 1] || path;
 }
 
-export default function SessionSidebar() {
-  const {
-    sessions, activeSessionId, setActiveSessionId, refreshSessions,
-    showNewSessionDialog, setShowNewSessionDialog,
-    sidebarCollapsed, setSidebarCollapsed,
-  } = useSessions();
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [isResizingState, setIsResizingState] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newWorkingDir, setNewWorkingDir] = useState("");
-  const [isDragOver, setIsDragOver] = useState(false);
-  const newNameEditedRef = useRef(false);
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
-    null,
-  );
-  const [renameValue, setRenameValue] = useState("");
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+async function copyToClipboard(text: string, label: string, addToast: (message: string) => void) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    addToast(`Failed to copy ${label} to clipboard`);
+  }
+}
 
-  const { addToast } = useToast();
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const isResizing = useRef(false);
+function useSidebarResize(sidebarCollapsed: boolean, setSidebarCollapsed: (v: boolean) => void) {
+  const [isResizing, setIsResizing] = useState(false);
+  const [width, setWidth] = useState(280);
+  const isResizingRef = useRef(false);
   const lastWidth = useRef(280);
 
-  const grouped = sessions.reduce<Record<string, SessionSummary[]>>(
-    (acc, s) => {
-      const parts = s.working_directory.replace(/\/$/, "").split("/");
-      const folder = parts[parts.length - 1] || s.working_directory;
-      if (!acc[folder]) acc[folder] = [];
-      acc[folder].push(s);
-      return acc;
-    },
-    {},
-  );
-  const groupKeys = Object.keys(grouped).sort();
+  function handleMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    isResizingRef.current = true;
+    setIsResizing(true);
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!isResizingRef.current) return;
+    const w = e.clientX;
+    if (w < 60) {
+      setWidth((prev) => {
+        lastWidth.current = prev > 60 ? prev : lastWidth.current;
+        return 42;
+      });
+      setSidebarCollapsed(true);
+    } else {
+      setSidebarCollapsed(false);
+      setWidth(Math.max(200, Math.min(600, w)));
+    }
+  }
+
+  function handleMouseUp() {
+    isResizingRef.current = false;
+    setIsResizing(false);
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  }
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    setWidth((prev) => {
+      if (sidebarCollapsed) {
+        if (prev > 42) {
+          lastWidth.current = prev;
+          return 42;
+        }
+      } else {
+        if (prev <= 42) {
+          return lastWidth.current;
+        }
+      }
+      return prev;
+    });
+  }, [sidebarCollapsed]);
+
+  return { isResizing, handleMouseDown, width };
+}
+
+interface NewSessionDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (name: string, workingDir: string) => void;
+  groupedSessions: Record<string, SessionSummary[]>;
+}
+
+function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessionDialogProps) {
+  const [name, setName] = useState("");
+  const [workingDir, setWorkingDir] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
+  const nameEditedRef = useRef(false);
 
   function applyWorkingDir(path: string) {
-    setNewWorkingDir(path);
-    if (!newNameEditedRef.current) {
-      setNewName(folderNameOf(path));
+    setWorkingDir(path);
+    if (!nameEditedRef.current) {
+      setName(folderNameOf(path));
     }
   }
 
   useEffect(() => {
-    if (!showNewSessionDialog) return;
+    if (!open) return;
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((event) => {
@@ -81,31 +135,161 @@ export default function SessionSidebar() {
       unlisten?.();
       setIsDragOver(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showNewSessionDialog]);
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setWorkingDir("");
+      nameEditedRef.current = false;
+    }
+  }, [open]);
+
+  const uniqueDirs = useMemo(() => {
+    const seen = new Set<string>();
+    const dirs: string[] = [];
+    for (const [, sessions] of Object.entries(groupedSessions)) {
+      for (const s of sessions) {
+        if (!seen.has(s.working_directory)) {
+          seen.add(s.working_directory);
+          dirs.push(s.working_directory);
+        }
+      }
+    }
+    return dirs;
+  }, [groupedSessions]);
+
+  return (
+    <Dialog open={open} onClose={onClose} title="New Session">
+      <div className="dialog-fields">
+        <label className="dialog-label">
+          Working Directory
+          <button
+            type="button"
+            className={`dialog-dropzone${workingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
+            autoFocus
+            onClick={async () => {
+              const selected = await openDialog({ directory: true });
+              if (selected) applyWorkingDir(selected);
+            }}
+          >
+            {workingDir ? (
+              <>
+                <FolderOpen size={28} className="dialog-dropzone-icon" aria-hidden="true" />
+                <span className="dialog-dropzone-name">{folderNameOf(workingDir)}</span>
+                <span className="dialog-dropzone-path" title={workingDir}>{workingDir}</span>
+                <span className="dialog-dropzone-hint">Drop a different folder, or click to change</span>
+              </>
+            ) : (
+              <>
+                <FolderInput size={28} className="dialog-dropzone-icon" aria-hidden="true" />
+                <span className="dialog-dropzone-title">Drag a folder here</span>
+                <span className="dialog-dropzone-hint">or click to browse</span>
+              </>
+            )}
+          </button>
+        </label>
+        {uniqueDirs.length > 0 && (
+          <label className="dialog-label">
+            Recent directories
+            <select
+              className="dialog-input"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) applyWorkingDir(e.target.value);
+              }}
+            >
+              <option value="" disabled>Select a recent directory...</option>
+              {uniqueDirs.map((dir) => (
+                <option key={dir} value={dir}>{dir}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="dialog-label">
+          Name
+          <input
+            className="dialog-input"
+            value={name}
+            onChange={(e) => {
+              nameEditedRef.current = true;
+              setName(e.target.value);
+            }}
+            placeholder="Session name"
+          />
+        </label>
+      </div>
+      <div className="dialog-actions">
+        <button
+          className="dialog-btn dialog-btn-cancel"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+        <button
+          className="dialog-btn dialog-btn-create"
+          onClick={() => onCreate(name.trim(), workingDir.trim())}
+          disabled={!name.trim() || !workingDir.trim()}
+        >
+          Create
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+export default function SessionSidebar() {
+  const {
+    sessions, activeSessionId, setActiveSessionId, refreshSessions,
+    showNewSessionDialog, setShowNewSessionDialog,
+    sidebarCollapsed, setSidebarCollapsed,
+  } = useSessions();
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
+    null,
+  );
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+
+  const { addToast } = useToast();
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useClickOutside(contextMenuRef, () => setContextMenu(null));
+
+  const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
+
+  const grouped = useMemo(() => sessions.reduce<Record<string, SessionSummary[]>>(
+    (acc, s) => {
+      const parts = s.working_directory.replace(/\/$/, "").split("/");
+      const folder = parts[parts.length - 1] || s.working_directory;
+      if (!acc[folder]) acc[folder] = [];
+      acc[folder].push(s);
+      return acc;
+    },
+    {},
+  ), [sessions]);
+  const groupKeys = Object.keys(grouped).sort();
+
+  function handleCreate(name: string, workingDir: string) {
+    if (!name || !workingDir) return;
+    invoke<SessionSummary>("create_session", {
+      workingDir,
+      name,
+    }).then((session) => {
+      setShowNewSessionDialog(false);
+      refreshSessions();
+      return invoke("open_session", { sessionId: session.id }).then(() => session.id);
+    }).then((id) => {
+      setActiveSessionId(id);
+    });
+  }
 
   function handleSelect(id: string) {
     if (id === activeSessionId) return;
     invoke("open_session", { sessionId: id }).then(() => {
       setActiveSessionId(id);
       refreshSessions();
-    });
-  }
-
-  function handleCreate() {
-    if (!newName.trim() || !newWorkingDir.trim()) return;
-    invoke<SessionSummary>("create_session", {
-      workingDir: newWorkingDir.trim(),
-      name: newName.trim(),
-    }).then((session) => {
-      setShowNewSessionDialog(false);
-      setNewName("");
-      setNewWorkingDir("");
-      newNameEditedRef.current = false;
-      refreshSessions();
-      return invoke("open_session", { sessionId: session.id }).then(() => session.id);
-    }).then((id) => {
-      setActiveSessionId(id);
     });
   }
 
@@ -135,71 +319,17 @@ export default function SessionSidebar() {
     });
   }
 
-  function handleResizeMouseDown(e: React.MouseEvent) {
-    e.preventDefault();
-    isResizing.current = true;
-    setIsResizingState(true);
-    document.body.style.userSelect = "none";
-    document.addEventListener("mousemove", handleResizeMouseMove);
-    document.addEventListener("mouseup", handleResizeMouseUp);
-  }
-
-  function handleResizeMouseMove(e: MouseEvent) {
-    if (!isResizing.current) return;
-    const w = e.clientX;
-    if (w < 60) {
-      lastWidth.current = sidebarWidth > 60 ? sidebarWidth : lastWidth.current;
-      setSidebarWidth(42);
-      setSidebarCollapsed(true);
-    } else {
-      setSidebarCollapsed(false);
-      setSidebarWidth(Math.max(200, Math.min(600, w)));
+  useEventListener(document, "keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (contextMenu) {
+      setContextMenu(null);
+    } else if (deleteConfirmId) {
+      setDeleteConfirmId(null);
+    } else if (showNewSessionDialog) {
+      setShowNewSessionDialog(false);
+    } else if (renamingSessionId) {
+      setRenamingSessionId(null);
     }
-  }
-
-  function handleResizeMouseUp() {
-    isResizing.current = false;
-    setIsResizingState(false);
-    document.body.style.userSelect = "";
-    document.removeEventListener("mousemove", handleResizeMouseMove);
-    document.removeEventListener("mouseup", handleResizeMouseUp);
-  }
-
-  useEffect(() => {
-    return () => {
-      document.removeEventListener("mousemove", handleResizeMouseMove);
-      document.removeEventListener("mouseup", handleResizeMouseUp);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (sidebarCollapsed) {
-      if (sidebarWidth > 42) {
-        lastWidth.current = sidebarWidth;
-        setSidebarWidth(42);
-      }
-    } else {
-      if (sidebarWidth <= 42) {
-        setSidebarWidth(lastWidth.current);
-      }
-    }
-  }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (contextMenu) {
-        setContextMenu(null);
-      } else if (deleteConfirmId) {
-        setDeleteConfirmId(null);
-      } else if (showNewSessionDialog) {
-        setShowNewSessionDialog(false);
-      } else if (renamingSessionId) {
-        setRenamingSessionId(null);
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, contextMenu]);
 
   const contextSession = contextMenu
@@ -224,21 +354,13 @@ export default function SessionSidebar() {
 
   async function handleCopySessionId() {
     if (!contextSession) return;
-    try {
-      await navigator.clipboard.writeText(contextSession.id);
-    } catch {
-      addToast({ type: "error", message: "Failed to copy to clipboard" });
-    }
+    await copyToClipboard(contextSession.id, "session ID", (msg) => addToast({ type: "error", message: msg }));
     setContextMenu(null);
   }
 
   async function handleCopySessionPath() {
     if (!contextSession) return;
-    try {
-      await navigator.clipboard.writeText(contextSession.working_directory);
-    } catch {
-      addToast({ type: "error", message: "Failed to copy to clipboard" });
-    }
+    await copyToClipboard(contextSession.working_directory, "path", (msg) => addToast({ type: "error", message: msg }));
     setContextMenu(null);
   }
 
@@ -327,20 +449,11 @@ export default function SessionSidebar() {
 
   return (
     <>
-      <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}${isResizingState ? " sidebar-resizing" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
+      <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}${isResizing ? " sidebar-resizing" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
         <div className="sidebar-header">
           <button
             className="sidebar-toggle-btn"
-            onClick={() => {
-              if (sidebarCollapsed) {
-                setSidebarWidth(lastWidth.current);
-                setSidebarCollapsed(false);
-              } else {
-                lastWidth.current = sidebarWidth;
-                setSidebarWidth(42);
-                setSidebarCollapsed(true);
-              }
-            }}
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
@@ -368,12 +481,7 @@ export default function SessionSidebar() {
             )}
             <button
               className="new-session-btn"
-              onClick={() => {
-                setNewName("");
-                setNewWorkingDir("");
-                newNameEditedRef.current = false;
-                setShowNewSessionDialog(true);
-              }}
+              onClick={() => setShowNewSessionDialog(true)}
               title="New Session"
             >
               <Plus size={16} />
@@ -490,134 +598,50 @@ export default function SessionSidebar() {
           </div>
         </div>
 
-        <div className="sidebar-resize" onMouseDown={handleResizeMouseDown} />
+        <div className="sidebar-resize" onMouseDown={handleMouseDown} />
       </aside>
 
       {showNewSessionDialog && (
-        <div
-          className="dialog-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowNewSessionDialog(false);
-          }}
-        >
-          <div className="dialog" onClick={(e) => e.stopPropagation()}>
-            <h3 className="dialog-title">New Session</h3>
-            <div className="dialog-fields">
-              <label className="dialog-label">
-                Working Directory
-                <button
-                  type="button"
-                  className={`dialog-dropzone${newWorkingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
-                  autoFocus
-                  onClick={async () => {
-                    const selected = await open({ directory: true });
-                    if (selected) applyWorkingDir(selected);
-                  }}
-                >
-                  {newWorkingDir ? (
-                    <>
-                      <FolderOpen size={28} className="dialog-dropzone-icon" aria-hidden="true" />
-                      <span className="dialog-dropzone-name">{folderNameOf(newWorkingDir)}</span>
-                      <span className="dialog-dropzone-path" title={newWorkingDir}>{newWorkingDir}</span>
-                      <span className="dialog-dropzone-hint">Drop a different folder, or click to change</span>
-                    </>
-                  ) : (
-                    <>
-                      <FolderInput size={28} className="dialog-dropzone-icon" aria-hidden="true" />
-                      <span className="dialog-dropzone-title">Drag a folder here</span>
-                      <span className="dialog-dropzone-hint">or click to browse</span>
-                    </>
-                  )}
-                </button>
-              </label>
-              <label className="dialog-label">
-                Name
-                <input
-                  className="dialog-input"
-                  value={newName}
-                  onChange={(e) => {
-                    newNameEditedRef.current = true;
-                    setNewName(e.target.value);
-                  }}
-                  placeholder="Session name"
-                />
-              </label>
-            </div>
-            <div className="dialog-actions">
-              <button
-                className="dialog-btn dialog-btn-cancel"
-                onClick={() => setShowNewSessionDialog(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="dialog-btn dialog-btn-create"
-                onClick={handleCreate}
-                disabled={!newName.trim() || !newWorkingDir.trim()}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
+        <NewSessionDialog
+          open={showNewSessionDialog}
+          onClose={() => setShowNewSessionDialog(false)}
+          onCreate={handleCreate}
+          groupedSessions={grouped}
+        />
       )}
 
-      {deleteConfirmId && (
-        <div
-          className="dialog-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setDeleteConfirmId(null);
-          }}
-        >
-          <div className="dialog dialog-confirm" onClick={(e) => e.stopPropagation()}>
-            <p className="dialog-confirm-text">
-              Are you sure you want to delete
-              &apos;{sessions.find((s) => s.id === deleteConfirmId)?.name ?? ""}
-              &apos;?
-            </p>
-            <div className="dialog-actions">
-              <button
-                className="dialog-btn dialog-btn-cancel"
-                onClick={() => setDeleteConfirmId(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="dialog-btn dialog-btn-delete"
-                onClick={() => handleDelete(deleteConfirmId)}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={deleteConfirmId !== null}
+        onClose={() => setDeleteConfirmId(null)}
+        title="Delete Session"
+        message={`Are you sure you want to delete '${sessions.find((s) => s.id === deleteConfirmId)?.name ?? ""}'?`}
+        confirmLabel="Delete"
+        onConfirm={() => handleDelete(deleteConfirmId!)}
+        destructive
+      />
 
       {contextMenu && (
-        <>
-          <div className="context-menu-overlay" onClick={() => setContextMenu(null)} />
-          <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <div className="context-menu-item" onClick={handleOpenInFinder}>
-              Open in Finder
-            </div>
-            <div className="context-menu-item" onClick={handleOpenInEditor}>
-              Open in Editor
-            </div>
-            <div className="context-menu-item" onClick={handleOpenInDiff}>
-              Open in External Diff
-            </div>
-            <div className="context-menu-item" onClick={handleOpenInTerminal}>
-              Open in Terminal
-            </div>
-            <div className="context-menu-divider" />
-            <div className="context-menu-item" onClick={handleCopySessionId}>
-              Copy SessionID
-            </div>
-            <div className="context-menu-item" onClick={handleCopySessionPath}>
-              Copy Session Path
-            </div>
+        <div ref={contextMenuRef} className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="context-menu-item" onClick={handleOpenInFinder}>
+            Open in Finder
           </div>
-        </>
+          <div className="context-menu-item" onClick={handleOpenInEditor}>
+            Open in Editor
+          </div>
+          <div className="context-menu-item" onClick={handleOpenInDiff}>
+            Open in External Diff
+          </div>
+          <div className="context-menu-item" onClick={handleOpenInTerminal}>
+            Open in Terminal
+          </div>
+          <div className="context-menu-divider" />
+          <div className="context-menu-item" onClick={handleCopySessionId}>
+            Copy SessionID
+          </div>
+          <div className="context-menu-item" onClick={handleCopySessionPath}>
+            Copy Session Path
+          </div>
+        </div>
       )}
     </>
   );

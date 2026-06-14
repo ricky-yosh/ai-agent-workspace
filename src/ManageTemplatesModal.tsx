@@ -31,6 +31,315 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+function useFocusTrap(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const all = el.querySelectorAll<HTMLElement>(FOCUSABLE);
+    const focusable = Array.from(all).filter((e) => e.offsetParent !== null);
+    if (focusable.length > 0) {
+      focusable[0].focus();
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Tab") return;
+      const all = Array.from(el!.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (e) => e.offsetParent !== null
+      );
+      if (all.length === 0) return;
+      const first = all[0];
+      const last = all[all.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [ref]);
+}
+
+function useReclaimFocus(returnElement?: HTMLElement | null) {
+  const previousRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    previousRef.current = document.activeElement as HTMLElement;
+    return () => {
+      (returnElement ?? previousRef.current)?.focus();
+    };
+  }, [returnElement]);
+}
+
+function useTemplateKeyboardNavigation(
+  filteredTemplates: Layout[],
+  activeIndex: number,
+  setActiveIndex: (idx: number) => void,
+  editingId: string | null,
+  confirmingDeleteId: string | null,
+  setConfirmingDeleteId: (id: string | null) => void,
+  onRename: () => void,
+  onDelete: () => void,
+  onDeleteConfirm: () => void,
+  focusSearch: () => void
+) {
+  const stateRef = useRef({
+    filteredTemplates,
+    activeIndex,
+    setActiveIndex,
+    editingId,
+    confirmingDeleteId,
+    setConfirmingDeleteId,
+    onRename,
+    onDelete,
+    onDeleteConfirm,
+    focusSearch,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      filteredTemplates,
+      activeIndex,
+      setActiveIndex,
+      editingId,
+      confirmingDeleteId,
+      setConfirmingDeleteId,
+      onRename,
+      onDelete,
+      onDeleteConfirm,
+      focusSearch,
+    };
+  });
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const s = stateRef.current;
+    if (s.editingId) return;
+
+    if (
+      s.confirmingDeleteId &&
+      e.key !== "Delete" &&
+      e.key !== "Backspace" &&
+      e.key !== "Escape"
+    ) {
+      s.setConfirmingDeleteId(null);
+    }
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        s.setActiveIndex(Math.min(s.activeIndex + 1, s.filteredTemplates.length - 1));
+        break;
+      }
+      case "ArrowUp": {
+        e.preventDefault();
+        s.setActiveIndex(Math.max(s.activeIndex - 1, 0));
+        break;
+      }
+      case "Home": {
+        e.preventDefault();
+        s.setActiveIndex(0);
+        break;
+      }
+      case "End": {
+        e.preventDefault();
+        s.setActiveIndex(s.filteredTemplates.length - 1);
+        break;
+      }
+      case "Enter": {
+        e.preventDefault();
+        if (s.filteredTemplates[s.activeIndex]) {
+          s.onRename();
+        }
+        break;
+      }
+      case "Delete":
+      case "Backspace": {
+        e.preventDefault();
+        const active = s.filteredTemplates[s.activeIndex];
+        if (active) {
+          if (s.confirmingDeleteId === active.id) {
+            s.onDeleteConfirm();
+          } else {
+            s.onDelete();
+          }
+        }
+        break;
+      }
+      case "f": {
+        if (!e.ctrlKey && !e.metaKey) break;
+        e.preventDefault();
+        s.focusSearch();
+        break;
+      }
+    }
+  }, []);
+
+  return onKeyDown;
+}
+
+interface TemplateRowProps {
+  template: Layout;
+  index: number;
+  isActive: boolean;
+  isEditing: boolean;
+  isConfirmingDelete: boolean;
+  editingName: string;
+  onSelect: (idx: number) => void;
+  onEditStart: (id: string, name: string) => void;
+  onEditNameChange: (value: string) => void;
+  onEditCommit: () => void;
+  onEditCancel: () => void;
+  onDeleteStart: (id: string) => void;
+  onDeleteConfirm: (id: string) => void;
+  onDeleteCancel: () => void;
+  usageCount: number;
+  onDuplicate?: (id: string) => void;
+  getItemRef: (idx: number) => (el: HTMLDivElement | null) => void;
+  editingInputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+function TemplateRow({
+  template,
+  index,
+  isActive,
+  isEditing,
+  isConfirmingDelete,
+  editingName,
+  onSelect,
+  onEditStart,
+  onEditNameChange,
+  onEditCommit,
+  onEditCancel,
+  onDeleteStart,
+  onDeleteConfirm,
+  onDeleteCancel,
+  usageCount,
+  onDuplicate,
+  getItemRef,
+  editingInputRef,
+}: TemplateRowProps) {
+  const showActions = !isEditing;
+
+  return (
+    <div
+      key={template.id}
+      className="template-item"
+      role="option"
+      aria-selected={isActive}
+      aria-label={`Template: ${template.name}${usageCount > 0 ? `, used by ${usageCount} workspace${usageCount !== 1 ? "s" : ""}` : ""}`}
+    >
+      <div
+        className={`template-item-row${isActive ? " template-item-active" : ""}`}
+        ref={getItemRef(index)}
+        tabIndex={isActive ? 0 : -1}
+        onClick={(e) => {
+          onSelect(index);
+          e.currentTarget.focus();
+        }}
+        onDoubleClick={() => onEditStart(template.id, template.name)}
+        onFocus={() => onSelect(index)}
+      >
+        {isEditing ? (
+          <div className="template-rename-wrapper">
+            <input
+              ref={editingInputRef}
+              className="template-rename-input"
+              value={editingName}
+              onChange={(e) => onEditNameChange(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") onEditCommit();
+                if (e.key === "Escape") onEditCancel();
+              }}
+              onBlur={onEditCommit}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Rename template"
+            />
+            <button
+              className="template-rename-confirm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditCommit();
+              }}
+              aria-label="Confirm rename"
+              title="Confirm"
+            >
+              <Check size={12} strokeWidth={3} />
+            </button>
+          </div>
+        ) : (
+          <span className="template-item-name" title={template.name}>
+            {template.name}
+          </span>
+        )}
+
+        {usageCount > 0 && !isEditing && (
+          <span
+            className="template-in-use-badge"
+            title={`Used by ${usageCount} workspace${usageCount !== 1 ? "s" : ""}`}
+          >
+            {usageCount} workspace{usageCount !== 1 ? "s" : ""}
+          </span>
+        )}
+
+        {showActions && (
+          <div className="template-item-actions">
+            {onDuplicate && (
+              <button
+                className="template-item-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDuplicate(template.id);
+                }}
+                aria-label={`Duplicate ${template.name}`}
+                title="Duplicate"
+              >
+                <Copy size={13} />
+              </button>
+            )}
+            <button
+              className="template-item-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditStart(template.id, template.name);
+              }}
+              aria-label={`Rename ${template.name}`}
+              title="Rename"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isConfirmingDelete) {
+                  onDeleteConfirm(template.id);
+                } else {
+                  onDeleteStart(template.id);
+                }
+              }}
+              onBlur={onDeleteCancel}
+              aria-label={isConfirmingDelete ? `Confirm delete ${template.name}` : `Delete ${template.name}`}
+              title={isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
+            >
+              {isConfirmingDelete ? <Check size={13} strokeWidth={3} /> : <Trash2 size={13} />}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ManageTemplatesModal({
   templates,
   onRenameTemplate,
@@ -67,9 +376,8 @@ export default function ManageTemplatesModal({
 
   const activeTemplate = filteredTemplates[activeIndex] ?? null;
 
-  useEffect(() => {
-    searchInputRef.current?.focus();
-  }, []);
+  useFocusTrap(dialogRef);
+  useReclaimFocus();
 
   useEffect(() => {
     if (editingId && editingInputRef.current) {
@@ -89,10 +397,6 @@ export default function ManageTemplatesModal({
     el?.scrollIntoView({ block: "nearest" });
   }, []);
 
-  // Moves both the "active" highlight and actual DOM focus together — if focus
-  // doesn't follow, the highlighted row and the focused row drift apart (the
-  // highlight shows where arrow keys think you are, the ring shows where the
-  // browser thinks you are), which looks like two different rows are selected.
   const moveActive = useCallback(
     (idx: number) => {
       setActiveIndex(idx);
@@ -102,16 +406,10 @@ export default function ManageTemplatesModal({
     [scrollIntoView]
   );
 
-  // When rename/delete-confirm controls unmount, focus falls back to <body>,
-  // which is outside the list's onKeyDown subtree — arrow keys silently stop
-  // working until focus lands back on a row or the search box. Reclaim it.
   const wasEditingOrConfirming = useRef(false);
   useEffect(() => {
     const isEditingOrConfirming = editingId !== null || confirmingDeleteId !== null;
     if (wasEditingOrConfirming.current && !isEditingOrConfirming) {
-      // Only reclaim focus if it actually fell back to <body> — if the user
-      // clicked elsewhere in the dialog (e.g. another row, the search box) to
-      // dismiss the confirm state, that click's focus should win instead.
       const insideDialog = dialogRef.current?.contains(document.activeElement);
       if (!insideDialog) {
         itemRefs.current.get(activeIndex)?.focus();
@@ -158,64 +456,29 @@ export default function ManageTemplatesModal({
     el?.focus();
   }
 
-  function handleListKeyDown(e: React.KeyboardEvent) {
-    if (editingId) return;
-
-    // Any key other than a second Delete/Backspace (confirm) or Escape (cancel,
-    // handled by the dialog-level handler) backs out of a pending delete confirm.
-    if (confirmingDeleteId && e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") {
-      setConfirmingDeleteId(null);
+  const handleListKeyDown = useTemplateKeyboardNavigation(
+    filteredTemplates,
+    activeIndex,
+    moveActive,
+    editingId,
+    confirmingDeleteId,
+    setConfirmingDeleteId,
+    () => {
+      if (activeTemplate) startRename(activeTemplate.id, activeTemplate.name);
+    },
+    () => {
+      if (activeTemplate) startDelete(activeTemplate.id);
+    },
+    () => {
+      if (activeTemplate) {
+        onDeleteTemplate(activeTemplate.id);
+        setConfirmingDeleteId(null);
+      }
+    },
+    () => {
+      searchInputRef.current?.focus();
     }
-
-    switch (e.key) {
-      case "ArrowDown": {
-        e.preventDefault();
-        moveActive(Math.min(activeIndex + 1, filteredTemplates.length - 1));
-        break;
-      }
-      case "ArrowUp": {
-        e.preventDefault();
-        moveActive(Math.max(activeIndex - 1, 0));
-        break;
-      }
-      case "Home": {
-        e.preventDefault();
-        moveActive(0);
-        break;
-      }
-      case "End": {
-        e.preventDefault();
-        moveActive(filteredTemplates.length - 1);
-        break;
-      }
-      case "Enter": {
-        e.preventDefault();
-        if (activeTemplate) {
-          startRename(activeTemplate.id, activeTemplate.name);
-        }
-        break;
-      }
-      case "Delete":
-      case "Backspace": {
-        e.preventDefault();
-        if (activeTemplate) {
-          if (confirmingDeleteId === activeTemplate.id) {
-            onDeleteTemplate(activeTemplate.id);
-            setConfirmingDeleteId(null);
-          } else {
-            startDelete(activeTemplate.id);
-          }
-        }
-        break;
-      }
-      case "f": {
-        if (!e.ctrlKey && !e.metaKey) break;
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        break;
-      }
-    }
-  }
+  );
 
   function handleDialogKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
@@ -242,32 +505,6 @@ export default function ManageTemplatesModal({
       if (searchQuery) {
         e.stopPropagation();
         setSearchQuery("");
-      }
-    }
-  }
-
-  function getFocusableElements(): HTMLElement[] {
-    if (!dialogRef.current) return [];
-    const all = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
-    return Array.from(all).filter((el) => el.offsetParent !== null);
-  }
-
-  function handleTabWrap(e: React.KeyboardEvent) {
-    if (e.key !== "Tab") return;
-    const focusable = getFocusableElements();
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
       }
     }
   }
@@ -340,7 +577,6 @@ export default function ManageTemplatesModal({
           role="listbox"
           aria-label="Template list"
           onKeyDown={handleListKeyDown}
-          onKeyUp={handleTabWrap}
         >
           {filteredTemplates.length === 0 && searchQuery.trim() && (
             <div className="template-search-empty">
@@ -360,126 +596,34 @@ export default function ManageTemplatesModal({
             </div>
           )}
 
-          {filteredTemplates.map((t, idx) => {
-            const isActive = idx === activeIndex;
-            const isEditing = editingId === t.id;
-            const isConfirmingDelete = confirmingDeleteId === t.id;
-            const usageCount = workspaceCounts?.[t.id] ?? 0;
-            const showActions = !isEditing;
-
-            return (
-              <div
-                key={t.id}
-                className="template-item"
-                role="option"
-                aria-selected={isActive}
-                aria-label={`Template: ${t.name}${usageCount > 0 ? `, used by ${usageCount} workspace${usageCount !== 1 ? "s" : ""}` : ""}`}
-              >
-                <div
-                  className={`template-item-row${isActive ? " template-item-active" : ""}`}
-                  ref={getItemRef(idx)}
-                  tabIndex={isActive ? 0 : -1}
-                  onClick={(e) => {
-                    setActiveIndex(idx);
-                    e.currentTarget.focus();
-                  }}
-                  onDoubleClick={() => startRename(t.id, t.name)}
-                  onFocus={() => setActiveIndex(idx)}
-                >
-                  {isEditing ? (
-                    <div className="template-rename-wrapper">
-                      <input
-                        ref={editingInputRef}
-                        className="template-rename-input"
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === "Enter") commitRename();
-                          if (e.key === "Escape") setEditingId(null);
-                        }}
-                        onBlur={commitRename}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label="Rename template"
-                      />
-                      <button
-                        className="template-rename-confirm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          commitRename();
-                        }}
-                        aria-label="Confirm rename"
-                        title="Confirm"
-                      >
-                        <Check size={12} strokeWidth={3} />
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="template-item-name" title={t.name}>
-                      {t.name}
-                    </span>
-                  )}
-
-                  {usageCount > 0 && !isEditing && (
-                    <span
-                      className="template-in-use-badge"
-                      title={`Used by ${usageCount} workspace${usageCount !== 1 ? "s" : ""}`}
-                    >
-                      {usageCount} workspace{usageCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-
-                  {showActions && (
-                    <div className="template-item-actions">
-                      {onDuplicateTemplate && (
-                        <button
-                          className="template-item-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDuplicateTemplate(t.id);
-                          }}
-                          aria-label={`Duplicate ${t.name}`}
-                          title="Duplicate"
-                        >
-                          <Copy size={13} />
-                        </button>
-                      )}
-                      <button
-                        className="template-item-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startRename(t.id, t.name);
-                        }}
-                        aria-label={`Rename ${t.name}`}
-                        title="Rename"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isConfirmingDelete) {
-                            onDeleteTemplate(t.id);
-                            setConfirmingDeleteId(null);
-                          } else {
-                            startDelete(t.id);
-                          }
-                        }}
-                        onBlur={() => {
-                          setConfirmingDeleteId((prev) => (prev === t.id ? null : prev));
-                        }}
-                        aria-label={isConfirmingDelete ? `Confirm delete ${t.name}` : `Delete ${t.name}`}
-                        title={isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
-                      >
-                        {isConfirmingDelete ? <Check size={13} strokeWidth={3} /> : <Trash2 size={13} />}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {filteredTemplates.map((t, idx) => (
+            <TemplateRow
+              key={t.id}
+              template={t}
+              index={idx}
+              isActive={idx === activeIndex}
+              isEditing={editingId === t.id}
+              isConfirmingDelete={confirmingDeleteId === t.id}
+              editingName={editValue}
+              onSelect={moveActive}
+              onEditStart={startRename}
+              onEditNameChange={setEditValue}
+              onEditCommit={commitRename}
+              onEditCancel={() => setEditingId(null)}
+              onDeleteStart={startDelete}
+              onDeleteConfirm={(id) => {
+                onDeleteTemplate(id);
+                setConfirmingDeleteId(null);
+              }}
+              onDeleteCancel={() =>
+                setConfirmingDeleteId((prev) => (prev === t.id ? null : prev))
+              }
+              usageCount={workspaceCounts?.[t.id] ?? 0}
+              onDuplicate={onDuplicateTemplate}
+              getItemRef={getItemRef}
+              editingInputRef={editingInputRef}
+            />
+          ))}
         </div>
 
         <div className="template-footer">

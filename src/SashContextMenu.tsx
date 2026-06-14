@@ -1,5 +1,10 @@
 import { useRef, useEffect } from "react";
 
+const JOIN_ARROWS: Record<string, Record<number, string>> = {
+  vertical: { 0: "\u25C0", 1: "\u25B6" },
+  horizontal: { 0: "\u25B2", 1: "\u25BC" },
+};
+
 interface SashContextMenuProps {
   children: React.ReactNode;
   splitPath: number[];
@@ -64,13 +69,7 @@ export default function SashContextMenu({
             textShadow: "0 0 8px rgba(0,0,0,0.6)",
           }}
         >
-          {(() => {
-            if (joinArrow.direction === "vertical") {
-              return joinArrow.consumerIndex === 0 ? "\u25C0" : "\u25B6";
-            } else {
-              return joinArrow.consumerIndex === 0 ? "\u25B2" : "\u25BC";
-            }
-          })()}
+          {JOIN_ARROWS[joinArrow.direction][joinArrow.consumerIndex]}
         </div>
       )}
     </div>

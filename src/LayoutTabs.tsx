@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import type { Layout, LayoutTree } from "./SplitLayout";
+import { useClickOutside } from "./hooks/useClickOutside";
+import { useAnchoredPosition } from "./hooks/useAnchoredPosition";
 import "./LayoutTabs.css";
 import "./ContextMenu.css";
 
@@ -52,49 +54,21 @@ export default function LayoutTabs({
     }
   }, [renamingId]);
 
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [dropdownOpen]);
+  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
+  useClickOutside(dropdownRef, closeDropdown);
 
-  useLayoutEffect(() => {
-    if (!ctxMenu || !ctxMenuRef.current) return;
-    const el = ctxMenuRef.current;
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0) return;
-    const { innerWidth: w, innerHeight: h } = window;
-    let x = ctxMenu.x;
-    let y = ctxMenu.y;
-    if (x + rect.width > w - 4) x = w - rect.width - 4;
-    if (x < 4) x = 4;
-    if (y + rect.height > h - 4) y = y - rect.height;
-    if (y < 4) y = 4;
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-  }, [ctxMenu]);
+  useAnchoredPosition(ctxMenuRef, {
+    anchorX: ctxMenu?.x ?? 0,
+    anchorY: ctxMenu?.y ?? 0,
+    enabled: ctxMenu !== null,
+  });
 
-  useLayoutEffect(() => {
-    if (!dropdownOpen || !dropdownMenuRef.current || !dropdownRef.current) return;
-    const el = dropdownMenuRef.current;
-    const btnRect = dropdownRef.current.getBoundingClientRect();
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0) return;
-    const { innerWidth: w, innerHeight: h } = window;
-    let left = btnRect.left;
-    let top = btnRect.bottom;
-    if (left + rect.width > w - 4) left = w - rect.width - 4;
-    if (left < 4) left = 4;
-    if (top + rect.height > h - 4) top = btnRect.top - rect.height;
-    if (top < 4) top = 4;
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-  }, [dropdownOpen]);
+  const btnRect = dropdownRef.current?.getBoundingClientRect();
+  useAnchoredPosition(dropdownMenuRef, {
+    anchorX: btnRect?.left ?? 0,
+    anchorY: btnRect?.bottom ?? 0,
+    enabled: dropdownOpen,
+  });
 
   function handleTabContextMenu(e: React.MouseEvent, wsId: string) {
     e.preventDefault();

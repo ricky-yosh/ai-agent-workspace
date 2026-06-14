@@ -175,9 +175,10 @@ export function SessionIcon({
   className,
 }: SessionIconProps) {
   const color = getSessionColor(sessionId);
-  const ptype = (projectType as ProjectType) in ICONS
-    ? (projectType as ProjectType)
-    : "generic";
+  function isProjectType(val: string): val is ProjectType {
+    return val in ICONS;
+  }
+  const ptype = isProjectType(projectType) ? projectType : "generic";
   const IconComponent = ICONS[ptype];
 
   const style: CSSProperties = {

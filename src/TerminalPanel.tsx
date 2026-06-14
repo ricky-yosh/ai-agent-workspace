@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
@@ -15,49 +15,60 @@ interface CachedTerminal {
   ptyId: string | null;
 }
 
-const terminalCache = new Map<string, CachedTerminal>();
+class TerminalCache {
+  private map = new Map<string, CachedTerminal>();
 
-function disposeTerminalCacheEntry(workspaceId: string, path: number[]) {
-  const key = `${workspaceId}::${JSON.stringify(path)}`;
-  const cached = terminalCache.get(key);
-  if (cached) {
-    cached.terminal.dispose();
-    terminalCache.delete(key);
+  get(key: string): CachedTerminal | undefined {
+    return this.map.get(key);
+  }
+
+  set(key: string, value: CachedTerminal): void {
+    this.map.set(key, value);
+  }
+
+  dispose(key: string): void {
+    const cached = this.map.get(key);
+    if (cached) {
+      cached.terminal.dispose();
+      this.map.delete(key);
+    }
   }
 }
 
-function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId, sessionId, path } = usePanelContext();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [showOverlay, setShowOverlay] = useState(true);
-  const isMountedRef = useRef(true);
-  const unsubscribersRef = useRef<(() => void)[]>([]);
-  const cacheKey = `${workspaceId}::${JSON.stringify(path)}`;
+const terminalCache = new TerminalCache();
 
+function fitAndFocus(
+  terminal: Terminal,
+  fitAddon: FitAddon,
+  isMounted: { current: boolean },
+): void {
+  requestAnimationFrame(() => {
+    if (isMounted.current) {
+      fitAddon.fit();
+      terminal.focus();
+    }
+  });
+}
+
+function useXtermTerminal(
+  containerRef: RefObject<HTMLDivElement | null>,
+  cacheKey: string,
+): void {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    isMountedRef.current = true;
-    let cached = terminalCache.get(cacheKey);
-    let terminal: Terminal;
-    let fitAddon: FitAddon;
+
+    const isMounted = { current: true };
+    const cached = terminalCache.get(cacheKey);
 
     if (cached) {
-      ({ terminal, fitAddon } = cached);
+      const { terminal, fitAddon } = cached;
       if (terminal.element) {
         container.appendChild(terminal.element);
       }
-      requestAnimationFrame(() => {
-        if (isMountedRef.current && fitAddon) {
-          fitAddon.fit();
-          terminal.focus();
-        }
-      });
-      if (cached.ptyId) {
-        setShowOverlay(false);
-      }
+      fitAndFocus(terminal, fitAddon, isMounted);
     } else {
-      terminal = new Terminal({
+      const terminal = new Terminal({
         allowProposedApi: true,
         cursorBlink: true,
         fontSize: 13,
@@ -75,16 +86,11 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
         rawOpts.allowProposedApi = true;
       }
 
-      fitAddon = new FitAddon();
+      const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
       terminal.open(container);
 
-      requestAnimationFrame(() => {
-        if (isMountedRef.current && fitAddon) {
-          fitAddon.fit();
-          terminal.focus();
-        }
-      });
+      fitAndFocus(terminal, fitAddon, isMounted);
 
       terminal.onData((data) => {
         const c = terminalCache.get(cacheKey);
@@ -97,93 +103,147 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
         }
       });
 
-      cached = { terminal, fitAddon, ptyId: null };
-      terminalCache.set(cacheKey, cached);
-
-      invoke<{ pty_id: string }>("pty_spawn", {
-        workspaceId,
-        path,
-        sessionId,
-      }).then(({ pty_id }) => {
-        if (!isMountedRef.current) return;
-        cached!.ptyId = pty_id;
-        setShowOverlay(false);
-      }).catch((err) => {
-        if (!isMountedRef.current) return;
-        terminal.write(`\r\nFailed to spawn terminal: ${err}\r\n`);
-        setShowOverlay(false);
-      });
+      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null });
     }
 
-    let disposed = false;
-
-    const unsubOutput = listen<{ pty_id: string; data: number[] }>("pty-output", (event) => {
-      if (disposed) return;
-      if (event.payload.pty_id === cached!.ptyId) {
-        terminal.write(new Uint8Array(event.payload.data));
+    return () => {
+      isMounted.current = false;
+      const last = terminalCache.get(cacheKey);
+      if (last?.terminal.element && last.terminal.element.parentNode === container) {
+        container.removeChild(last.terminal.element);
       }
-    });
-    unsubscribersRef.current.push(() => {
-      disposed = true;
-      unsubOutput.then((fn) => fn());
+      terminalCache.dispose(cacheKey);
+    };
+  }, [cacheKey]);
+}
+
+function usePty(
+  cacheKey: string,
+  workspaceId: string,
+  sessionId: string,
+  path: number[],
+): { isSpawning: boolean } {
+  const [isSpawning, setIsSpawning] = useState(true);
+
+  useEffect(() => {
+    const isMounted = { current: true };
+    const unsubs: (() => void)[] = [];
+
+    const cached = terminalCache.get(cacheKey);
+    if (!cached) return;
+
+    if (cached.ptyId) {
+      setIsSpawning(false);
+    } else {
+      invoke<{ pty_id: string }>("pty_spawn", { workspaceId, path, sessionId })
+        .then(({ pty_id }) => {
+          if (!isMounted.current) return;
+          cached.ptyId = pty_id;
+          setIsSpawning(false);
+        })
+        .catch((err) => {
+          if (!isMounted.current) return;
+          cached.terminal.write(`\r\nFailed to spawn terminal: ${err}\r\n`);
+          setIsSpawning(false);
+        });
+    }
+
+    const unsubOutput = listen<{ pty_id: string; data: number[] }>(
+      "pty-output",
+      (event) => {
+        const c = terminalCache.get(cacheKey);
+        if (!c?.ptyId || !c.terminal.element?.isConnected) return;
+        if (event.payload.pty_id === c.ptyId) {
+          c.terminal.write(new Uint8Array(event.payload.data));
+        }
+      },
+    );
+    unsubs.push(() => {
+      unsubOutput.then((fn) => fn()).catch(() => {});
     });
 
     const unsubRestart = listen<{ old_pty_id: string; new_pty_id: string; path: number[] }>(
       "pty-restart",
       (event) => {
-        if (disposed) return;
-        if (event.payload.old_pty_id === cached!.ptyId) {
-          terminal.write("\r\nProcess exited. Restarting…\r\n");
-          cached!.ptyId = event.payload.new_pty_id;
+        const c = terminalCache.get(cacheKey);
+        if (!c?.ptyId || !c.terminal.element?.isConnected) return;
+        if (event.payload.old_pty_id === c.ptyId) {
+          c.terminal.write("\r\nProcess exited. Restarting…\r\n");
+          c.ptyId = event.payload.new_pty_id;
         }
       },
     );
-    unsubscribersRef.current.push(() => {
-      disposed = true;
-      unsubRestart.then((fn) => fn());
+    unsubs.push(() => {
+      unsubRestart.then((fn) => fn()).catch(() => {});
     });
 
+    return () => {
+      isMounted.current = false;
+      unsubs.forEach((fn) => fn());
+    };
+  }, [cacheKey, sessionId]);
+
+  return { isSpawning };
+}
+
+function useTerminalDragDrop(cacheKey: string): void {
+  useEffect(() => {
     const webview = getCurrentWebviewWindow();
-    const unlistenDragDrop = webview.onDragDropEvent((event) => {
-      if (disposed) return;
-      if (event.payload.type === "drop" && event.payload.paths.length > 0 && cached!.ptyId) {
-        const paths = event.payload.paths;
-        for (const p of paths) {
-          invoke("pty_write", { ptyId: cached!.ptyId, data: p + " " });
+    const unlisten = webview.onDragDropEvent((event) => {
+      const c = terminalCache.get(cacheKey);
+      if (!c?.ptyId || !c.terminal.element?.isConnected) return;
+      if (event.payload.type === "drop" && event.payload.paths.length > 0) {
+        for (const p of event.payload.paths) {
+          invoke("pty_write", { ptyId: c.ptyId, data: p + " " });
         }
       }
     });
-    unsubscribersRef.current.push(() => {
-      disposed = true;
-      unlistenDragDrop.then((fn) => fn());
-    });
+    return () => {
+      unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [cacheKey]);
+}
+
+function useTerminalResize(
+  containerRef: RefObject<HTMLDivElement | null>,
+  cacheKey: string,
+): void {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
     const resizeObserver = new ResizeObserver(() => {
-      if (fitAddon) {
-        fitAddon.fit();
+      const c = terminalCache.get(cacheKey);
+      if (!c) return;
+      const { terminal, fitAddon } = c;
+      if (!terminal.element?.isConnected) return;
+      fitAddon.fit();
+      if (c.ptyId) {
         const { cols, rows } = terminal;
-        if (cached!.ptyId) {
-          invoke("pty_resize", { ptyId: cached!.ptyId, cols, rows }).catch((err) => {
-            if (String(err).includes("PTY not found")) {
-              cached!.ptyId = null;
-            }
-          });
-        }
+        invoke("pty_resize", { ptyId: c.ptyId, cols, rows }).catch((err) => {
+          if (String(err).includes("PTY not found")) {
+            c.ptyId = null;
+          }
+        });
       }
     });
     resizeObserver.observe(container);
 
     return () => {
-      isMountedRef.current = false;
       resizeObserver.disconnect();
-      unsubscribersRef.current.forEach((unsub) => unsub());
-      unsubscribersRef.current = [];
-      disposeTerminalCacheEntry(workspaceId, path);
-      if (terminal.element && terminal.element.parentNode === container) {
-        container.removeChild(terminal.element);
-      }
     };
-  }, [cacheKey, sessionId]);
+  }, [cacheKey]);
+}
+
+function TerminalPanel({ panelType: _panelType }: PanelProps) {
+  const { workspaceId, sessionId, path } = usePanelContext();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cacheKey = `${workspaceId}::${JSON.stringify(path)}`;
+
+  useXtermTerminal(containerRef, cacheKey);
+  const { isSpawning } = usePty(cacheKey, workspaceId, sessionId, path);
+  useTerminalDragDrop(cacheKey);
+  useTerminalResize(containerRef, cacheKey);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", background: "#1e1e1e" }}>
@@ -195,19 +255,21 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
           if (c) c.terminal.focus();
         }}
       />
-      {showOverlay && (
-        <div style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "rgba(30, 30, 30, 0.9)",
-          color: "var(--text-muted, #888)",
-          fontSize: 13,
-          fontFamily: "inherit",
-          zIndex: 10,
-        }}>
+      {isSpawning && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(30, 30, 30, 0.9)",
+            color: "var(--text-muted, #888)",
+            fontSize: 13,
+            fontFamily: "inherit",
+            zIndex: 10,
+          }}
+        >
           Connecting…
         </div>
       )}
