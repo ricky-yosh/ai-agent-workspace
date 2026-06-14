@@ -39,7 +39,7 @@ macro_rules! command_handler {
                     "Unexpected command result variant for {}",
                     stringify!($cmd_variant)
                 )),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
     };
@@ -53,7 +53,7 @@ macro_rules! command_handler {
                     "Unexpected command result variant for {}",
                     stringify!($cmd_variant)
                 )),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
     };
@@ -142,7 +142,7 @@ macro_rules! option_return {
                     "Unexpected command result variant for {}",
                     stringify!($cmd_variant)
                 )),
-                Err(e) => Err(e.to_string()),
+                Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
     };
@@ -156,7 +156,7 @@ macro_rules! unit_void_return {
                 "Unexpected command result variant for {}",
                 stringify!($cmd_variant)
             )),
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
         }
     };
 }
