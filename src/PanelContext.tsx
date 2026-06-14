@@ -5,6 +5,7 @@ export interface PanelContextType {
   sessionId: string;
   path: number[];
   terminalId?: string;
+  focusedPath: number[] | null;
 }
 
 export const PanelContext = createContext<PanelContextType | null>(null);

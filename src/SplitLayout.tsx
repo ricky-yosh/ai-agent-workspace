@@ -440,7 +440,7 @@ function renderPanelNode(
       )}
       <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
         {PanelComponent ? (
-          <PanelContext.Provider value={{ workspaceId, sessionId, path, terminalId: node.panel.terminal_id }}>
+          <PanelContext.Provider value={{ workspaceId, sessionId, path, terminalId: node.panel.terminal_id, focusedPath: focusedPath ?? null }}>
             <PanelComponent key={node.panel.terminal_id ?? JSON.stringify(path)} panelType={panel_type} />
           </PanelContext.Provider>
         ) : (

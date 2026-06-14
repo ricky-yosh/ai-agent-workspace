@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
+import { pathsEqual } from "./utils/pathUtils";
 
 interface CachedTerminal {
   terminal: Terminal;
@@ -217,6 +218,12 @@ function usePty(
 }
 
 function useTerminalDragDrop(cacheKey: string): void {
+  const { path, focusedPath } = usePanelContext();
+  const focusedPathRef = useRef(focusedPath);
+  focusedPathRef.current = focusedPath;
+  const pathRef = useRef(path);
+  pathRef.current = path;
+
   useEffect(() => {
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
@@ -227,6 +234,7 @@ function useTerminalDragDrop(cacheKey: string): void {
       const c = terminalCache.get(cacheKey);
       if (!c || c.generation !== gen || !c.ptyId || !c.terminal.element?.isConnected) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
+        if (!pathsEqual(focusedPathRef.current, pathRef.current)) return;
         for (const p of event.payload.paths) {
           invoke("pty_write", { ptyId: c.ptyId, data: p + " " });
         }
