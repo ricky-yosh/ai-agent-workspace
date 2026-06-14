@@ -14,6 +14,7 @@ import { migrateWorkspaceTree } from "./utils/migrateTree";
 import { useEventListener } from "./hooks/useEventListener";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { Dialog } from "./components/Dialog";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./BlankPanel";
 import "./TerminalPanel";
 import "./App.css";
@@ -426,8 +427,12 @@ function App() {
     <ToastProvider>
       <SessionProvider>
         <div className="app-layout">
-          <SessionSidebar />
-          <MainArea toggleZoomRef={toggleZoomRef} />
+          <ErrorBoundary name="Sidebar">
+            <SessionSidebar />
+          </ErrorBoundary>
+          <ErrorBoundary name="Workspace">
+            <MainArea toggleZoomRef={toggleZoomRef} />
+          </ErrorBoundary>
         </div>
         <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} />
       </SessionProvider>
