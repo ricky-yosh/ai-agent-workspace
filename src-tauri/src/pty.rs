@@ -107,12 +107,19 @@ pub fn cleanup_orphaned_ptys(store: &PtyStore, workspace_id: &str, valid_paths: 
     let mut kills: Vec<PtyKey> = Vec::new();
 
     for key in orphan_keys {
-        let child_paths: Vec<_> = valid_paths
-            .iter()
-            .filter(|p| p.len() == key.path.len() + 1 && p.starts_with(&key.path))
-            .collect();
-        if let Some(&&ref child_path) = child_paths.first() {
-            relocations.push((key.clone(), PtyKey::new(&key.workspace_id, child_path)));
+        let mut best_match: Option<&Vec<usize>> = None;
+        let mut best_prefix_len = 0;
+
+        for valid in valid_paths {
+            let prefix_len = key.path.iter().zip(valid.iter()).take_while(|(a, b)| a == b).count();
+            if prefix_len > best_prefix_len {
+                best_prefix_len = prefix_len;
+                best_match = Some(valid);
+            }
+        }
+
+        if let Some(matched) = best_match {
+            relocations.push((key.clone(), PtyKey::new(&key.workspace_id, matched)));
         } else {
             kills.push(key);
         }
