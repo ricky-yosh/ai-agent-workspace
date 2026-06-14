@@ -164,7 +164,9 @@ impl LayoutStore {
                 fs::create_dir_all(parent)?;
             }
             let content = serde_json::to_string_pretty(&self.layouts)?;
-            fs::write(&self.file_path, content)?;
+            let tmp_path = self.file_path.with_extension("json.tmp");
+            fs::write(&tmp_path, content)?;
+            fs::rename(&tmp_path, &self.file_path)?;
             Ok::<(), LayoutError>(())
         })();
         self.suppress_watcher.store(false, Ordering::SeqCst);
