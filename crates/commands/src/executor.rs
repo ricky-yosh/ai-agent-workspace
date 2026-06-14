@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_session_not_found() {
-        let state = setup();
+        let (state, _tmp) = setup();
 
         let result = execute(
             Command::SessionRename {
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_template_save_and_list() {
-        let state = setup();
+        let (state, _tmp) = setup();
         let tree = ai_agent_workspace_core::LayoutStore::default_layout();
 
         let result = execute(
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn test_template_not_found() {
-        let state = setup();
+        let (state, _tmp) = setup();
 
         let result = execute(
             Command::TemplateDelete {
@@ -325,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_workspace_add_and_list() {
-        let state = setup();
+        let (state, _tmp) = setup();
 
         let result = execute(
             Command::SessionCreate {
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_workspace_not_found() {
-        let state = setup();
+        let (state, _tmp) = setup();
 
         let result = execute(
             Command::SessionCreate {

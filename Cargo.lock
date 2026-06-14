@@ -45,6 +45,7 @@ dependencies = [
  "ai-agent-workspace-core",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
