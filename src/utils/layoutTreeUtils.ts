@@ -22,7 +22,8 @@ export function updateRatio(node: LayoutNode, path: number[], newRatio: number):
 }
 
 export function replaceNode(node: LayoutNode, path: number[], newNode: LayoutNode): LayoutNode {
-  if (path.length === 0 || !("split" in node)) return newNode;
+  if (path.length === 0) return newNode;
+  if (!("split" in node)) return node;
   const [idx, ...rest] = path;
   return {
     split: {

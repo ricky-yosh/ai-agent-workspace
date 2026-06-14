@@ -10,6 +10,7 @@ import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider } from "./ToastContext";
 import { ToastContainer } from "./Toast";
 import { pathsEqual } from "./utils/pathUtils";
+import { migrateWorkspaceTree } from "./utils/migrateTree";
 import { useEventListener } from "./hooks/useEventListener";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { Dialog } from "./components/Dialog";
@@ -73,7 +74,11 @@ function useWorkspaceManager(activeSessionId: string | null) {
         invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }),
       ]).then(([wsList, active]) => {
         setWorkspaces(wsList);
-        setActiveWorkspace(active);
+        if (active) {
+          setActiveWorkspace({ ...active, current_tree: migrateWorkspaceTree(active.current_tree) });
+        } else {
+          setActiveWorkspace(null);
+        }
       }).catch(() => {
         setWorkspaces([]);
         setActiveWorkspace(null);
@@ -91,24 +96,30 @@ function useWorkspaceManager(activeSessionId: string | null) {
         .then(setWorkspaces)
         .catch(console.error);
       invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId })
-        .then(setActiveWorkspace)
+        .then((ws) => {
+          if (ws) {
+            setActiveWorkspace({ ...ws, current_tree: migrateWorkspaceTree(ws.current_tree) });
+          } else {
+            setActiveWorkspace(null);
+          }
+        })
         .catch(console.error);
     }
   }, [activeSessionId]);
 
   const handleWorkspaceTreeChange = useCallback((newTree: LayoutTree) => {
     if (!activeWorkspace) return;
-    setActiveWorkspace({ ...activeWorkspace, current_tree: newTree });
-    setWorkspaces((prev) =>
-      prev.map((w) =>
-        w.id === activeWorkspace.id ? { ...w, current_tree: newTree } : w
-      )
-    );
-    invoke("update_workspace_tree", {
+    invoke("persist_workspace_tree", {
       sessionId: activeSessionId,
       workspaceId: activeWorkspace.id,
       tree: newTree,
     }).catch(console.error);
+    setActiveWorkspace((prev) => prev ? { ...prev, current_tree: newTree } : null);
+    setWorkspaces((prev) =>
+      prev.map((w) =>
+        w.id === activeWorkspace?.id ? { ...w, current_tree: newTree } : w
+      )
+    );
   }, [activeWorkspace, activeSessionId]);
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {

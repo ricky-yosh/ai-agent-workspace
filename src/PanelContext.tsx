@@ -4,6 +4,7 @@ export interface PanelContextType {
   workspaceId: string;
   sessionId: string;
   path: number[];
+  terminalId?: string;
 }
 
 export const PanelContext = createContext<PanelContextType | null>(null);

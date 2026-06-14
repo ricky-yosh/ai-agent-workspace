@@ -23,6 +23,8 @@ pub enum LayoutNode {
     },
     Panel {
         panel_type: String,
+        #[serde(default)]
+        terminal_id: Option<String>,
     },
 }
 
@@ -150,6 +152,7 @@ impl LayoutStore {
         LayoutTree {
             tree: LayoutNode::Panel {
                 panel_type: "blank".into(),
+                terminal_id: None,
             },
         }
     }
@@ -247,7 +250,7 @@ mod tests {
     fn test_default_layout() {
         let tree = LayoutStore::default_layout();
         match tree.tree {
-            LayoutNode::Panel { ref panel_type } => assert_eq!(panel_type, "blank"),
+            LayoutNode::Panel { ref panel_type, .. } => assert_eq!(panel_type, "blank"),
             _ => panic!("Expected Panel variant with panel_type 'blank'"),
         }
     }
@@ -264,9 +267,11 @@ mod tests {
                 children: vec![
                     LayoutNode::Panel {
                         panel_type: "blank".into(),
+                        terminal_id: None,
                     },
                     LayoutNode::Panel {
                         panel_type: "tasks".into(),
+                        terminal_id: None,
                     },
                 ],
             },

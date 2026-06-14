@@ -558,6 +558,7 @@ mod tests {
         let new_tree = crate::layout_store::LayoutTree {
             tree: crate::layout_store::LayoutNode::Panel {
                 panel_type: "tasks".into(),
+                terminal_id: None,
             },
         };
         registry

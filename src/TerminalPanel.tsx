@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, type RefObject } from "react";
+import { useRef, useEffect, useState, useCallback, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,6 +13,7 @@ interface CachedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
   ptyId: string | null;
+  disposeScheduled: boolean;
 }
 
 class TerminalCache {
@@ -28,10 +29,15 @@ class TerminalCache {
 
   dispose(key: string): void {
     const cached = this.map.get(key);
-    if (cached) {
-      cached.terminal.dispose();
-      this.map.delete(key);
-    }
+    if (!cached) return;
+    cached.disposeScheduled = true;
+    setTimeout(() => {
+      const entry = this.map.get(key);
+      if (entry?.disposeScheduled) {
+        entry.terminal.dispose();
+        this.map.delete(key);
+      }
+    }, 0);
   }
 }
 
@@ -62,6 +68,7 @@ function useXtermTerminal(
     const cached = terminalCache.get(cacheKey);
 
     if (cached) {
+      cached.disposeScheduled = false;
       const { terminal, fitAddon } = cached;
       if (terminal.element) {
         container.appendChild(terminal.element);
@@ -103,7 +110,7 @@ function useXtermTerminal(
         }
       });
 
-      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null });
+      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, disposeScheduled: false });
     }
 
     return () => {
@@ -119,11 +126,28 @@ function useXtermTerminal(
 
 function usePty(
   cacheKey: string,
-  workspaceId: string,
+  terminalId: string,
   sessionId: string,
-  path: number[],
-): { isSpawning: boolean } {
+): { isSpawning: boolean; isExited: boolean; restartTerminal: () => void } {
   const [isSpawning, setIsSpawning] = useState(true);
+  const [isExited, setIsExited] = useState(false);
+
+  const restartTerminal = useCallback(() => {
+    const cached = terminalCache.get(cacheKey);
+    if (!cached) return;
+    cached.ptyId = null;
+    setIsExited(false);
+    setIsSpawning(true);
+    invoke<{ pty_id: string }>("pty_spawn", { terminalId, sessionId })
+      .then(({ pty_id }) => {
+        cached.ptyId = pty_id;
+        setIsSpawning(false);
+      })
+      .catch((err) => {
+        cached.terminal.write(`\r\nFailed to spawn terminal: ${err}\r\n`);
+        setIsSpawning(false);
+      });
+  }, [cacheKey, terminalId, sessionId]);
 
   useEffect(() => {
     const isMounted = { current: true };
@@ -135,7 +159,7 @@ function usePty(
     if (cached.ptyId) {
       setIsSpawning(false);
     } else {
-      invoke<{ pty_id: string }>("pty_spawn", { workspaceId, path, sessionId })
+      invoke<{ pty_id: string }>("pty_spawn", { terminalId, sessionId })
         .then(({ pty_id }) => {
           if (!isMounted.current) return;
           cached.ptyId = pty_id;
@@ -162,19 +186,21 @@ function usePty(
       unsubOutput.then((fn) => fn()).catch(() => {});
     });
 
-    const unsubRestart = listen<{ old_pty_id: string; new_pty_id: string; path: number[] }>(
-      "pty-restart",
+    const unsubExit = listen<{ terminal_id: string }>(
+      "pty-exit",
       (event) => {
+        if (event.payload.terminal_id !== terminalId) return;
         const c = terminalCache.get(cacheKey);
-        if (!c?.ptyId || !c.terminal.element?.isConnected) return;
-        if (event.payload.old_pty_id === c.ptyId) {
-          c.terminal.write("\r\nProcess exited. Restarting…\r\n");
-          c.ptyId = event.payload.new_pty_id;
+        if (!c) return;
+        c.ptyId = null;
+        if (isMounted.current) {
+          setIsExited(true);
+          setIsSpawning(false);
         }
       },
     );
     unsubs.push(() => {
-      unsubRestart.then((fn) => fn()).catch(() => {});
+      unsubExit.then((fn) => fn()).catch(() => {});
     });
 
     return () => {
@@ -183,7 +209,7 @@ function usePty(
     };
   }, [cacheKey, sessionId]);
 
-  return { isSpawning };
+  return { isSpawning, isExited, restartTerminal };
 }
 
 function useTerminalDragDrop(cacheKey: string): void {
@@ -236,12 +262,14 @@ function useTerminalResize(
 }
 
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId, sessionId, path } = usePanelContext();
+  const { workspaceId: _workspaceId, sessionId, path: _path, terminalId: contextTerminalId } = usePanelContext();
   const containerRef = useRef<HTMLDivElement>(null);
-  const cacheKey = `${workspaceId}::${JSON.stringify(path)}`;
+  const terminalIdRef = useRef(contextTerminalId ?? crypto.randomUUID());
+  const terminalId = terminalIdRef.current;
+  const cacheKey = terminalId;
 
   useXtermTerminal(containerRef, cacheKey);
-  const { isSpawning } = usePty(cacheKey, workspaceId, sessionId, path);
+  const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId);
   useTerminalDragDrop(cacheKey);
   useTerminalResize(containerRef, cacheKey);
 
@@ -271,6 +299,28 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
           }}
         >
           Connecting…
+        </div>
+      )}
+      {isExited && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(30, 30, 30, 0.9)",
+            color: "var(--text-muted, #888)",
+            fontSize: 13,
+            fontFamily: "inherit",
+            zIndex: 10,
+            cursor: "pointer",
+          }}
+          onClick={restartTerminal}
+          onKeyDown={(e) => { if (e.key === "Enter") restartTerminal(); }}
+          tabIndex={0}
+        >
+          Process exited — press Enter to restart
         </div>
       )}
     </div>

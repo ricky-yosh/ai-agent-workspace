@@ -25,6 +25,7 @@ fn ensure_default_workspace(session_id: &str, sessions: &mut SessionRegistry, st
         let terminal_tree = LayoutTree {
             tree: LayoutNode::Panel {
                 panel_type: "terminal".into(),
+                terminal_id: None,
             },
         };
         let layout = store.save_layout("General", terminal_tree, true)?;

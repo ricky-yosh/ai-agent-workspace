@@ -6,13 +6,13 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, LayoutTree, LayoutNode, LayoutStore,
+    Layout, LayoutTree, LayoutStore,
 };
 use ai_agent_workspace_core::session_registry::SessionRegistry;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 mod pty;
-use pty::{PtyStore, PtySpawnResult, cleanup_orphaned_ptys};
+use pty::{PtyStore, PtySpawnResult};
 
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
 const EVENT_SESSIONS_CHANGED: &str = "sessions-changed";
@@ -196,42 +196,17 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! The IPC bridge works.", name)
 }
 
-fn collect_terminal_paths(node: &LayoutNode, prefix: &mut Vec<usize>) -> Vec<Vec<usize>> {
-    let mut result = Vec::new();
-    match node {
-        LayoutNode::Panel { panel_type } => {
-            if panel_type == "terminal" {
-                result.push(prefix.clone());
-            }
-        }
-        LayoutNode::Split { children, .. } => {
-            for (i, child) in children.iter().enumerate() {
-                prefix.push(i);
-                result.extend(collect_terminal_paths(child, prefix));
-                prefix.pop();
-            }
-        }
-    }
-    result
-}
-
 #[tauri::command]
-fn update_workspace_tree(
+fn persist_workspace_tree(
     state: tauri::State<AppState>,
-    pty_store: tauri::State<PtyStore>,
     session_id: String,
     workspace_id: String,
     tree: LayoutTree,
 ) -> Result<(), String> {
-    let terminal_paths = collect_terminal_paths(&tree.tree, &mut Vec::new());
-
     unit_void_return!(
         WorkspaceUpdateTree { session_id: session_id.clone(), workspace_id: workspace_id.clone(), tree },
         state
     );
-
-    cleanup_orphaned_ptys(&pty_store, &workspace_id, &terminal_paths);
-
     Ok(())
 }
 
@@ -279,8 +254,7 @@ fn is_git_repo(path: String) -> bool {
 fn pty_spawn(
     state: tauri::State<PtyStore>,
     app: tauri::AppHandle,
-    workspace_id: String,
-    path: Vec<usize>,
+    terminal_id: String,
     session_id: String,
 ) -> Result<PtySpawnResult, String> {
     let pty_command = {
@@ -298,8 +272,7 @@ fn pty_spawn(
     pty::pty_spawn(
         &state,
         app,
-        workspace_id,
-        path,
+        terminal_id,
         pty_command,
         session_id,
         sessions.working_directory,
@@ -328,10 +301,9 @@ fn pty_resize(
 #[tauri::command]
 fn pty_kill(
     state: tauri::State<PtyStore>,
-    workspace_id: String,
-    path: Vec<usize>,
+    terminal_id: String,
 ) -> Result<(), String> {
-    pty::pty_kill(&state, &workspace_id, &path)
+    pty::pty_kill(&state, &terminal_id)
 }
 
 // ── CLI install ─────────────────────────────────────────────────────
@@ -567,7 +539,7 @@ pub fn run() {
             remove_workspace,
             rename_workspace,
             set_active_workspace,
-            update_workspace_tree,
+            persist_workspace_tree,
             reset_workspace_to_template,
             open_preferences,
             open_in_app,

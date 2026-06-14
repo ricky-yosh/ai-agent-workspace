@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import { getPanel } from "./panelRegistry";
@@ -17,6 +18,7 @@ export interface SplitData {
 
 export interface PanelData {
   panel_type: string;
+  terminal_id?: string;
 }
 
 export type LayoutNode =
@@ -134,13 +136,14 @@ function useSplitDrag(
       const parentNode = getNodeAtPath(treeRef.current.tree, path);
       const parentPanelType =
         parentNode && "panel" in parentNode ? parentNode.panel.panel_type : "blank";
+      const oldTerminalId = parentNode && "panel" in parentNode ? parentNode.panel.terminal_id : undefined;
       const newNode: LayoutNode = {
         split: {
           direction,
           ratio,
           children: [
-            { panel: { panel_type: parentPanelType } },
-            { panel: { panel_type: parentPanelType } },
+            { panel: { panel_type: parentPanelType, terminal_id: oldTerminalId || crypto.randomUUID() } },
+            { panel: { panel_type: parentPanelType, terminal_id: crypto.randomUUID() } },
           ],
         },
       };
@@ -269,12 +272,19 @@ function useJoinMode(
       }
 
       const keepIndex: 0 | 1 = state.consumerIndex === 0 ? 1 : 0;
+      const consumedIndex: 0 | 1 = state.consumerIndex === 0 ? 0 : 1;
       const survivingChild = splitNode.split.children[keepIndex];
+      const consumedChild = splitNode.split.children[consumedIndex];
+      const consumedTerminalId = "panel" in consumedChild ? consumedChild.panel.terminal_id : undefined;
+
       const newTree: LayoutTree = {
         tree: replaceNode(treeRef.current.tree, state.splitPath, survivingChild),
       };
 
       onChange(newTree);
+      if (consumedTerminalId) {
+        invoke("pty_kill", { terminalId: consumedTerminalId }).catch(() => {});
+      }
       cleanupJoinMode();
     };
 
@@ -414,7 +424,12 @@ function renderPanelNode(
             currentType={panel_type}
             onTypeSelect={(newType) => {
               if (!onLayoutChange) return;
-              const newNode: LayoutNode = { panel: { panel_type: newType } };
+              const newNode: LayoutNode = {
+                panel: {
+                  panel_type: newType,
+                  terminal_id: newType === "terminal" ? (node.panel.terminal_id ?? crypto.randomUUID()) : undefined,
+                },
+              };
               const newTree: LayoutTree = {
                 tree: replaceNode(treeRef.current.tree, path, newNode),
               };
@@ -425,8 +440,8 @@ function renderPanelNode(
       )}
       <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
         {PanelComponent ? (
-          <PanelContext.Provider value={{ workspaceId, sessionId, path }}>
-            <PanelComponent panelType={panel_type} />
+          <PanelContext.Provider value={{ workspaceId, sessionId, path, terminalId: node.panel.terminal_id }}>
+            <PanelComponent key={node.panel.terminal_id ?? JSON.stringify(path)} panelType={panel_type} />
           </PanelContext.Provider>
         ) : (
           panel_type
