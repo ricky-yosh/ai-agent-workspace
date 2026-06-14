@@ -14,6 +14,7 @@ interface CachedTerminal {
   fitAddon: FitAddon;
   ptyId: string | null;
   disposeScheduled: boolean;
+  generation: number;
 }
 
 class TerminalCache {
@@ -69,6 +70,7 @@ function useXtermTerminal(
 
     if (cached) {
       cached.disposeScheduled = false;
+      cached.generation = (cached.generation || 0) + 1;
       const { terminal, fitAddon } = cached;
       if (terminal.element) {
         container.appendChild(terminal.element);
@@ -110,7 +112,7 @@ function useXtermTerminal(
         }
       });
 
-      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, disposeScheduled: false });
+      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, disposeScheduled: false, generation: 0 });
     }
 
     return () => {
@@ -156,6 +158,8 @@ function usePty(
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
 
+    const gen = cached.generation;
+
     if (cached.ptyId) {
       setIsSpawning(false);
     } else {
@@ -176,7 +180,7 @@ function usePty(
       "pty-output",
       (event) => {
         const c = terminalCache.get(cacheKey);
-        if (!c?.ptyId || !c.terminal.element?.isConnected) return;
+        if (!c || c.generation !== gen || !c.ptyId || !c.terminal.element?.isConnected) return;
         if (event.payload.pty_id === c.ptyId) {
           c.terminal.write(new Uint8Array(event.payload.data));
         }
@@ -191,7 +195,7 @@ function usePty(
       (event) => {
         if (event.payload.terminal_id !== terminalId) return;
         const c = terminalCache.get(cacheKey);
-        if (!c) return;
+        if (!c || c.generation !== gen) return;
         c.ptyId = null;
         if (isMounted.current) {
           setIsExited(true);
@@ -214,10 +218,14 @@ function usePty(
 
 function useTerminalDragDrop(cacheKey: string): void {
   useEffect(() => {
+    const cached = terminalCache.get(cacheKey);
+    if (!cached) return;
+    const gen = cached.generation;
+
     const webview = getCurrentWebviewWindow();
     const unlisten = webview.onDragDropEvent((event) => {
       const c = terminalCache.get(cacheKey);
-      if (!c?.ptyId || !c.terminal.element?.isConnected) return;
+      if (!c || c.generation !== gen || !c.ptyId || !c.terminal.element?.isConnected) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
         for (const p of event.payload.paths) {
           invoke("pty_write", { ptyId: c.ptyId, data: p + " " });
