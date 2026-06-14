@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -31,6 +31,7 @@ pub struct PtyHandle {
 
 pub struct PtyStoreInner {
     pub handles: Mutex<HashMap<(String, Vec<usize>), PtyHandle>>,
+    pub killed: Mutex<HashSet<(String, Vec<usize>)>>,
 }
 
 pub struct PtyStore {
@@ -42,6 +43,7 @@ impl PtyStore {
         Self {
             inner: Arc::new(PtyStoreInner {
                 handles: Mutex::new(HashMap::new()),
+                killed: Mutex::new(HashSet::new()),
             }),
         }
     }
@@ -75,12 +77,43 @@ pub struct PtyRestartPayload {
 
 pub fn cleanup_orphaned_ptys(store: &PtyStore, workspace_id: &str, valid_paths: &[Vec<usize>]) {
     let mut handles = store.handles().lock().unwrap();
-    let keys_to_remove: Vec<_> = handles
+    let orphan_keys: Vec<_> = handles
         .keys()
         .filter(|(wid, path)| wid == workspace_id && !valid_paths.contains(path))
         .cloned()
         .collect();
-    for key in keys_to_remove {
+
+    let mut relocations: Vec<((String, Vec<usize>), (String, Vec<usize>))> = Vec::new();
+    let mut kills: Vec<(String, Vec<usize>)> = Vec::new();
+
+    for key in orphan_keys {
+        let child_paths: Vec<_> = valid_paths
+            .iter()
+            .filter(|p| p.len() == key.1.len() + 1 && p.starts_with(&key.1))
+            .collect();
+        if let Some(&&ref child_path) = child_paths.first() {
+            relocations.push((key.clone(), (key.0.clone(), child_path.clone())));
+        } else {
+            kills.push(key);
+        }
+    }
+
+    // Relocate PTYs for splits (move to first child path)
+    for (old_key, new_key) in relocations {
+        if let Some(mut handle) = handles.remove(&old_key) {
+            handle.path = new_key.1.clone();
+            handles.insert(new_key, handle);
+        }
+    }
+
+    // Kill PTYs for joins/deletions
+    {
+        let mut killed = store.inner.killed.lock().unwrap();
+        for key in &kills {
+            killed.insert(key.clone());
+        }
+    }
+    for key in kills {
         if let Some(mut handle) = handles.remove(&key) {
             let _ = handle.child.kill();
         }
@@ -125,8 +158,15 @@ fn spawn_pty_internal(
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    // Process exited — auto-restart
+                    // Process exited — check if this PTY was intentionally killed
                     let old_pty_id = pty_id_for_thread.clone();
+
+                    {
+                        let killed = store_arc.killed.lock().unwrap();
+                        if killed.contains(&(workspace_id_clone.clone(), path_clone.clone())) {
+                            break;
+                        }
+                    }
 
                     // Remove old entry
                     {
@@ -211,6 +251,12 @@ pub fn pty_spawn(
         }
     }
 
+    // Clear any killed flag — explicit spawn overrides a prior kill
+    {
+        let mut killed = store.inner.killed.lock().map_err(|e| e.to_string())?;
+        killed.remove(&(workspace_id.clone(), path.clone()));
+    }
+
     let shell = match pty_command.as_deref() {
         None | Some("") | Some("$SHELL") => {
             std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
@@ -264,14 +310,18 @@ pub fn pty_resize(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn pty_kill(
     store: &PtyStore,
     workspace_id: &str,
     path: &[usize],
 ) -> Result<(), String> {
+    let key = (workspace_id.to_string(), path.to_vec());
+    {
+        let mut killed = store.inner.killed.lock().map_err(|e| e.to_string())?;
+        killed.insert(key.clone());
+    }
     let mut handles = store.handles().lock().map_err(|e| e.to_string())?;
-    if let Some(mut handle) = handles.remove(&(workspace_id.to_string(), path.to_vec())) {
+    if let Some(mut handle) = handles.remove(&key) {
         let _ = handle.child.kill();
     }
     Ok(())

@@ -295,11 +295,8 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
 
       const keepIndex: 0 | 1 = state.consumerIndex === 0 ? 1 : 0;
       const survivingChild = splitNode.split.children[keepIndex];
-      const survivingType =
-        "panel" in survivingChild ? survivingChild.panel.panel_type : "blank";
-      const panelNode: LayoutNode = { panel: { panel_type: survivingType } };
       const newTree: LayoutTree = {
-        tree: replaceNode(treeRef.current.tree, state.splitPath, panelNode),
+        tree: replaceNode(treeRef.current.tree, state.splitPath, survivingChild),
       };
 
       onChange(newTree);

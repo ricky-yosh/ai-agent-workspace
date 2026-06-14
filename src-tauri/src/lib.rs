@@ -375,6 +375,15 @@ fn pty_resize(
     pty::pty_resize(&state, &pty_id, cols, rows)
 }
 
+#[tauri::command]
+fn pty_kill(
+    state: tauri::State<PtyStore>,
+    workspace_id: String,
+    path: Vec<usize>,
+) -> Result<(), String> {
+    pty::pty_kill(&state, &workspace_id, &path)
+}
+
 const CLI_NAME: &str = "aiaw-mcp-server";
 const CLI_INSTALL_PATH: &str = "/usr/local/bin/aiaw-mcp-server";
 
@@ -578,6 +587,7 @@ pub fn run() {
             pty_spawn,
             pty_write,
             pty_resize,
+            pty_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

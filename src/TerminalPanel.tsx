@@ -17,7 +17,7 @@ interface CachedTerminal {
 
 const terminalCache = new Map<string, CachedTerminal>();
 
-export function disposeTerminalCacheEntry(workspaceId: string, path: number[]) {
+function disposeTerminalCacheEntry(workspaceId: string, path: number[]) {
   const key = `${workspaceId}::${JSON.stringify(path)}`;
   const cached = terminalCache.get(key);
   if (cached) {
@@ -89,7 +89,11 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
       terminal.onData((data) => {
         const c = terminalCache.get(cacheKey);
         if (c?.ptyId) {
-          invoke("pty_write", { ptyId: c.ptyId, data });
+          invoke("pty_write", { ptyId: c.ptyId, data }).catch((err) => {
+            if (String(err).includes("PTY not found")) {
+              c.ptyId = null;
+            }
+          });
         }
       });
 
@@ -111,26 +115,37 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
       });
     }
 
+    let disposed = false;
+
     const unsubOutput = listen<{ pty_id: string; data: number[] }>("pty-output", (event) => {
+      if (disposed) return;
       if (event.payload.pty_id === cached!.ptyId) {
         terminal.write(new Uint8Array(event.payload.data));
       }
     });
-    unsubscribersRef.current.push(() => { unsubOutput.then((fn) => fn()); });
+    unsubscribersRef.current.push(() => {
+      disposed = true;
+      unsubOutput.then((fn) => fn());
+    });
 
     const unsubRestart = listen<{ old_pty_id: string; new_pty_id: string; path: number[] }>(
       "pty-restart",
       (event) => {
+        if (disposed) return;
         if (event.payload.old_pty_id === cached!.ptyId) {
           terminal.write("\r\nProcess exited. Restarting…\r\n");
           cached!.ptyId = event.payload.new_pty_id;
         }
       },
     );
-    unsubscribersRef.current.push(() => { unsubRestart.then((fn) => fn()); });
+    unsubscribersRef.current.push(() => {
+      disposed = true;
+      unsubRestart.then((fn) => fn());
+    });
 
     const webview = getCurrentWebviewWindow();
     const unlistenDragDrop = webview.onDragDropEvent((event) => {
+      if (disposed) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0 && cached!.ptyId) {
         const paths = event.payload.paths;
         for (const p of paths) {
@@ -138,14 +153,21 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
         }
       }
     });
-    unsubscribersRef.current.push(() => { unlistenDragDrop.then((fn) => fn()); });
+    unsubscribersRef.current.push(() => {
+      disposed = true;
+      unlistenDragDrop.then((fn) => fn());
+    });
 
     const resizeObserver = new ResizeObserver(() => {
       if (fitAddon) {
         fitAddon.fit();
         const { cols, rows } = terminal;
         if (cached!.ptyId) {
-          invoke("pty_resize", { ptyId: cached!.ptyId, cols, rows });
+          invoke("pty_resize", { ptyId: cached!.ptyId, cols, rows }).catch((err) => {
+            if (String(err).includes("PTY not found")) {
+              cached!.ptyId = null;
+            }
+          });
         }
       }
     });
@@ -156,11 +178,12 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
       resizeObserver.disconnect();
       unsubscribersRef.current.forEach((unsub) => unsub());
       unsubscribersRef.current = [];
+      disposeTerminalCacheEntry(workspaceId, path);
       if (terminal.element && terminal.element.parentNode === container) {
         container.removeChild(terminal.element);
       }
     };
-  }, [workspaceId, sessionId, path]);
+  }, [cacheKey, sessionId]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", background: "#1e1e1e" }}>
