@@ -1,6 +1,7 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader, Lines, Write};
+use std::path::Path;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -25,63 +26,77 @@ fn read_stderr_file(path: &std::path::Path) -> String {
     }
 }
 
-#[test]
-fn test_handshake() {
-    let mut child = Command::new(&binary_path())
-        .env("AIAW_SESSION_ID", "test-session")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|e| panic!("Failed to spawn binary: {}", e));
+struct ServerProcess {
+    child: Child,
+    stdin: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+}
 
-    let mut stdin = child.stdin.take().unwrap();
+fn spawn_server(env: &[(&str, &str)], cwd: Option<&Path>) -> ServerProcess {
+    let mut cmd = Command::new(binary_path());
+    for &(k, v) in env {
+        cmd.env(k, v);
+    }
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
+    let lines = reader.lines();
+    ServerProcess { child, stdin, lines }
+}
 
+fn do_handshake(server: &mut ServerProcess) {
     let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}"#;
-    writeln!(stdin, "{}", init).unwrap();
-    stdin.flush().unwrap();
+    writeln!(server.stdin, "{}", init).unwrap();
+    server.stdin.flush().unwrap();
 
-    let line = lines.next().unwrap().unwrap();
+    let line = server.lines.next().unwrap().unwrap();
     eprintln!("R1: {}", line.trim());
     assert!(line.contains("tools"), "Expected tools capability");
 
-    match child.try_wait().unwrap() {
+    match server.child.try_wait().unwrap() {
         Some(status) => panic!("Server died after init with status: {:?}", status),
         None => eprintln!("Server still alive after init"),
     }
 
     let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
-    writeln!(stdin, "{}", initialized).unwrap();
-    stdin.flush().unwrap();
+    writeln!(server.stdin, "{}", initialized).unwrap();
+    server.stdin.flush().unwrap();
+    // notifications/initialized has no response — cannot block on a read
     thread::sleep(Duration::from_millis(500));
 
-    match child.try_wait().unwrap() {
+    match server.child.try_wait().unwrap() {
         Some(status) => panic!("Server died after notification with status: {:?}", status),
         None => eprintln!("Server still alive after notification"),
     }
+}
 
+fn send_tools_list(server: &mut ServerProcess) -> String {
     let tools_list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
-    writeln!(stdin, "{}", tools_list).unwrap();
-    stdin.flush().unwrap();
-    thread::sleep(Duration::from_millis(500));
+    writeln!(server.stdin, "{}", tools_list).unwrap();
+    server.stdin.flush().unwrap();
 
-    match lines.next() {
-        Some(Ok(line2)) => {
-            eprintln!("R2: {}", line2.trim());
-            assert!(line2.contains("session_create"), "Expected tools list");
-        }
-        Some(Err(e)) => panic!("Error reading tools/list: {}", e),
-        None => {
-            let status = child.try_wait().unwrap();
-            panic!("No tools/list response. Server status: {:?}", status);
-        }
-    }
+    server.lines.next().unwrap().unwrap()
+}
 
-    drop(stdin);
-    let _ = child.wait();
+#[test]
+fn test_handshake() {
+    let mut server = spawn_server(&[("AIAW_SESSION_ID", "test-session")], None);
+
+    do_handshake(&mut server);
+
+    let line2 = send_tools_list(&mut server);
+    eprintln!("R2: {}", line2.trim());
+    assert!(line2.contains("session_create"), "Expected tools list");
+
+    drop(server.stdin);
+    let _ = server.child.wait();
 }
 
 #[test]
@@ -104,48 +119,20 @@ fn test_startup_single_match() {
         tmp_str
     ));
 
-    let mut child = Command::new(&binary_path())
-        .env("AIAW_SESSIONS_PATH", fixture.path().join("sessions.json"))
-        .current_dir(&tmp)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let sessions_path = fixture.path().join("sessions.json");
+    let mut server = spawn_server(
+        &[("AIAW_SESSIONS_PATH", sessions_path.to_str().unwrap())],
+        Some(&tmp),
+    );
 
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
+    do_handshake(&mut server);
 
-    let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}"#;
-    writeln!(stdin, "{}", init).unwrap();
-    stdin.flush().unwrap();
+    let line2 = send_tools_list(&mut server);
+    eprintln!("R2: {}", line2.trim());
+    assert!(line2.contains("session_create"), "Expected tools list");
 
-    let line = lines.next().unwrap().unwrap();
-    eprintln!("R1: {}", line.trim());
-    assert!(line.contains("tools"), "Expected tools capability in single match");
-
-    let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
-    writeln!(stdin, "{}", initialized).unwrap();
-    stdin.flush().unwrap();
-    thread::sleep(Duration::from_millis(500));
-
-    let tools_list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
-    writeln!(stdin, "{}", tools_list).unwrap();
-    stdin.flush().unwrap();
-    thread::sleep(Duration::from_millis(500));
-
-    match lines.next() {
-        Some(Ok(line2)) => {
-            eprintln!("R2: {}", line2.trim());
-            assert!(line2.contains("session_create"), "Expected tools list");
-        }
-        other => panic!("Expected tools/list response, got {:?}", other),
-    }
-
-    drop(stdin);
-    let _ = child.wait();
+    drop(server.stdin);
+    let _ = server.child.wait();
 }
 
 #[test]
