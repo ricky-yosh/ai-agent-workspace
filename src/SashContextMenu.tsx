@@ -27,7 +27,7 @@ export default function SashContextMenu({
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const sash = target.closest<HTMLElement>(
-        '[class*="sash"], [class*="gutter"], [class*="separator"]'
+        '[data-testid="sash"]'
       );
       if (!sash) return;
 

@@ -331,7 +331,7 @@ function renderSplitNode(
     onLayoutChange(updatedTree);
   }
 
-  const splitKey = JSON.stringify(path);
+  const splitKey = JSON.stringify(path) + "|" + direction;
   const isActiveJoinPanel = joinState && pathsEqual(joinState.splitPath, path);
 
   return (
