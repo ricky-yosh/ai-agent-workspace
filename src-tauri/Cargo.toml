@@ -27,7 +27,6 @@ tauri-plugin-store = "2"
 ai-agent-workspace-mcp = { path = "../crates/mcp" }
 ai-agent-workspace-commands = { path = "../crates/commands" }
 ai-agent-workspace-core = { path = "../crates/core" }
-notify = "6"
 dirs = "6"
 portable-pty = "0.8"
 uuid = { version = "1", features = ["v4"] }

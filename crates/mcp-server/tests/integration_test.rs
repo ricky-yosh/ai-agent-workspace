@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -12,18 +11,27 @@ fn binary_path() -> std::path::PathBuf {
         .join("../../target/debug/aiaw-mcp-server")
 }
 
-fn create_fixture(sessions_json: &str) -> TempDir {
+fn create_db_fixture(session_rows: &[(&str, &str, &str)]) -> TempDir {
     let dir = TempDir::new().unwrap();
-    let sessions_path = dir.path().join("sessions.json");
-    std::fs::write(&sessions_path, sessions_json).unwrap();
-    dir
-}
+    let db_path = dir.path().join("workspace.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA foreign_keys=ON;
+         PRAGMA busy_timeout=5000;",
+    ).unwrap();
+    ai_agent_workspace_core::database::migrations::migrate(&conn).unwrap();
 
-fn read_stderr_file(path: &std::path::Path) -> String {
-    match std::fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(_) => String::new(),
+    for &(id, name, working_dir) in session_rows {
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO sessions (id, name, working_directory, state, active_workspace_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'Paused', NULL, ?4, ?5)",
+            rusqlite::params![id, name, working_dir, now, now],
+        ).unwrap();
     }
+
+    dir
 }
 
 struct ServerProcess {
@@ -68,7 +76,6 @@ fn do_handshake(server: &mut ServerProcess) {
     let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
     writeln!(server.stdin, "{}", initialized).unwrap();
     server.stdin.flush().unwrap();
-    // notifications/initialized has no response — cannot block on a read
     thread::sleep(Duration::from_millis(500));
 
     match server.child.try_wait().unwrap() {
@@ -103,25 +110,13 @@ fn test_handshake() {
 fn test_startup_single_match() {
     let tmp = std::env::temp_dir();
     let tmp_str = tmp.to_str().unwrap();
-    let fixture = create_fixture(&format!(
-        r#"{{
-            "sessions": [{{
-                "id": "sess-001",
-                "name": "Test Session",
-                "working_directory": "{}",
-                "state": "Paused",
-                "active_workspace_id": null,
-                "workspaces": [],
-                "created_at": "2025-01-01T00:00:00+00:00",
-                "updated_at": "2025-01-01T00:00:00+00:00"
-            }}]
-        }}"#,
-        tmp_str
-    ));
+    let fixture = create_db_fixture(&[
+        ("sess-001", "Test Session", tmp_str),
+    ]);
 
-    let sessions_path = fixture.path().join("sessions.json");
+    let db_path = fixture.path().join("workspace.db");
     let mut server = spawn_server(
-        &[("AIAW_SESSIONS_PATH", sessions_path.to_str().unwrap())],
+        &[("AIAW_DB_PATH", db_path.to_str().unwrap())],
         Some(&tmp),
     );
 
@@ -137,25 +132,17 @@ fn test_startup_single_match() {
 
 #[test]
 fn test_startup_no_match() {
-    let fixture = create_fixture(r#"{
-        "sessions": [{
-            "id": "sess-002",
-            "name": "Unreachable Session",
-            "working_directory": "/nonexistent/path/abc123",
-            "state": "Missing",
-            "active_workspace_id": null,
-            "workspaces": [],
-            "created_at": "2025-01-01T00:00:00+00:00",
-            "updated_at": "2025-01-01T00:00:00+00:00"
-        }]
-    }"#);
+    let fixture = create_db_fixture(&[
+        ("sess-002", "Unreachable Session", "/nonexistent/path/abc123"),
+    ]);
 
     let tmp = std::env::temp_dir();
     let stderr_file = fixture.path().join("stderr.txt");
-    let stderr_fd = File::create(&stderr_file).unwrap();
+    let stderr_fd = std::fs::File::create(&stderr_file).unwrap();
 
+    let db_path = fixture.path().join("workspace.db");
     let mut child = Command::new(&binary_path())
-        .env("AIAW_SESSIONS_PATH", fixture.path().join("sessions.json"))
+        .env("AIAW_DB_PATH", db_path.to_str().unwrap())
         .current_dir(&tmp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -170,7 +157,7 @@ fn test_startup_no_match() {
         None => eprintln!("Server alive without resolved session"),
     }
 
-    let stderr = read_stderr_file(&stderr_file);
+    let stderr = std::fs::read_to_string(&stderr_file).unwrap_or_default();
     eprintln!("stderr: {}", stderr);
     assert!(stderr.contains("No session found"), "Expected 'No session found' in stderr, got: {}", stderr);
 
@@ -182,39 +169,17 @@ fn test_startup_no_match() {
 fn test_startup_multiple_matches() {
     let tmp = std::env::temp_dir();
     let tmp_str = tmp.to_str().unwrap();
-    let fixture = create_fixture(&format!(
-        r#"{{
-            "sessions": [
-                {{
-                    "id": "sess-003",
-                    "name": "Alpha",
-                    "working_directory": "{}",
-                    "state": "Paused",
-                    "active_workspace_id": null,
-                    "workspaces": [],
-                    "created_at": "2025-01-01T00:00:00+00:00",
-                    "updated_at": "2025-01-01T00:00:00+00:00"
-                }},
-                {{
-                    "id": "sess-004",
-                    "name": "Beta",
-                    "working_directory": "{}",
-                    "state": "Paused",
-                    "active_workspace_id": null,
-                    "workspaces": [],
-                    "created_at": "2025-01-01T00:00:00+00:00",
-                    "updated_at": "2025-01-01T00:00:00+00:00"
-                }}
-            ]
-        }}"#,
-        tmp_str, tmp_str
-    ));
+    let fixture = create_db_fixture(&[
+        ("sess-003", "Alpha", tmp_str),
+        ("sess-004", "Beta", tmp_str),
+    ]);
 
     let stderr_file = fixture.path().join("stderr.txt");
-    let stderr_fd = File::create(&stderr_file).unwrap();
+    let stderr_fd = std::fs::File::create(&stderr_file).unwrap();
 
+    let db_path = fixture.path().join("workspace.db");
     let mut child = Command::new(&binary_path())
-        .env("AIAW_SESSIONS_PATH", fixture.path().join("sessions.json"))
+        .env("AIAW_DB_PATH", db_path.to_str().unwrap())
         .current_dir(&tmp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -229,7 +194,7 @@ fn test_startup_multiple_matches() {
         None => eprintln!("Server alive with ambiguous session resolution"),
     }
 
-    let stderr = read_stderr_file(&stderr_file);
+    let stderr = std::fs::read_to_string(&stderr_file).unwrap_or_default();
     eprintln!("stderr: {}", stderr);
     assert!(stderr.contains("Multiple sessions"), "Expected 'Multiple sessions' in stderr, got: {}", stderr);
     assert!(stderr.contains("Alpha"), "Expected candidate name 'Alpha' in stderr");

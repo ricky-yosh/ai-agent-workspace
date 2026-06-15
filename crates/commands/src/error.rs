@@ -27,6 +27,13 @@ impl CommandError {
         }
     }
 
+    pub fn not_found_from_sql(entity: &str, id: &str, err: rusqlite::Error) -> Self {
+        match err {
+            rusqlite::Error::QueryReturnedNoRows => CommandError::not_found(entity, id),
+            _ => CommandError::internal(&format!("database error: {}", err)),
+        }
+    }
+
     pub fn already_exists(entity: &str, id: &str) -> Self {
         Self {
             error: "already_exists".to_string(),
@@ -55,36 +62,20 @@ impl CommandError {
     }
 }
 
-macro_rules! from_core_error {
-    ($crate_name:ident :: $error_name:ident, $entity:literal) => {
-        from_core_error!($crate_name::$error_name, $entity, );
-    };
-    ($crate_name:ident :: $error_name:ident, $entity:literal, $($extra_arms:tt)*) => {
-        impl From<$crate_name::$error_name> for CommandError {
-            fn from(err: $crate_name::$error_name) -> Self {
-                match err {
-                    $crate_name::$error_name::NotFound(id) => {
-                        CommandError::not_found($entity, &id)
-                    },
-                    $($extra_arms)*
-                    $crate_name::$error_name::Serialization(e) => {
-                        CommandError::internal(&format!("serialization failed: {}", e))
-                    },
-                    $crate_name::$error_name::Io(e) => {
-                        CommandError::internal(&format!("io error: {}", e))
-                    },
-                    $crate_name::$error_name::NoDataDir => {
-                        CommandError::internal("no data directory found")
-                    },
+impl From<rusqlite::Error> for CommandError {
+    fn from(err: rusqlite::Error) -> Self {
+        match err {
+            rusqlite::Error::QueryReturnedNoRows => {
+                CommandError::not_found("entity", "unknown")
+            }
+            rusqlite::Error::InvalidParameterName(ref msg) => {
+                if msg.to_lowercase().contains("built-in") {
+                    CommandError::invalid_input(msg)
+                } else {
+                    CommandError::internal(&format!("database error: {}", err))
                 }
             }
+            _ => CommandError::internal(&format!("database error: {}", err)),
         }
-    };
+    }
 }
-
-from_core_error!(ai_agent_workspace_core::RegistryError, "session");
-from_core_error!(ai_agent_workspace_core::LayoutError, "layout",
-    ai_agent_workspace_core::LayoutError::BuiltIn(name) => {
-        CommandError::invalid_input(&format!("Built-in layout cannot be modified: {}", name))
-    },
-);

@@ -1,4 +1,3 @@
-use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri::menu::*;
 use ai_agent_workspace_commands::{
@@ -6,23 +5,27 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, LayoutTree, LayoutStore,
+    Layout, LayoutTree, DomainEvent,
 };
-use ai_agent_workspace_core::session_registry::SessionRegistry;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 mod pty;
 use pty::{PtyStore, PtySpawnResult};
 
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
-const EVENT_SESSIONS_CHANGED: &str = "sessions-changed";
-const EVENT_LAYOUTS_CHANGED: &str = "layouts-changed";
-const SESSIONS_FILE: &str = "sessions.json";
-const LAYOUTS_FILE: &str = "layouts.json";
 const APP_DATA_DIR_NAME: &str = "AI Agent Workspace";
 const CLI_NAME: &str = "aiaw-mcp-server";
 const CLI_INSTALL_PATH: &str = "/usr/local/bin/aiaw-mcp-server";
 const PREFERENCES_WINDOW_SIZE: (f64, f64) = (520.0, 480.0);
+
+fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
+    for event in events {
+        match event {
+            DomainEvent::SessionsChanged => { let _ = app.emit("sessions-changed", ()); }
+            DomainEvent::LayoutsChanged => { let _ = app.emit("layouts-changed", ()); }
+            DomainEvent::WorkspaceChanged { .. } => { let _ = app.emit("sessions-changed", ()); }
+        }
+    }
+}
 
 // Shared command-execution macro. Generates a #[tauri::command] fn that
 // wraps execute(Command::..., &state) with a single Ok arm.
@@ -31,14 +34,19 @@ macro_rules! command_handler {
      $result_variant:ident, $result_ty:ty,
      $($param:ident: $pty:ty),* $(,)?) => {
         #[tauri::command]
-        fn $fn_name(state: tauri::State<AppState>, $($param: $pty,)* ) -> Result<$result_ty, String> {
+        fn $fn_name(state: tauri::State<AppState>, app: tauri::AppHandle, $($param: $pty,)* ) -> Result<$result_ty, String> {
             let cmd = Command::$cmd_variant { $($field),* };
             match execute(cmd, &state) {
-                Ok(CommandResult::$result_variant(x)) => Ok(x),
-                Ok(_) => Err(format!(
-                    "Unexpected command result variant for {}",
-                    stringify!($cmd_variant)
-                )),
+                Ok(outcome) => {
+                    emit_domain_events(&app, &outcome.events);
+                    match outcome.result {
+                        CommandResult::$result_variant(x) => Ok(x),
+                        _ => Err(format!(
+                            "Unexpected command result variant for {}",
+                            stringify!($cmd_variant)
+                        )),
+                    }
+                }
                 Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
@@ -46,13 +54,18 @@ macro_rules! command_handler {
     ($fn_name:ident, $cmd_variant:ident,
      $result_variant:ident, $result_ty:ty) => {
         #[tauri::command]
-        fn $fn_name(state: tauri::State<AppState>) -> Result<$result_ty, String> {
+        fn $fn_name(state: tauri::State<AppState>, app: tauri::AppHandle) -> Result<$result_ty, String> {
             match execute(Command::$cmd_variant, &state) {
-                Ok(CommandResult::$result_variant(x)) => Ok(x),
-                Ok(_) => Err(format!(
-                    "Unexpected command result variant for {}",
-                    stringify!($cmd_variant)
-                )),
+                Ok(outcome) => {
+                    emit_domain_events(&app, &outcome.events);
+                    match outcome.result {
+                        CommandResult::$result_variant(x) => Ok(x),
+                        _ => Err(format!(
+                            "Unexpected command result variant for {}",
+                            stringify!($cmd_variant)
+                        )),
+                    }
+                }
                 Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
@@ -133,15 +146,20 @@ macro_rules! option_return {
      $some_variant:ident,
      $($param:ident: $pty:ty),* $(,)?) => {
         #[tauri::command]
-        fn $fn_name(state: tauri::State<AppState>, $($param: $pty,)* ) -> Result<Option<WorkspaceInstance>, String> {
+        fn $fn_name(state: tauri::State<AppState>, app: tauri::AppHandle, $($param: $pty,)* ) -> Result<Option<WorkspaceInstance>, String> {
             let cmd = Command::$cmd_variant { $($field),* };
             match execute(cmd, &state) {
-                Ok(CommandResult::$some_variant(ws)) => Ok(Some(ws)),
-                Ok(CommandResult::Unit(())) => Ok(None),
-                Ok(_) => Err(format!(
-                    "Unexpected command result variant for {}",
-                    stringify!($cmd_variant)
-                )),
+                Ok(outcome) => {
+                    emit_domain_events(&app, &outcome.events);
+                    match outcome.result {
+                        CommandResult::$some_variant(ws) => Ok(Some(ws)),
+                        CommandResult::Unit(()) => Ok(None),
+                        _ => Err(format!(
+                            "Unexpected command result variant for {}",
+                            stringify!($cmd_variant)
+                        )),
+                    }
+                }
                 Err(e) => Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
             }
         }
@@ -149,13 +167,18 @@ macro_rules! option_return {
 }
 
 macro_rules! unit_void_return {
-    ($cmd_variant:ident { $($field:ident $(: $val:expr)?),* $(,)? }, $state:ident) => {
+    ($cmd_variant:ident { $($field:ident $(: $val:expr)?),* $(,)? }, $state:ident, $app:ident) => {
         match execute(Command::$cmd_variant { $($field $(: $val)?),* }, &$state) {
-            Ok(CommandResult::Unit(())) => {}
-            Ok(_) => return Err(format!(
-                "Unexpected command result variant for {}",
-                stringify!($cmd_variant)
-            )),
+            Ok(outcome) => {
+                emit_domain_events(&$app, &outcome.events);
+                match outcome.result {
+                    CommandResult::Unit(()) => {}
+                    _ => return Err(format!(
+                        "Unexpected command result variant for {}",
+                        stringify!($cmd_variant)
+                    )),
+                }
+            }
             Err(e) => return Err(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())),
         }
     };
@@ -199,13 +222,14 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn persist_workspace_tree(
     state: tauri::State<AppState>,
+    app: tauri::AppHandle,
     session_id: String,
     workspace_id: String,
     tree: LayoutTree,
 ) -> Result<(), String> {
     unit_void_return!(
         WorkspaceUpdateTree { session_id: session_id.clone(), workspace_id: workspace_id.clone(), tree },
-        state
+        state, app
     );
     Ok(())
 }
@@ -263,10 +287,12 @@ fn pty_spawn(
         store.get("pty_command").and_then(|v| v.as_str().map(String::from))
     };
 
-    let sessions = {
+    let working_directory = {
         let app_state = app.state::<AppState>();
-        let sessions = app_state.sessions.lock().map_err(|e| e.to_string())?;
-        sessions.get_by_id(&session_id).map_err(|e| e.to_string())?
+        let conn = app_state.db.connection().map_err(|e| e.to_string())?;
+        let sessions = app_state.db.sessions(&conn);
+        let session = sessions.get(&session_id).map_err(|e| e.to_string())?;
+        session.working_directory
     };
 
     pty::pty_spawn(
@@ -275,7 +301,7 @@ fn pty_spawn(
         terminal_id,
         pty_command,
         session_id,
-        sessions.working_directory,
+        working_directory,
     )
 }
 
@@ -350,95 +376,21 @@ fn ensure_cli_installed() {
     }
 }
 
-// ── File-watcher helpers ────────────────────────────────────────────
-
-use std::sync::Arc;
-
-trait WatcherStore {
-    fn suppress_watcher(&self) -> bool;
-    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>>;
-}
-
-impl WatcherStore for SessionRegistry {
-    fn suppress_watcher(&self) -> bool {
-        self.should_suppress_watcher()
-    }
-    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        self.reload().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-    }
-}
-
-impl WatcherStore for LayoutStore {
-    fn suppress_watcher(&self) -> bool {
-        self.should_suppress_watcher()
-    }
-    fn reload_disk(&mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        self.reload().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-    }
-}
-
-fn reload_if_changed<T: WatcherStore>(
-    store: &Arc<Mutex<T>>,
-    label: &str,
-) -> bool {
-    let mut s = match store.lock() {
-        Ok(s) => s,
-        Err(_) => return true,
-    };
-    if s.suppress_watcher() {
-        println!("[watcher] Skipping {} reload (internal write)", label);
-        false
-    } else {
-        println!("[watcher] Reloading {} from disk", label);
-        if let Err(e) = s.reload_disk() {
-            eprintln!("[watcher] Failed to reload {}: {}", label, e);
-        }
-        true
-    }
-}
-
-fn handle_watcher_event(
-    event: notify::Event,
-    sessions: Arc<Mutex<SessionRegistry>>,
-    layouts: Arc<Mutex<LayoutStore>>,
-    handle: tauri::AppHandle,
-) {
-    for path in &event.paths {
-        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-
-        match file_name {
-            SESSIONS_FILE => {
-                if reload_if_changed(&sessions, "sessions") {
-                    let _ = handle.emit(EVENT_SESSIONS_CHANGED, ());
-                }
-            }
-            LAYOUTS_FILE => {
-                if reload_if_changed(&layouts, "layouts") {
-                    let _ = handle.emit(EVENT_LAYOUTS_CHANGED, ());
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 // ── Application entry point ─────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_state = AppState::new().expect("Failed to initialize app state");
+    let data_dir = dirs::data_dir().expect("No data directory");
+    let db_path = data_dir.join(APP_DATA_DIR_NAME).join("workspace.db");
+    let app_state = AppState::new(db_path);
 
-    // On startup, any sessions that were left in Running state from a
-    // previous run are demoted to Paused so the UI reflects the real
-    // process status. The layouts lock is acquired and immediately
-    // dropped to ensure the data directory and layouts file are created
-    // before the file watcher starts.
-    app_state.sessions.lock().expect("lock poisoned")
-        .demote_running_to_paused().expect("Failed to demote running sessions");
+    // Demote any sessions that were left Running from a previous run
+    {
+        let conn = app_state.db.connection().expect("Failed to connect to database");
+        let sessions = app_state.db.sessions(&conn);
+        sessions.demote_running_to_paused().expect("Failed to demote running sessions");
+    }
 
-    drop(app_state.layouts.lock().expect("lock poisoned"));
-
-    let watcher_state: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
     let pty_store = PtyStore::new();
 
     tauri::Builder::default()
@@ -447,48 +399,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(ai_agent_workspace_mcp::init())
         .manage(app_state)
-        .manage(watcher_state)
         .manage(pty_store)
         .setup(|app| {
-            let handle = app.handle().clone();
-
             ensure_cli_installed();
-
-            let state = app.state::<AppState>();
-            let sessions_arc = state.sessions.clone();
-            let layouts_arc = state.layouts.clone();
-
-            let mut watcher = notify::recommended_watcher(move |res: std::result::Result<notify::Event, notify::Error>| {
-                match res {
-                    Ok(event) => handle_watcher_event(
-                        event,
-                        sessions_arc.clone(),
-                        layouts_arc.clone(),
-                        handle.clone(),
-                    ),
-                    Err(e) => {
-                        eprintln!("[watcher] Error: {}", e);
-                    }
-                }
-            }).expect("Failed to create file watcher");
-
-            if let Some(data_dir) = dirs::data_dir() {
-                let watch_path = data_dir.join(APP_DATA_DIR_NAME);
-                println!("[watcher] Watch path: {:?}", watch_path);
-                println!("[watcher] Watch path exists: {}", watch_path.exists());
-                if watch_path.exists() {
-                    watcher.watch(&watch_path.as_path(), RecursiveMode::NonRecursive)
-                        .expect("Failed to watch data directory");
-                    println!("[watcher] Watching directory successfully");
-                } else {
-                    println!("[watcher] WARNING: Watch path does not exist!");
-                }
-            } else {
-                println!("[watcher] WARNING: No data directory found!");
-            }
-
-            let watcher_lock = app.state::<Mutex<Option<RecommendedWatcher>>>();
-            *watcher_lock.lock().expect("lock poisoned") = Some(watcher);
 
             let submenu = Submenu::with_items(
                 app,
