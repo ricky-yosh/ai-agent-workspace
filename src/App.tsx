@@ -91,37 +91,31 @@ function useWorkspaceManager(activeSessionId: string | null, onError?: (msg: str
     }
   }, [activeSessionId]);
 
-  useTauriEvent("sessions-changed", () => {
-    if (activeSessionId) {
-      safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }, onError)
-        .then(setWorkspaces)
-        .catch(console.error);
-      safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError)
-        .then((ws) => {
-          if (ws) {
-            setActiveWorkspace({ ...ws, current_tree: migrateWorkspaceTree(ws.current_tree) });
-          } else {
-            setActiveWorkspace(null);
-          }
-        })
-        .catch(console.error);
-    }
-  }, [activeSessionId]);
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+  const activeWorkspaceRef = useRef(activeWorkspace);
+  activeWorkspaceRef.current = activeWorkspace;
 
   const handleWorkspaceTreeChange = useCallback((newTree: LayoutTree) => {
-    if (!activeWorkspace) return;
-    safeInvoke("persist_workspace_tree", {
-      sessionId: activeSessionId,
-      workspaceId: activeWorkspace.id,
-      tree: newTree,
-    }, onError).catch(console.error);
+    const ws = activeWorkspaceRef.current;
+    const sid = activeSessionIdRef.current;
+    if (!ws || !sid) return;
     setActiveWorkspace((prev) => prev ? { ...prev, current_tree: newTree } : null);
     setWorkspaces((prev) =>
       prev.map((w) =>
-        w.id === activeWorkspace?.id ? { ...w, current_tree: newTree } : w
+        w.id === ws.id ? { ...w, current_tree: newTree } : w
       )
     );
-  }, [activeWorkspace, activeSessionId]);
+    if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
+    persistTimeoutRef.current = setTimeout(() => {
+      safeInvoke("persist_workspace_tree", {
+        sessionId: sid,
+        workspaceId: ws.id,
+        tree: newTree,
+      }, onError).catch(console.error);
+    }, 200);
+  }, []);
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
