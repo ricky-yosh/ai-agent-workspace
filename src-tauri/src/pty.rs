@@ -121,16 +121,37 @@ fn run_pty_reader(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = [0u8; PTY_READ_BUFFER_SIZE];
+        let mut acc: Vec<u8> = Vec::with_capacity(65536);
+        let mut last_flush = std::time::Instant::now();
+        const COALESCE_MAX_SIZE: usize = 65536;
+        const COALESCE_MAX_MS: u64 = 16;
+
+        let flush = |acc: &mut Vec<u8>, last_flush: &mut std::time::Instant| {
+            if !acc.is_empty() {
+                emit_pty_output(&app_handle, &pty_id, acc);
+                acc.clear();
+                *last_flush = std::time::Instant::now();
+            }
+        };
+
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
+                    flush(&mut acc, &mut last_flush);
                     handle_pty_exit(&store, &app_handle, &terminal_id);
                     break;
                 }
                 Ok(n) => {
-                    emit_pty_output(&app_handle, &pty_id, &buf[..n]);
+                    acc.extend_from_slice(&buf[..n]);
+                    let elapsed = last_flush.elapsed().as_millis() as u64;
+                    if acc.len() >= COALESCE_MAX_SIZE || elapsed >= COALESCE_MAX_MS {
+                        flush(&mut acc, &mut last_flush);
+                    }
                 }
-                Err(_) => break,
+                Err(_) => {
+                    flush(&mut acc, &mut last_flush);
+                    break;
+                }
             }
         }
     })
