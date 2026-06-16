@@ -22,7 +22,7 @@ fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
         match event {
             DomainEvent::SessionsChanged => { let _ = app.emit("sessions-changed", ()); }
             DomainEvent::LayoutsChanged => { let _ = app.emit("layouts-changed", ()); }
-            DomainEvent::WorkspaceChanged { .. } => { let _ = app.emit("sessions-changed", ()); }
+            DomainEvent::WorkspaceChanged { .. } => { let _ = app.emit("workspace-changed", ()); }
         }
     }
 }
