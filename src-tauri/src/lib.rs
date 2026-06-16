@@ -260,12 +260,15 @@ fn open_preferences(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn open_in_app(path: String, app_name: String) -> Result<(), String> {
     use std::process::Command;
-    Command::new("/usr/bin/open")
+    let status = Command::new("/usr/bin/open")
         .arg("-a")
         .arg(&app_name)
         .arg(&path)
-        .spawn()
+        .status()
         .map_err(|e| format!("Failed to launch {}: {}", app_name, e))?;
+    if !status.success() {
+        return Err(format!("Unable to find application named '{}'. Is it installed?", app_name));
+    }
     Ok(())
 }
 
