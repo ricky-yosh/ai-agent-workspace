@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "./safeInvoke";
 import { listen } from "@tauri-apps/api/event";
 
 export interface SessionSummary {
@@ -37,7 +37,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const list = await invoke<SessionSummary[]>("list_sessions");
+      const list = await safeInvoke<SessionSummary[]>("list_sessions", undefined, (msg) => {
+        console.error("[SessionContext] Failed to list sessions:", msg);
+      });
       setSessions(list);
     } catch (e) {
       console.error("[SessionContext] Failed to list sessions", e);

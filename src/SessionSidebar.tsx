@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "./safeInvoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSessions, type SessionSummary } from "./SessionContext";
@@ -273,24 +273,24 @@ export default function SessionSidebar() {
 
   function handleCreate(name: string, workingDir: string) {
     if (!name || !workingDir) return;
-    invoke<SessionSummary>("create_session", {
+    safeInvoke<SessionSummary>("create_session", {
       workingDir,
       name,
-    }).then((session) => {
+    }, (msg) => addToast({ type: "error", message: msg })).then((session) => {
       setShowNewSessionDialog(false);
       refreshSessions();
-      return invoke("open_session", { sessionId: session.id }).then(() => session.id);
+      return safeInvoke("open_session", { sessionId: session.id }, (msg) => addToast({ type: "error", message: msg })).then(() => session.id);
     }).then((id) => {
       setActiveSessionId(id);
-    });
+    }).catch(console.error);
   }
 
   function handleSelect(id: string) {
     if (id === activeSessionId) return;
-    invoke("open_session", { sessionId: id }).then(() => {
+    safeInvoke("open_session", { sessionId: id }, (msg) => addToast({ type: "error", message: msg })).then(() => {
       setActiveSessionId(id);
       refreshSessions();
-    });
+    }).catch(console.error);
   }
 
   function handleStartRename(session: SessionSummary) {
@@ -301,22 +301,22 @@ export default function SessionSidebar() {
 
   function handleSaveRename(sessionId: string) {
     if (renameValue.trim()) {
-      invoke("rename_session", {
+      safeInvoke("rename_session", {
         sessionId,
         newName: renameValue.trim(),
-      }).then(() => {
+      }, (msg) => addToast({ type: "error", message: msg })).then(() => {
         refreshSessions();
-      });
+      }).catch(console.error);
     }
     setRenamingSessionId(null);
   }
 
   function handleDelete(sessionId: string) {
-    invoke("delete_session", { sessionId }).then(() => {
+    safeInvoke("delete_session", { sessionId }, (msg) => addToast({ type: "error", message: msg })).then(() => {
       setDeleteConfirmId(null);
       if (activeSessionId === sessionId) setActiveSessionId(null);
       refreshSessions();
-    });
+    }).catch(console.error);
   }
 
   useEventListener(document, "keydown", (e) => {
@@ -341,10 +341,12 @@ export default function SessionSidebar() {
     const path = contextSession.working_directory;
     try {
       await revealItemInDir(path);
+      addToast({ type: "info", message: "Opening Finder..." });
     } catch {
       const parent = path.substring(0, path.lastIndexOf("/")) || "/";
       try {
         await revealItemInDir(parent);
+        addToast({ type: "info", message: "Opening Finder..." });
       } catch {
         addToast({ type: "error", message: "Failed to open Finder" });
       }
@@ -393,7 +395,11 @@ export default function SessionSidebar() {
       return;
     }
     try {
-      await invoke("open_in_app", { path: workingDir, appName });
+      await safeInvoke("open_in_app", { path: workingDir, appName });
+      addToast({
+        type: "info",
+        message: `Launching ${appName}...`,
+      });
     } catch (err) {
       console.error(`[launchTool] invoke failed:`, err);
       addToast({
@@ -404,7 +410,7 @@ export default function SessionSidebar() {
   }
 
   function openPreferences() {
-    invoke("open_preferences");
+    safeInvoke("open_preferences", undefined, (msg) => addToast({ type: "error", message: msg })).catch(() => {});
   }
 
   async function handleOpenInEditor() {
@@ -420,7 +426,7 @@ export default function SessionSidebar() {
 
   async function handleOpenInDiff() {
     if (!contextSession) return;
-    const isGit = await invoke<boolean>("is_git_repo", { path: contextSession.working_directory });
+    const isGit = await safeInvoke<boolean>("is_git_repo", { path: contextSession.working_directory }, (msg) => addToast({ type: "error", message: msg }));
     if (!isGit) {
       addToast({
         type: "info",
@@ -463,10 +469,10 @@ export default function SessionSidebar() {
               <button
                 className="sidebar-title sidebar-title-back"
                 onClick={() => {
-                  invoke("close_session", { sessionId: activeSessionId }).then(() => {
+                  safeInvoke("close_session", { sessionId: activeSessionId }, (msg) => addToast({ type: "error", message: msg })).then(() => {
                     setActiveSessionId(null);
                     refreshSessions();
-                  });
+                  }).catch(console.error);
                 }}
                 title="Back to all sessions"
                 aria-label="Close session and return to all sessions"

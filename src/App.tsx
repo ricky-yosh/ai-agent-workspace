@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "./safeInvoke";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import SplitLayout from "./SplitLayout";
@@ -7,7 +7,7 @@ import LayoutTabs from "./LayoutTabs";
 import ManageTemplatesModal from "./ManageTemplatesModal";
 import type { Layout, LayoutTree } from "./SplitLayout";
 import ShortcutsModal from "./ShortcutsModal";
-import { ToastProvider } from "./ToastContext";
+import { ToastProvider, useToast } from "./ToastContext";
 import { ToastContainer } from "./Toast";
 import { pathsEqual } from "./utils/pathUtils";
 import { migrateWorkspaceTree } from "./utils/migrateTree";
@@ -62,7 +62,7 @@ function useKeyboardShortcuts(shortcuts: Shortcut[]) {
   useEventListener(document, "keydown", handler, []);
 }
 
-function useWorkspaceManager(activeSessionId: string | null) {
+function useWorkspaceManager(activeSessionId: string | null, onError?: (msg: string) => void) {
   const [workspaces, setWorkspaces] = useState<WorkspaceInstance[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
   const [loading, setLoading] = useState(false);
@@ -71,8 +71,8 @@ function useWorkspaceManager(activeSessionId: string | null) {
     if (activeSessionId) {
       setLoading(true);
       Promise.all([
-        invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }),
-        invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }),
+        safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }, onError),
+        safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError),
       ]).then(([wsList, active]) => {
         setWorkspaces(wsList);
         if (active) {
@@ -93,10 +93,10 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   useTauriEvent("sessions-changed", () => {
     if (activeSessionId) {
-      invoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId })
+      safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }, onError)
         .then(setWorkspaces)
         .catch(console.error);
-      invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId })
+      safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError)
         .then((ws) => {
           if (ws) {
             setActiveWorkspace({ ...ws, current_tree: migrateWorkspaceTree(ws.current_tree) });
@@ -110,11 +110,11 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   const handleWorkspaceTreeChange = useCallback((newTree: LayoutTree) => {
     if (!activeWorkspace) return;
-    invoke("persist_workspace_tree", {
+    safeInvoke("persist_workspace_tree", {
       sessionId: activeSessionId,
       workspaceId: activeWorkspace.id,
       tree: newTree,
-    }).catch(console.error);
+    }, onError).catch(console.error);
     setActiveWorkspace((prev) => prev ? { ...prev, current_tree: newTree } : null);
     setWorkspaces((prev) =>
       prev.map((w) =>
@@ -125,19 +125,19 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
-    invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId })
-      .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }))
+    safeInvoke("set_active_workspace", { sessionId: activeSessionId, workspaceId }, onError)
+      .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError))
       .then(setActiveWorkspace)
       .catch(console.error);
   }, [activeSessionId]);
 
   const handleAddWorkspace = useCallback((templateId: string) => {
     if (!activeSessionId) return;
-    invoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId })
+    safeInvoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId }, onError)
       .then((ws) => {
         setWorkspaces((prev) => [...prev, ws]);
-        return invoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id })
-          .then(() => invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }));
+        return safeInvoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id }, onError)
+          .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError));
       })
       .then((active) => setActiveWorkspace(active))
       .catch(console.error);
@@ -145,11 +145,11 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   const handleCloseWorkspace = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
-    invoke("remove_workspace", { sessionId: activeSessionId, workspaceId })
+    safeInvoke("remove_workspace", { sessionId: activeSessionId, workspaceId }, onError)
       .then(() => {
         setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
         if (activeWorkspace?.id === workspaceId) {
-          return invoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId });
+          return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError);
         }
         return null;
       })
@@ -161,7 +161,7 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
     if (!activeSessionId) return;
-    invoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName })
+    safeInvoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName }, onError)
       .then(() => {
         setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, name: newName } : w)));
         if (activeWorkspace?.id === workspaceId) {
@@ -173,10 +173,10 @@ function useWorkspaceManager(activeSessionId: string | null) {
 
   const handleResetToTemplate = useCallback((workspaceId: string) => {
     if (!activeSessionId) return;
-    invoke<WorkspaceInstance>("reset_workspace_to_template", {
+    safeInvoke<WorkspaceInstance>("reset_workspace_to_template", {
       sessionId: activeSessionId,
       workspaceId,
-    }).then((ws) => {
+    }, onError).then((ws) => {
       setActiveWorkspace(ws);
       setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? ws : w)));
     }).catch(console.error);
@@ -240,13 +240,15 @@ function SaveAsTemplateDialog({
 
 function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
   const { activeSessionId } = useSessions();
+  const { addToast } = useToast();
+  const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
   const {
     workspaces, activeWorkspace, loading,
     handleWorkspaceTreeChange, handleWorkspaceSwitch,
     handleAddWorkspace, handleCloseWorkspace,
     handleRenameWorkspace, handleResetToTemplate,
     handleCycleWorkspace,
-  } = useWorkspaceManager(activeSessionId);
+  } = useWorkspaceManager(activeSessionId, onError);
 
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
@@ -271,12 +273,12 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   }, [activeWorkspace?.id]);
 
   const refreshTemplates = useCallback(() => {
-    invoke<Layout[]>("list_layouts").then(setTemplates).catch(console.error);
-  }, []);
+    safeInvoke<Layout[]>("list_layouts", undefined, onError).then(setTemplates).catch(console.error);
+  }, [onError]);
 
   useEffect(() => {
     refreshTemplates();
-  }, [refreshTemplates]);
+  }, [refreshTemplates, onError]);
 
   useTauriEvent("layouts-changed", useCallback(() => refreshTemplates(), [refreshTemplates]));
 
@@ -287,23 +289,23 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
 
   const confirmSaveAsTemplate = useCallback(() => {
     if (!saveAsTarget || !saveAsName.trim()) return;
-    invoke<Layout>("save_layout", { name: saveAsName.trim(), tree: saveAsTarget })
+    safeInvoke<Layout>("save_layout", { name: saveAsName.trim(), tree: saveAsTarget }, onError)
       .then(() => refreshTemplates())
       .then(() => setSaveAsTarget(null))
       .catch(console.error);
-  }, [saveAsTarget, saveAsName, refreshTemplates]);
+  }, [saveAsTarget, saveAsName, refreshTemplates, onError]);
 
   const handleDeleteTemplate = useCallback((layoutId: string) => {
-    invoke("delete_layout", { layoutId })
+    safeInvoke("delete_layout", { layoutId }, onError)
       .then(() => refreshTemplates())
       .catch(console.error);
-  }, [refreshTemplates]);
+  }, [refreshTemplates, onError]);
 
   const handleRenameTemplate = useCallback((layoutId: string, newName: string) => {
-    invoke("rename_layout", { layoutId, newName })
+    safeInvoke("rename_layout", { layoutId, newName }, onError)
       .then(() => refreshTemplates())
       .catch(console.error);
-  }, [refreshTemplates]);
+  }, [refreshTemplates, onError]);
 
   useKeyboardShortcuts([
     { key: "Tab", ctrl: true, handler: () => handleCycleWorkspace(1) },
@@ -379,6 +381,7 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
     sessions, activeSessionId, setActiveSessionId, refreshSessions,
     setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
+  const { addToast } = useToast();
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   const handleCycle = useCallback((dir: 1 | -1) => {
@@ -390,20 +393,20 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
           if (idx < 0) return sessions[0].id;
           return sessions[(idx + dir + sessions.length) % sessions.length].id;
         })();
-    invoke("open_session", { sessionId: nextId })
+    safeInvoke("open_session", { sessionId: nextId }, (msg) => addToast({ type: "error", message: msg }))
       .then(() => setActiveSessionId(nextId))
       .catch(console.error);
-  }, [sessions, activeSessionId, setActiveSessionId]);
+  }, [sessions, activeSessionId, setActiveSessionId, addToast]);
 
   const handleCloseSession = useCallback(() => {
     if (!activeSessionId) return;
-    invoke("close_session", { sessionId: activeSessionId })
+    safeInvoke("close_session", { sessionId: activeSessionId }, (msg) => addToast({ type: "error", message: msg }))
       .then(() => {
         setActiveSessionId(null);
         refreshSessions();
       })
       .catch(console.error);
-  }, [activeSessionId, setActiveSessionId, refreshSessions]);
+  }, [activeSessionId, setActiveSessionId, refreshSessions, addToast]);
 
   useKeyboardShortcuts([
     { key: "?", handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
