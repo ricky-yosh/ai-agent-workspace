@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -13,9 +14,8 @@ import { pathsEqual } from "./utils/pathUtils";
 interface CachedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
+  webglAddon: WebglAddon;
   ptyId: string | null;
-  disposeScheduled: boolean;
-  generation: number;
 }
 
 class TerminalCache {
@@ -32,18 +32,28 @@ class TerminalCache {
   dispose(key: string): void {
     const cached = this.map.get(key);
     if (!cached) return;
-    cached.disposeScheduled = true;
-    setTimeout(() => {
-      const entry = this.map.get(key);
-      if (entry?.disposeScheduled) {
-        entry.terminal.dispose();
-        this.map.delete(key);
-      }
-    }, 0);
+    cached.terminal.dispose();
+    this.map.delete(key);
   }
 }
 
 const terminalCache = new TerminalCache();
+
+const ptyOutputCallbacks = new Map<string, (data: number[]) => void>();
+const ptyExitCallbacks = new Map<string, () => void>();
+
+let globalListenersInitialized = false;
+function ensureGlobalListeners(): void {
+  if (globalListenersInitialized) return;
+  globalListenersInitialized = true;
+  listen<{ pty_id: string; data: number[] }>("pty-output", (event) => {
+    ptyOutputCallbacks.get(event.payload.pty_id)?.(event.payload.data);
+  });
+  listen<{ terminal_id: string }>("pty-exit", (event) => {
+    ptyExitCallbacks.get(event.payload.terminal_id)?.();
+  });
+}
+ensureGlobalListeners();
 
 function fitAndFocus(
   terminal: Terminal,
@@ -70,8 +80,6 @@ function useXtermTerminal(
     const cached = terminalCache.get(cacheKey);
 
     if (cached) {
-      cached.disposeScheduled = false;
-      cached.generation = (cached.generation || 0) + 1;
       const { terminal, fitAddon } = cached;
       if (terminal.element) {
         container.appendChild(terminal.element);
@@ -98,6 +106,21 @@ function useXtermTerminal(
 
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
+      const webglAddon = new WebglAddon();
+      terminal.loadAddon(webglAddon);
+
+      let currentWebgl = webglAddon;
+      const handleContextLoss = () => {
+        currentWebgl.dispose();
+        const repl = new WebglAddon();
+        terminal.loadAddon(repl);
+        currentWebgl = repl;
+        repl.onContextLoss(handleContextLoss);
+        const cached = terminalCache.get(cacheKey);
+        if (cached) cached.webglAddon = repl;
+      };
+      webglAddon.onContextLoss(handleContextLoss);
+
       terminal.open(container);
 
       fitAndFocus(terminal, fitAddon, isMounted);
@@ -113,7 +136,7 @@ function useXtermTerminal(
         }
       });
 
-      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, disposeScheduled: false, generation: 0 });
+      terminalCache.set(cacheKey, { terminal, fitAddon, webglAddon, ptyId: null });
     }
 
     return () => {
@@ -138,12 +161,18 @@ function usePty(
   const restartTerminal = useCallback(() => {
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
+    if (cached.ptyId) {
+      ptyOutputCallbacks.delete(cached.ptyId);
+    }
     cached.ptyId = null;
     setIsExited(false);
     setIsSpawning(true);
     invoke<{ pty_id: string }>("pty_spawn", { terminalId, sessionId })
       .then(({ pty_id }) => {
         cached.ptyId = pty_id;
+        ptyOutputCallbacks.set(pty_id, (data) => {
+          cached.terminal.write(new Uint8Array(data));
+        });
         setIsSpawning(false);
       })
       .catch((err) => {
@@ -154,12 +183,8 @@ function usePty(
 
   useEffect(() => {
     const isMounted = { current: true };
-    const unsubs: (() => void)[] = [];
-
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
-
-    const gen = cached.generation;
 
     if (cached.ptyId) {
       setIsSpawning(false);
@@ -168,6 +193,9 @@ function usePty(
         .then(({ pty_id }) => {
           if (!isMounted.current) return;
           cached.ptyId = pty_id;
+          ptyOutputCallbacks.set(pty_id, (data) => {
+            cached.terminal.write(new Uint8Array(data));
+          });
           setIsSpawning(false);
         })
         .catch((err) => {
@@ -177,40 +205,23 @@ function usePty(
         });
     }
 
-    const unsubOutput = listen<{ pty_id: string; data: number[] }>(
-      "pty-output",
-      (event) => {
-        const c = terminalCache.get(cacheKey);
-        if (!c || c.generation !== gen || !c.ptyId || !c.terminal.element?.isConnected) return;
-        if (event.payload.pty_id === c.ptyId) {
-          c.terminal.write(new Uint8Array(event.payload.data));
-        }
-      },
-    );
-    unsubs.push(() => {
-      unsubOutput.then((fn) => fn()).catch(() => {});
-    });
-
-    const unsubExit = listen<{ terminal_id: string }>(
-      "pty-exit",
-      (event) => {
-        if (event.payload.terminal_id !== terminalId) return;
-        const c = terminalCache.get(cacheKey);
-        if (!c || c.generation !== gen) return;
-        c.ptyId = null;
-        if (isMounted.current) {
-          setIsExited(true);
-          setIsSpawning(false);
-        }
-      },
-    );
-    unsubs.push(() => {
-      unsubExit.then((fn) => fn()).catch(() => {});
+    ptyExitCallbacks.set(terminalId, () => {
+      const c = terminalCache.get(cacheKey);
+      if (!c) return;
+      c.ptyId = null;
+      if (isMounted.current) {
+        setIsExited(true);
+        setIsSpawning(false);
+      }
     });
 
     return () => {
       isMounted.current = false;
-      unsubs.forEach((fn) => fn());
+      const c = terminalCache.get(cacheKey);
+      if (c?.ptyId) {
+        ptyOutputCallbacks.delete(c.ptyId);
+      }
+      ptyExitCallbacks.delete(terminalId);
     };
   }, [cacheKey, sessionId]);
 
@@ -227,12 +238,11 @@ function useTerminalDragDrop(cacheKey: string): void {
   useEffect(() => {
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
-    const gen = cached.generation;
 
     const webview = getCurrentWebviewWindow();
     const unlisten = webview.onDragDropEvent((event) => {
       const c = terminalCache.get(cacheKey);
-      if (!c || c.generation !== gen || !c.ptyId || !c.terminal.element?.isConnected) return;
+      if (!c || !c.ptyId) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
         if (!pathsEqual(focusedPathRef.current, pathRef.current)) return;
         for (const p of event.payload.paths) {
@@ -257,11 +267,16 @@ function useTerminalResize(
     const resizeObserver = new ResizeObserver(() => {
       const c = terminalCache.get(cacheKey);
       if (!c) return;
-      const { terminal, fitAddon } = c;
-      if (!terminal.element?.isConnected) return;
-      fitAddon.fit();
+      try {
+        const dims = c.fitAddon.proposeDimensions();
+        if (dims && dims.cols > 0 && dims.rows > 0) {
+          c.fitAddon.fit();
+        }
+      } catch {
+        // terminal is in a hidden container
+      }
       if (c.ptyId) {
-        const { cols, rows } = terminal;
+        const { cols, rows } = c.terminal;
         invoke("pty_resize", { ptyId: c.ptyId, cols, rows }).catch((err) => {
           if (String(err).includes("PTY not found")) {
             c.ptyId = null;
@@ -277,6 +292,49 @@ function useTerminalResize(
   }, [cacheKey]);
 }
 
+function useTerminalReveal(
+  containerRef: RefObject<HTMLDivElement | null>,
+  cacheKey: string,
+): void {
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let wasEverHidden = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          if (wasEverHidden) {
+            requestAnimationFrame(() => {
+              const c = terminalCache.get(cacheKey);
+              if (!c) return;
+              c.fitAddon.fit();
+              c.webglAddon.clearTextureAtlas();
+              c.terminal.refresh(0, c.terminal.rows - 1);
+              // focus() is what the click handler does, and clicking is what
+              // empirically un-garbles the view: it kicks the render loop that
+              // was paused while hidden. refresh() alone marks rows dirty but
+              // does not restart the loop.
+              c.terminal.focus();
+            });
+          }
+        } else {
+          wasEverHidden = true;
+        }
+      },
+      { threshold: 0 },
+    );
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [cacheKey]);
+}
+
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
   const { workspaceId: _workspaceId, sessionId, path: _path, terminalId: contextTerminalId } = usePanelContext();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -288,6 +346,7 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
   const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId);
   useTerminalDragDrop(cacheKey);
   useTerminalResize(containerRef, cacheKey);
+  useTerminalReveal(containerRef, cacheKey);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", background: "#1e1e1e" }}>
