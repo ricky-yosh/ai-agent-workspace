@@ -390,16 +390,26 @@ function renderPanelNode(
   focusedPath: number[] | null | undefined,
   onFocusedPathChange: ((path: number[]) => void) | undefined,
   splitDrag: SplitDragState | null,
+  zoomedPath: number[] | null | undefined,
   treeRef: React.MutableRefObject<LayoutTree>,
   onLayoutChange: ((tree: LayoutTree) => void) | undefined,
   onCornerDragStart: (e: React.MouseEvent, dragPath: number[], corner: "tl" | "tr" | "bl" | "br") => void,
 ): React.ReactNode {
   const { panel_type } = node.panel;
   const PanelComponent = getPanel(panel_type);
+  const isZoomMode = zoomedPath && zoomedPath.length > 0;
+  const isZoomed = isZoomMode && pathsEqual(zoomedPath, path);
 
   return (
     <div
       className={`split-layout-panel-outer${pathsEqual(focusedPath, path) ? " focused" : ""}`}
+      style={
+        isZoomMode
+          ? isZoomed
+            ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100 }
+            : { display: 'none' }
+          : undefined
+      }
       onMouseDown={() => onFocusedPathChange?.(path)}
     >
       {!splitDrag && (
@@ -473,11 +483,6 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
   const { splitDrag, splitDragRef, setSplitDrag } = useSplitDrag(treeRef, onLayoutChangeRef);
   const { joinState, startJoinMode } = useJoinMode(treeRef, onLayoutChangeRef);
 
-  if (zoomedPath && zoomedPath.length > 0) {
-    const zoomedNode = getNodeAtPath(tree.tree, zoomedPath);
-    if (zoomedNode) return <div className="split-layout">{renderNode(zoomedNode)}</div>;
-  }
-
   function handleCornerDragStart(
     e: React.MouseEvent,
     dragPath: number[],
@@ -509,7 +514,7 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
     if ("split" in node) {
       return renderSplitNode(node, path, treeRef, onLayoutChange, joinState, startJoinMode, renderNode);
     }
-    return renderPanelNode(node, path, workspaceId, sessionId, focusedPath, onFocusedPathChange, splitDrag, treeRef, onLayoutChange, handleCornerDragStart);
+    return renderPanelNode(node, path, workspaceId, sessionId, focusedPath, onFocusedPathChange, splitDrag, zoomedPath, treeRef, onLayoutChange, handleCornerDragStart);
   }
 
   return (

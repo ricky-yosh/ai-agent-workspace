@@ -62,132 +62,239 @@ function useKeyboardShortcuts(shortcuts: Shortcut[]) {
   useEventListener(document, "keydown", handler, []);
 }
 
-function useWorkspaceManager(activeSessionId: string | null, onError?: (msg: string) => void) {
-  const [workspaces, setWorkspaces] = useState<WorkspaceInstance[]>([]);
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceInstance | null>(null);
-  const [loading, setLoading] = useState(false);
+interface SessionWorkspaceData {
+  workspaces: WorkspaceInstance[];
+  activeWorkspace: WorkspaceInstance | null;
+  loading: boolean;
+}
 
-  useEffect(() => {
-    if (activeSessionId) {
-      setLoading(true);
-      Promise.all([
-        safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: activeSessionId }, onError),
-        safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError),
-      ]).then(([wsList, active]) => {
-        setWorkspaces(wsList);
-        if (active) {
-          setActiveWorkspace({ ...active, current_tree: migrateWorkspaceTree(active.current_tree) });
-        } else {
-          setActiveWorkspace(null);
-        }
-      }).catch(() => {
-        setWorkspaces([]);
-        setActiveWorkspace(null);
-      }).finally(() => setLoading(false));
-    } else {
-      setWorkspaces([]);
-      setActiveWorkspace(null);
-      setLoading(false);
-    }
-  }, [activeSessionId]);
+function useWorkspaceManager(onError?: (msg: string) => void) {
+  const { sessions, activeSessionId } = useSessions();
+  const [sessionData, setSessionData] = useState<Map<string, SessionWorkspaceData>>(new Map());
+  const loadedSessionsRef = useRef<Set<string>>(new Set());
 
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
+
+  const sessionIdsStr = sessions.map(s => s.id).sort().join(',');
+
+  useEffect(() => {
+    const ids = new Set(sessions.map(s => s.id));
+
+    for (const sid of ids) {
+      if (!loadedSessionsRef.current.has(sid)) {
+        loadedSessionsRef.current.add(sid);
+
+        setSessionData(prev => {
+          const next = new Map(prev);
+          next.set(sid, { workspaces: [], activeWorkspace: null, loading: true });
+          return next;
+        });
+
+        Promise.all([
+          safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: sid }, onError),
+          safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError),
+        ]).then(([wsList, active]) => {
+          setSessionData(prev => {
+            const next = new Map(prev);
+            next.set(sid, {
+              workspaces: wsList,
+              activeWorkspace: active ? { ...active, current_tree: migrateWorkspaceTree(active.current_tree) } : null,
+              loading: false,
+            });
+            return next;
+          });
+        }).catch(() => {
+          setSessionData(prev => {
+            const next = new Map(prev);
+            next.set(sid, { workspaces: [], activeWorkspace: null, loading: false });
+            return next;
+          });
+        });
+      }
+    }
+
+    for (const sid of loadedSessionsRef.current) {
+      if (!ids.has(sid)) {
+        loadedSessionsRef.current.delete(sid);
+        setSessionData(prev => {
+          const next = new Map(prev);
+          next.delete(sid);
+          return next;
+        });
+      }
+    }
+  }, [sessionIdsStr]);
+
+  const currentData = activeSessionId ? sessionData.get(activeSessionId) : undefined;
+  const workspaces = currentData?.workspaces ?? [];
+  const activeWorkspace = currentData?.activeWorkspace ?? null;
+  const loading = currentData?.loading ?? false;
+
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
   const activeWorkspaceRef = useRef(activeWorkspace);
   activeWorkspaceRef.current = activeWorkspace;
 
-  const handleWorkspaceTreeChange = useCallback((newTree: LayoutTree) => {
-    const ws = activeWorkspaceRef.current;
+  const handleWorkspaceTreeChange = useCallback((workspaceId: string, newTree: LayoutTree) => {
     const sid = activeSessionIdRef.current;
-    if (!ws || !sid) return;
-    setActiveWorkspace((prev) => prev ? { ...prev, current_tree: newTree } : null);
-    setWorkspaces((prev) =>
-      prev.map((w) =>
-        w.id === ws.id ? { ...w, current_tree: newTree } : w
-      )
-    );
+    if (!sid) return;
+    setSessionData(prev => {
+      const next = new Map(prev);
+      const sd = next.get(sid);
+      if (!sd) return prev;
+      next.set(sid, {
+        ...sd,
+        workspaces: sd.workspaces.map(w =>
+          w.id === workspaceId ? { ...w, current_tree: newTree } : w
+        ),
+        activeWorkspace: sd.activeWorkspace?.id === workspaceId
+          ? { ...sd.activeWorkspace, current_tree: newTree }
+          : sd.activeWorkspace,
+      });
+      return next;
+    });
     if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
     persistTimeoutRef.current = setTimeout(() => {
       safeInvoke("persist_workspace_tree", {
         sessionId: sid,
-        workspaceId: ws.id,
+        workspaceId,
         tree: newTree,
       }, onError).catch(console.error);
     }, 200);
   }, []);
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    safeInvoke("set_active_workspace", { sessionId: activeSessionId, workspaceId }, onError)
-      .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError))
-      .then(setActiveWorkspace)
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    safeInvoke("set_active_workspace", { sessionId: sid, workspaceId }, onError)
+      .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError))
+      .then((active) => {
+        setSessionData(prev => {
+          const next = new Map(prev);
+          const sd = next.get(sid);
+          if (!sd) return prev;
+          next.set(sid, { ...sd, activeWorkspace: active });
+          return next;
+        });
+      })
       .catch(console.error);
-  }, [activeSessionId]);
+  }, []);
 
   const handleAddWorkspace = useCallback((templateId: string) => {
-    if (!activeSessionId) return;
-    safeInvoke<WorkspaceInstance>("add_workspace", { sessionId: activeSessionId, templateId }, onError)
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    safeInvoke<WorkspaceInstance>("add_workspace", { sessionId: sid, templateId }, onError)
       .then((ws) => {
-        setWorkspaces((prev) => [...prev, ws]);
-        return safeInvoke("set_active_workspace", { sessionId: activeSessionId, workspaceId: ws.id }, onError)
-          .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError));
+        return safeInvoke("set_active_workspace", { sessionId: sid, workspaceId: ws.id }, onError)
+          .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError))
+          .then((active) => {
+            setSessionData(prev => {
+              const next = new Map(prev);
+              const sd = next.get(sid);
+              if (!sd) return prev;
+              next.set(sid, { ...sd, workspaces: [...sd.workspaces, ws], activeWorkspace: active });
+              return next;
+            });
+          });
       })
-      .then((active) => setActiveWorkspace(active))
       .catch(console.error);
-  }, [activeSessionId]);
+  }, []);
 
   const handleCloseWorkspace = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    safeInvoke("remove_workspace", { sessionId: activeSessionId, workspaceId }, onError)
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    const aw = activeWorkspaceRef.current;
+    safeInvoke("remove_workspace", { sessionId: sid, workspaceId }, onError)
       .then(() => {
-        setWorkspaces((prev) => prev.filter((w) => w.id !== workspaceId));
-        if (activeWorkspace?.id === workspaceId) {
-          return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: activeSessionId }, onError);
+        setSessionData(prev => {
+          const next = new Map(prev);
+          const sd = next.get(sid);
+          if (!sd) return prev;
+          next.set(sid, {
+            ...sd,
+            workspaces: sd.workspaces.filter(w => w.id !== workspaceId),
+            activeWorkspace: sd.activeWorkspace?.id === workspaceId ? null : sd.activeWorkspace,
+          });
+          return next;
+        });
+        if (aw?.id === workspaceId) {
+          return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError);
         }
         return null;
       })
       .then((newActive) => {
-        if (newActive !== null) setActiveWorkspace(newActive as WorkspaceInstance | null);
-      })
-      .catch(console.error);
-  }, [activeSessionId, activeWorkspace]);
-
-  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
-    if (!activeSessionId) return;
-    safeInvoke("rename_workspace", { sessionId: activeSessionId, workspaceId, newName }, onError)
-      .then(() => {
-        setWorkspaces((prev) => prev.map((w) => (w.id === workspaceId ? { ...w, name: newName } : w)));
-        if (activeWorkspace?.id === workspaceId) {
-          setActiveWorkspace((prev) => prev ? { ...prev, name: newName } : null);
+        if (newActive !== null) {
+          setSessionData(prev => {
+            const next = new Map(prev);
+            const sd = next.get(sid!);
+            if (!sd) return prev;
+            next.set(sid!, { ...sd, activeWorkspace: newActive as WorkspaceInstance | null });
+            return next;
+          });
         }
       })
       .catch(console.error);
-  }, [activeSessionId, activeWorkspace]);
+  }, []);
+
+  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    safeInvoke("rename_workspace", { sessionId: sid, workspaceId, newName }, onError)
+      .then(() => {
+        setSessionData(prev => {
+          const next = new Map(prev);
+          const sd = next.get(sid);
+          if (!sd) return prev;
+          next.set(sid, {
+            ...sd,
+            workspaces: sd.workspaces.map(w => w.id === workspaceId ? { ...w, name: newName } : w),
+            activeWorkspace: sd.activeWorkspace?.id === workspaceId
+              ? { ...sd.activeWorkspace, name: newName }
+              : sd.activeWorkspace,
+          });
+          return next;
+        });
+      })
+      .catch(console.error);
+  }, []);
 
   const handleResetToTemplate = useCallback((workspaceId: string) => {
-    if (!activeSessionId) return;
-    safeInvoke<WorkspaceInstance>("reset_workspace_to_template", {
-      sessionId: activeSessionId,
-      workspaceId,
-    }, onError).then((ws) => {
-      setActiveWorkspace(ws);
-      setWorkspaces((prev) => prev.map((w) => (w.id === ws.id ? ws : w)));
-    }).catch(console.error);
-  }, [activeSessionId]);
+    const sid = activeSessionIdRef.current;
+    if (!sid) return;
+    safeInvoke<WorkspaceInstance>("reset_workspace_to_template", { sessionId: sid, workspaceId }, onError)
+      .then((ws) => {
+        setSessionData(prev => {
+          const next = new Map(prev);
+          const sd = next.get(sid);
+          if (!sd) return prev;
+          next.set(sid, {
+            ...sd,
+            workspaces: sd.workspaces.map(w => w.id === ws.id ? ws : w),
+            activeWorkspace: sd.activeWorkspace?.id === ws.id ? ws : sd.activeWorkspace,
+          });
+          return next;
+        });
+      })
+      .catch(console.error);
+  }, []);
 
   const handleCycleWorkspace = useCallback((dir: 1 | -1) => {
-    if (workspaces.length < 2 || !activeWorkspace) return;
-    const idx = workspaces.findIndex((w) => w.id === activeWorkspace.id);
+    const ws = workspacesRef.current;
+    const aw = activeWorkspaceRef.current;
+    if (ws.length < 2 || !aw) return;
+    const idx = ws.findIndex(w => w.id === aw.id);
     if (idx < 0) return;
-    const next = workspaces[(idx + dir + workspaces.length) % workspaces.length];
+    const next = ws[(idx + dir + ws.length) % ws.length];
     handleWorkspaceSwitch(next.id);
-  }, [workspaces, activeWorkspace, handleWorkspaceSwitch]);
+  }, [handleWorkspaceSwitch]);
 
   return {
     workspaces,
     activeWorkspace,
     loading,
+    sessionData,
     handleWorkspaceTreeChange,
     handleWorkspaceSwitch,
     handleAddWorkspace,
@@ -233,16 +340,16 @@ function SaveAsTemplateDialog({
 }
 
 function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
-  const { activeSessionId } = useSessions();
+  const { activeSessionId, sessions } = useSessions();
   const { addToast } = useToast();
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
   const {
-    workspaces, activeWorkspace, loading,
+    workspaces, activeWorkspace, loading, sessionData,
     handleWorkspaceTreeChange, handleWorkspaceSwitch,
     handleAddWorkspace, handleCloseWorkspace,
     handleRenameWorkspace, handleResetToTemplate,
     handleCycleWorkspace,
-  } = useWorkspaceManager(activeSessionId, onError);
+  } = useWorkspaceManager(onError);
 
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
@@ -314,14 +421,6 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
     );
   }
 
-  if (loading) {
-    return (
-      <main className="main-content">
-        <div className="empty-state">Loading...</div>
-      </main>
-    );
-  }
-
   return (
     <main className="main-content">
       <LayoutTabs
@@ -351,18 +450,45 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
         name={saveAsName}
         setName={setSaveAsName}
       />
-      <div className="tab-content">
-        {activeWorkspace ? (
-          <SplitLayout
-            workspaceId={activeWorkspace.id}
-            sessionId={activeSessionId}
-            tree={activeWorkspace.current_tree}
-            onLayoutChange={handleWorkspaceTreeChange}
-            focusedPath={focusedPath}
-            onFocusedPathChange={setFocusedPath}
-            zoomedPath={zoomedPath}
-          />
-        ) : (
+      <div className="tab-content" style={{ position: 'relative' }}>
+        {loading && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 100,
+            background: 'rgba(18, 18, 18, 0.8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text-muted)', fontSize: 14,
+          }}>
+            Loading…
+          </div>
+        )}
+        {sessions.map((session) => {
+          const sd = sessionData.get(session.id);
+          if (!sd) return null;
+          return (
+            <div
+              key={session.id}
+              style={{ display: session.id === activeSessionId ? 'block' : 'none', width: '100%', height: '100%' }}
+            >
+              {sd.workspaces.map((ws) => (
+                <div
+                  key={ws.id}
+                  style={{ display: ws.id === sd.activeWorkspace?.id ? 'block' : 'none', width: '100%', height: '100%' }}
+                >
+                  <SplitLayout
+                    workspaceId={ws.id}
+                    sessionId={session.id}
+                    tree={ws.current_tree}
+                    onLayoutChange={(newTree) => handleWorkspaceTreeChange(ws.id, newTree)}
+                    focusedPath={focusedPath}
+                    onFocusedPathChange={setFocusedPath}
+                    zoomedPath={zoomedPath}
+                  />
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        {!loading && workspaces.length === 0 && (
           <div className="empty-state">No active workspace</div>
         )}
       </div>
