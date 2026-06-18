@@ -430,31 +430,28 @@ function renderPanelNode(
             className="corner-handle corner-br"
             onMouseDown={(e) => onCornerDragStart(e, path, "br")}
           />
-          <PanelTypeSelector
-            currentType={panel_type}
-            onTypeSelect={(newType) => {
-              if (!onLayoutChange) return;
-              // Switching a terminal pane to a non-terminal type permanently
-              // removes that terminal — tear it down so the cached xterm and
-              // its PTY don't leak.
-              if (panel_type === "terminal" && newType !== "terminal" && node.panel.terminal_id) {
-                disposeTerminal(node.panel.terminal_id);
-              }
-              const newNode: LayoutNode = {
-                panel: {
-                  panel_type: newType,
-                  terminal_id: newType === "terminal" ? (node.panel.terminal_id ?? crypto.randomUUID()) : undefined,
-                },
-              };
-              const newTree: LayoutTree = {
-                tree: replaceNode(treeRef.current.tree, path, newNode),
-              };
-              onLayoutChange(newTree);
-            }}
-          />
         </>
       )}
       <div className={`split-layout-panel-inner${PanelComponent ? "" : " split-layout-unknown"}`}>
+        <PanelTypeSelector
+          currentType={panel_type}
+          onTypeSelect={(newType) => {
+            if (!onLayoutChange) return;
+            if (panel_type === "terminal" && newType !== "terminal" && node.panel.terminal_id) {
+              disposeTerminal(node.panel.terminal_id);
+            }
+            const newNode: LayoutNode = {
+              panel: {
+                panel_type: newType,
+                terminal_id: newType === "terminal" ? (node.panel.terminal_id ?? crypto.randomUUID()) : undefined,
+              },
+            };
+            const newTree: LayoutTree = {
+              tree: replaceNode(treeRef.current.tree, path, newNode),
+            };
+            onLayoutChange(newTree);
+          }}
+        />
         {PanelComponent ? (
           <PanelContext.Provider value={{ workspaceId, sessionId, path, terminalId: node.panel.terminal_id, focusedPath: focusedPath ?? null }}>
             <PanelComponent key={node.panel.terminal_id ?? JSON.stringify(path)} panelType={panel_type} />

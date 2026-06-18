@@ -7,6 +7,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "@xterm/xterm/css/xterm.css";
+import "./TerminalPanel.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
@@ -466,9 +467,10 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
   useTerminalReveal(containerRef, cacheKey);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "#1e1e1e" }}>
+    <div style={{ position: "relative", width: "100%", flex: 1, minHeight: 0 }}>
       <div
         ref={containerRef}
+        className="terminal-container"
         style={{ width: "100%", height: "100%" }}
         onClick={() => {
           const c = terminalCache.get(cacheKey);

@@ -24,8 +24,12 @@
 .split-layout-panel-inner {
   position: absolute;
   inset: 2px;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
   border-radius: 10px;
   overflow: hidden;
+  z-index: 1;
 }
 
 .split-layout-panel-inner.split-layout-unknown {
@@ -40,7 +44,7 @@
   position: absolute;
   width: 20px;
   height: 20px;
-  z-index: 1;
+  z-index: 2;
 }
 
 .corner-handle::after {

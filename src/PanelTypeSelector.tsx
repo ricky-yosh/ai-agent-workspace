@@ -21,7 +21,7 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
   useClickOutside(ref, () => setOpen(false));
 
   return (
-    <div ref={ref} style={{ position: "absolute", top: 4, left: 4, zIndex: 20 }}>
+    <div ref={ref} style={{ position: "relative", zIndex: 20, padding: "4px 4px 0 4px" }}>
       <button
         onClick={() => setOpen(!open)}
         style={{
