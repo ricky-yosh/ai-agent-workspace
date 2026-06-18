@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState, useCallback, type RefObject } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -10,11 +9,15 @@ import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
 import { pathsEqual } from "./utils/pathUtils";
+import { requestWebgl, releaseWebgl, disposeWebgl } from "./webglPool";
 
 interface CachedTerminal {
   terminal: Terminal;
   fitAddon: FitAddon;
-  webglAddon: WebglAddon;
+  // NOTE: the WebGL addon is deliberately NOT held here anymore. Its lifecycle
+  // is decoupled from the Terminal's and owned entirely by the bounded
+  // renderer pool in ./webglPool. The Terminal stays cached (surviving
+  // transient unmounts) whether or not it currently has a GPU renderer attached.
   ptyId: string | null;
   opened: boolean;
 }
@@ -51,6 +54,11 @@ const ptyExitCallbacks = new Map<string, () => void>();
  * exit callback so nothing leaks.
  */
 export function disposeTerminal(terminalId: string): void {
+  // Free the GPU/WebGL context first (no-op if this terminal was on the DOM
+  // renderer), then drop the cached Terminal and kill the PTY. Order matters
+  // only loosely, but freeing the renderer before disposing the Terminal keeps
+  // the addon's canvas references valid while we tear the context down.
+  disposeWebgl(terminalId);
   terminalCache.dispose(terminalId);
   ptyExitCallbacks.delete(terminalId);
   invoke("pty_kill", { terminalId }).catch(() => {});
@@ -132,20 +140,11 @@ function useXtermTerminal(
 
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
-      const webglAddon = new WebglAddon();
-      terminal.loadAddon(webglAddon);
-
-      let currentWebgl = webglAddon;
-      const handleContextLoss = () => {
-        currentWebgl.dispose();
-        const repl = new WebglAddon();
-        terminal.loadAddon(repl);
-        currentWebgl = repl;
-        repl.onContextLoss(handleContextLoss);
-        const cached = terminalCache.get(cacheKey);
-        if (cached) cached.webglAddon = repl;
-      };
-      webglAddon.onContextLoss(handleContextLoss);
+      // NOTE: no WebglAddon is created here. The bounded renderer pool attaches
+      // one on reveal (useTerminalReveal -> requestWebgl) only when there's a
+      // free GPU context slot, and detaches it on hide/dispose. Until then the
+      // terminal renders via xterm's built-in DOM renderer, which can never
+      // exhaust WebGL contexts. See ./webglPool for the full rationale.
 
       terminal.onData((data) => {
         const c = terminalCache.get(cacheKey);
@@ -160,7 +159,7 @@ function useXtermTerminal(
 
       // Store in cache first (with opened:false) before calling ensureOpened,
       // so ensureOpened can find the entry when checking visibility.
-      terminalCache.set(cacheKey, { terminal, fitAddon, webglAddon, ptyId: null, opened: false });
+      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, opened: false });
 
       // Open immediately only if the container is currently visible.
       // If hidden (display:none on ancestor), defer to first reveal via useTerminalReveal.
@@ -352,6 +351,12 @@ function useTerminalReveal(
         if (entry.isIntersecting) {
           // Lazy-open: open a deferred terminal on first reveal.
           ensureOpened(cacheKey, container);
+          // Request a WebGL renderer now that the terminal is visible AND
+          // opened (terminal.element exists). The pool caps concurrent contexts
+          // and gracefully no-ops onto the DOM renderer if no slot is free.
+          // ensureOpened MUST run first so the addon has a mounted element.
+          const revealed = terminalCache.get(cacheKey);
+          if (revealed) requestWebgl(cacheKey, revealed.terminal);
           // After the pane has laid out post-reveal, fit the terminal to the
           // settled container size and focus it. Without this, a terminal first
           // revealed during the display:none->block transition gets fit against
@@ -362,6 +367,11 @@ function useTerminalReveal(
             c.fitAddon.fit();
             c.terminal.focus();
           }, 300);
+        } else {
+          // Hidden: mark not-visible (frees this terminal's context for eviction
+          // by a newly-revealed one) and schedule idle reaping of its WebGL
+          // addon after the grace period. The Terminal instance stays cached.
+          releaseWebgl(cacheKey);
         }
       },
       { threshold: 0 },
