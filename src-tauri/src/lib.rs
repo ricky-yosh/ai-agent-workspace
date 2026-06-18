@@ -320,6 +320,15 @@ fn pty_write(
 }
 
 #[tauri::command]
+fn pty_ack(
+    state: tauri::State<PtyStore>,
+    pty_id: String,
+    bytes: usize,
+) -> Result<(), String> {
+    pty::pty_ack(&state, &pty_id, bytes)
+}
+
+#[tauri::command]
 fn pty_resize(
     state: tauri::State<PtyStore>,
     pty_id: String,
@@ -464,6 +473,7 @@ pub fn run() {
             is_git_repo,
             pty_spawn,
             pty_write,
+            pty_ack,
             pty_resize,
             pty_kill,
         ])

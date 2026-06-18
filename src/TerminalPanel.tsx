@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState, useCallback, type RefObject } from "react";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITerminalOptions } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -20,7 +22,16 @@ interface CachedTerminal {
   // transient unmounts) whether or not it currently has a GPU renderer attached.
   ptyId: string | null;
   opened: boolean;
+  // Running count of output bytes parsed by xterm but not yet acked to the
+  // backend's flow controller. Flushed (via pty_ack) once it crosses the ack
+  // threshold. Drives backpressure so heavy output can't pin the main thread.
+  ackBytes: number;
 }
+
+// VSCode's FlowControlConstants.CharCountAckSize: accumulate this many parsed
+// bytes before sending an ack. Must be <= the backend's LOW_WATERMARK or the
+// PTY could pause and never get an ack large enough to resume.
+const ACK_FLUSH_BYTES = 5000;
 
 class TerminalCache {
   private map = new Map<string, CachedTerminal>();
@@ -125,6 +136,14 @@ function useXtermTerminal(
         cursorBlink: true,
         fontSize: 13,
         fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+        scrollback: 10000,
+        smoothScrollDuration: 125,
+        minimumContrastRatio: 4.5,
+        drawBoldTextInBrightColors: true,
+        rescaleOverlappingGlyphs: true,
+        // fastScrollModifier exists at runtime but is missing from v6's bundled
+        // typings; narrow the cast rather than widening the whole options object.
+        ...({ fastScrollModifier: "alt" } as Partial<ITerminalOptions>),
         theme: {
           background: "#1e1e1e",
           foreground: "#cccccc",
@@ -140,6 +159,15 @@ function useXtermTerminal(
 
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
+
+      // Unicode 11 width tables (correct emoji/CJK cell widths, as VSCode does)
+      // and clickable web links. These are per-terminal and created once here —
+      // independent of the GPU renderer lifecycle.
+      const unicode11Addon = new Unicode11Addon();
+      terminal.loadAddon(unicode11Addon);
+      terminal.unicode.activeVersion = "11";
+      terminal.loadAddon(new WebLinksAddon());
+
       // NOTE: no WebglAddon is created here. The bounded renderer pool attaches
       // one on reveal (useTerminalReveal -> requestWebgl) only when there's a
       // free GPU context slot, and detaches it on hide/dispose. Until then the
@@ -159,7 +187,7 @@ function useXtermTerminal(
 
       // Store in cache first (with opened:false) before calling ensureOpened,
       // so ensureOpened can find the entry when checking visibility.
-      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, opened: false });
+      terminalCache.set(cacheKey, { terminal, fitAddon, ptyId: null, opened: false, ackBytes: 0 });
 
       // Open immediately only if the container is currently visible.
       // If hidden (display:none on ancestor), defer to first reveal via useTerminalReveal.
@@ -203,6 +231,33 @@ function spawnPtyWithChannel(
   });
 }
 
+/**
+ * Build the Channel writer for a cached terminal's PTY output. Writes each raw
+ * chunk to xterm and, via xterm's parse-completion callback, drives ACK-based
+ * flow control: it accumulates parsed bytes on the shared `cached.ackBytes` and
+ * credits them back to the backend (pty_ack) once they cross ACK_FLUSH_BYTES.
+ *
+ * The ack fires from the parse callback, which runs even for hidden/backgrounded
+ * terminals — so a backgrounded process never stalls waiting on an ack that
+ * visibility would otherwise gate. The accumulator lives on the shared `cached`
+ * object so the spawn and restart paths share one counter.
+ */
+function makeOnBytes(cached: CachedTerminal): (bytes: ArrayBuffer) => void {
+  return (bytes) => {
+    const arr = new Uint8Array(bytes);
+    cached.terminal.write(arr, () => {
+      cached.ackBytes += arr.byteLength;
+      if (cached.ackBytes >= ACK_FLUSH_BYTES && cached.ptyId) {
+        const n = cached.ackBytes;
+        cached.ackBytes = 0;
+        invoke("pty_ack", { ptyId: cached.ptyId, bytes: n }).catch((err) => {
+          if (String(err).includes("PTY not found")) cached.ptyId = null;
+        });
+      }
+    });
+  };
+}
+
 function usePty(
   cacheKey: string,
   terminalId: string,
@@ -217,9 +272,7 @@ function usePty(
     cached.ptyId = null;
     setIsExited(false);
     setIsSpawning(true);
-    spawnPtyWithChannel(terminalId, sessionId, (bytes) => {
-      cached.terminal.write(new Uint8Array(bytes));
-    })
+    spawnPtyWithChannel(terminalId, sessionId, makeOnBytes(cached))
       .then(({ pty_id }) => {
         cached.ptyId = pty_id;
         setIsSpawning(false);
@@ -238,9 +291,7 @@ function usePty(
     if (cached.ptyId) {
       setIsSpawning(false);
     } else {
-      spawnPtyWithChannel(terminalId, sessionId, (bytes) => {
-        cached.terminal.write(new Uint8Array(bytes));
-      })
+      spawnPtyWithChannel(terminalId, sessionId, makeOnBytes(cached))
         .then(({ pty_id }) => {
           if (!isMounted.current) return;
           cached.ptyId = pty_id;
@@ -308,7 +359,14 @@ function useTerminalResize(
     const container = containerRef.current;
     if (!container) return;
 
-    const resizeObserver = new ResizeObserver(() => {
+    // Debounce so a window/pane drag doesn't fire a fit + pty_resize on every
+    // pixel tick, and only round-trip to the backend when the cell grid actually
+    // changes (VSCode debounces resize the same way).
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCols = -1;
+    let lastRows = -1;
+
+    const applyResize = () => {
       const c = terminalCache.get(cacheKey);
       if (!c) return;
       try {
@@ -321,16 +379,25 @@ function useTerminalResize(
       }
       if (c.ptyId) {
         const { cols, rows } = c.terminal;
+        if (cols === lastCols && rows === lastRows) return;
+        lastCols = cols;
+        lastRows = rows;
         invoke("pty_resize", { ptyId: c.ptyId, cols, rows }).catch((err) => {
           if (String(err).includes("PTY not found")) {
             c.ptyId = null;
           }
         });
       }
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(applyResize, 100);
     });
     resizeObserver.observe(container);
 
     return () => {
+      if (debounceTimer !== null) clearTimeout(debounceTimer);
       resizeObserver.disconnect();
     };
   }, [cacheKey]);

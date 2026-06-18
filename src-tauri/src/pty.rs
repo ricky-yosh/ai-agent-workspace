@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system, MasterPty};
 use serde::Serialize;
@@ -12,7 +12,54 @@ use uuid::Uuid;
 
 const DEFAULT_PTY_ROWS: u16 = 24;
 const DEFAULT_PTY_COLS: u16 = 80;
-const PTY_READ_BUFFER_SIZE: usize = 4096;
+const PTY_READ_BUFFER_SIZE: usize = 16384;
+
+// ACK-based flow control, mirroring VSCode's FlowControlConstants. The reader
+// thread pauses once it has sent this many UNACKNOWLEDGED bytes to the frontend,
+// and resumes once acks bring the outstanding count back down to LOW_WATERMARK.
+// This bounds xterm's parse buffer during heavy output (e.g. `cat bigfile`) so
+// the main thread can't be pinned, which is what made the UI laggy.
+const HIGH_WATERMARK: usize = 100_000;
+const LOW_WATERMARK: usize = 5_000;
+
+/// Backpressure bookkeeping shared between a PTY's reader thread (which parks on
+/// the condvar when over the high watermark) and `pty_ack`/`pty_kill` (which
+/// credit acknowledged bytes / signal shutdown and wake the parked reader).
+struct FlowState {
+    unacked: usize,
+    paused: bool,
+    killed: bool,
+}
+
+impl FlowState {
+    /// Reader, before each read: begin pausing once we've sent too much
+    /// unacknowledged output.
+    fn note_before_read(&mut self) {
+        if self.unacked >= HIGH_WATERMARK {
+            self.paused = true;
+        }
+    }
+
+    /// Reader, after waking on the condvar: resume only once acks have drained
+    /// outstanding bytes to the low watermark (hysteresis — prevents thrashing
+    /// at the high boundary).
+    fn note_after_wake(&mut self) {
+        if self.unacked <= LOW_WATERMARK {
+            self.paused = false;
+        }
+    }
+
+    /// Credit acknowledged bytes and clear the pause once drained to the low
+    /// watermark.
+    fn credit(&mut self, bytes: usize) {
+        self.unacked = self.unacked.saturating_sub(bytes);
+        if self.unacked <= LOW_WATERMARK {
+            self.paused = false;
+        }
+    }
+}
+
+type Flow = Arc<(Mutex<FlowState>, Condvar)>;
 
 #[derive(Clone)]
 pub struct SpawnConfig {
@@ -30,6 +77,7 @@ pub struct PtyHandle {
     spawn_config: SpawnConfig,
     _reader_thread: std::thread::JoinHandle<()>,
     is_killed: AtomicBool,
+    flow: Flow,
 }
 
 pub struct PtyStoreInner {
@@ -112,6 +160,19 @@ fn handle_pty_exit(
     }
 }
 
+/// Set `killed = true` on a flow state and wake the (possibly parked) reader so
+/// it falls through to its exit path instead of leaking the thread.
+fn signal_flow_killed(flow: &Flow) {
+    let (lock, cvar) = &**flow;
+    let mut state = match lock.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    state.killed = true;
+    drop(state);
+    cvar.notify_all();
+}
+
 fn run_pty_reader(
     store: Arc<PtyStoreInner>,
     app_handle: tauri::AppHandle,
@@ -119,38 +180,51 @@ fn run_pty_reader(
     _pty_id: String,
     mut reader: Box<dyn Read + Send>,
     on_event: Channel<InvokeResponseBody>,
+    flow: Flow,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = [0u8; PTY_READ_BUFFER_SIZE];
-        let mut acc: Vec<u8> = Vec::with_capacity(65536);
-        let mut last_flush = std::time::Instant::now();
-        const COALESCE_MAX_SIZE: usize = 65536;
-        const COALESCE_MAX_MS: u64 = 16;
-
-        let flush = |acc: &mut Vec<u8>, last_flush: &mut std::time::Instant| {
-            if !acc.is_empty() {
-                let _ = on_event.send(InvokeResponseBody::Raw(acc.clone()));
-                acc.clear();
-                *last_flush = std::time::Instant::now();
-            }
-        };
 
         loop {
+            // Backpressure: park while we've sent too much unacknowledged data.
+            // We never hold the `handles` lock here — only this PTY's own flow
+            // mutex — so acks/kills (which take handles-then-flow) can't deadlock.
+            {
+                let (lock, cvar) = &*flow;
+                let mut state = match lock.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
+                state.note_before_read();
+                while state.paused && !state.killed {
+                    state = match cvar.wait(state) {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    state.note_after_wake();
+                }
+            }
+
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    flush(&mut acc, &mut last_flush);
+                    signal_flow_killed(&flow);
                     handle_pty_exit(&store, &app_handle, &terminal_id);
                     break;
                 }
                 Ok(n) => {
-                    acc.extend_from_slice(&buf[..n]);
-                    let elapsed = last_flush.elapsed().as_millis() as u64;
-                    if acc.len() >= COALESCE_MAX_SIZE || elapsed >= COALESCE_MAX_MS {
-                        flush(&mut acc, &mut last_flush);
-                    }
+                    // Send promptly — no fixed-timer coalescing. xterm batches
+                    // rendering internally on rAF; quantizing output into 16ms
+                    // buckets here only added stutter to animations.
+                    let _ = on_event.send(InvokeResponseBody::Raw(buf[..n].to_vec()));
+                    let (lock, _cvar) = &*flow;
+                    let mut state = match lock.lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    state.unacked += n;
                 }
                 Err(_) => {
-                    flush(&mut acc, &mut last_flush);
+                    signal_flow_killed(&flow);
                     handle_pty_exit(&store, &app_handle, &terminal_id);
                     break;
                 }
@@ -175,6 +249,15 @@ fn spawn_pty_internal(
     };
     let (master, child, reader, writer) = create_pty_pair(config, size)?;
 
+    let flow: Flow = Arc::new((
+        Mutex::new(FlowState {
+            unacked: 0,
+            paused: false,
+            killed: false,
+        }),
+        Condvar::new(),
+    ));
+
     let reader_thread = run_pty_reader(
         Arc::clone(store),
         app_handle.clone(),
@@ -182,6 +265,7 @@ fn spawn_pty_internal(
         pty_id.clone(),
         reader,
         on_event,
+        Arc::clone(&flow),
     );
 
     let handle = PtyHandle {
@@ -192,6 +276,7 @@ fn spawn_pty_internal(
         spawn_config: config.clone(),
         _reader_thread: reader_thread,
         is_killed: AtomicBool::new(false),
+        flow,
     };
 
     let mut handles = lock_handles(&store.handles);
@@ -257,6 +342,37 @@ pub fn pty_write(
     Ok(())
 }
 
+/// Credit `bytes` of acknowledged output back to a PTY's flow controller. The
+/// frontend calls this from xterm's parse-completion callback as it drains the
+/// stream. Clears the paused flag once outstanding bytes fall to the low
+/// watermark and wakes the reader. A missing pty_id (already exited) is not an
+/// error — the ack is simply dropped.
+pub fn pty_ack(
+    store: &PtyStore,
+    pty_id: &str,
+    bytes: usize,
+) -> Result<(), String> {
+    // Clone the flow Arc out under the handles lock, then DROP that lock before
+    // touching the flow mutex — preserves the handles-then-flow lock ordering.
+    let flow = {
+        let handles = lock_handles(store.handles());
+        match handles.values().find(|h| h.pty_id == pty_id) {
+            Some(h) => Arc::clone(&h.flow),
+            None => return Ok(()),
+        }
+    };
+
+    let (lock, cvar) = &*flow;
+    let mut state = match lock.lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    state.credit(bytes);
+    drop(state);
+    cvar.notify_all();
+    Ok(())
+}
+
 pub fn pty_resize(
     store: &PtyStore,
     pty_id: &str,
@@ -284,6 +400,9 @@ pub fn pty_kill(
     let mut handles = lock_handles(store.handles());
     if let Some(handle) = handles.get_mut(terminal_id) {
         handle.is_killed.store(true, Ordering::SeqCst);
+        // Wake the reader if it's parked on backpressure so it exits instead of
+        // leaking the thread; it then falls through to its read() exit path.
+        signal_flow_killed(&handle.flow);
         let _ = handle.child.kill();
     }
     handles.remove(terminal_id);
@@ -333,6 +452,67 @@ mod tests {
         let store = PtyStore::new();
         // Should succeed even if terminal_id doesn't exist (no-op)
         pty_kill(&store, "term-1").unwrap();
+    }
+
+    fn fresh_flow() -> FlowState {
+        FlowState { unacked: 0, paused: false, killed: false }
+    }
+
+    #[test]
+    fn test_flow_pauses_at_high_watermark() {
+        let mut s = fresh_flow();
+        s.unacked = HIGH_WATERMARK - 1;
+        s.note_before_read();
+        assert!(!s.paused, "below high watermark must not pause");
+
+        s.unacked = HIGH_WATERMARK;
+        s.note_before_read();
+        assert!(s.paused, "at/above high watermark must pause");
+    }
+
+    #[test]
+    fn test_flow_resumes_only_at_low_watermark() {
+        let mut s = fresh_flow();
+        s.unacked = HIGH_WATERMARK;
+        s.note_before_read();
+        assert!(s.paused);
+
+        // A wake that only partially drains (still above LOW) stays paused —
+        // hysteresis prevents thrashing at the high boundary.
+        s.unacked = LOW_WATERMARK + 1;
+        s.note_after_wake();
+        assert!(s.paused, "above low watermark must stay paused");
+
+        // Once drained to the low watermark, resume.
+        s.unacked = LOW_WATERMARK;
+        s.note_after_wake();
+        assert!(!s.paused, "at/below low watermark must resume");
+    }
+
+    #[test]
+    fn test_flow_credit_drains_and_clears_pause() {
+        let mut s = fresh_flow();
+        s.unacked = HIGH_WATERMARK;
+        s.paused = true;
+
+        // Crediting part of it (still above LOW) keeps it paused.
+        s.credit(HIGH_WATERMARK - LOW_WATERMARK - 1);
+        assert_eq!(s.unacked, LOW_WATERMARK + 1);
+        assert!(s.paused);
+
+        // Crediting past LOW clears the pause.
+        s.credit(2);
+        assert_eq!(s.unacked, LOW_WATERMARK - 1);
+        assert!(!s.paused);
+    }
+
+    #[test]
+    fn test_flow_credit_saturates_at_zero() {
+        let mut s = fresh_flow();
+        s.unacked = 100;
+        s.credit(1000);
+        assert_eq!(s.unacked, 0, "over-ack must not underflow");
+        assert!(!s.paused);
     }
 
     #[test]
