@@ -68,6 +68,18 @@ pub struct PtyExitPayload {
     pub terminal_id: String,
 }
 
+/// Lock the handles mutex, recovering the guard even if it was poisoned by a
+/// previous panic. This keeps a single panic from permanently bricking the
+/// store: every subsequent `.lock()` would otherwise return `Err` forever.
+fn lock_handles(
+    handles: &Mutex<HashMap<String, PtyHandle>>,
+) -> std::sync::MutexGuard<'_, HashMap<String, PtyHandle>> {
+    match handles.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 fn create_pty_pair(config: &SpawnConfig, size: PtySize) -> Result<(Box<dyn MasterPty + Send>, Box<dyn portable_pty::Child + Send>, Box<dyn Read + Send>, Box<dyn Write + Send>), String> {
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
@@ -86,7 +98,7 @@ fn handle_pty_exit(
     terminal_id: &str,
 ) {
     let was_killed = {
-        let mut handles = store.handles.lock().unwrap();
+        let mut handles = lock_handles(&store.handles);
         if let Some(handle) = handles.remove(terminal_id) {
             handle.is_killed.load(Ordering::SeqCst)
         } else {
@@ -182,20 +194,20 @@ fn spawn_pty_internal(
         is_killed: AtomicBool::new(false),
     };
 
-    let mut handles = store.handles.lock().map_err(|e| e.to_string())?;
+    let mut handles = lock_handles(&store.handles);
     handles.insert(terminal_id.to_string(), handle);
 
     Ok(pty_id)
 }
 
 fn get_existing_pty_id(store: &PtyStore, terminal_id: &str) -> Result<Option<String>, String> {
-    let handles = store.handles().lock().map_err(|e| e.to_string())?;
+    let handles = lock_handles(store.handles());
     Ok(handles.get(terminal_id)
         .and_then(|h| if h.child.process_id().is_some() { Some(h.pty_id.clone()) } else { None }))
 }
 
 fn remove_dead_pty(store: &PtyStore, terminal_id: &str) -> Result<(), String> {
-    let mut handles = store.handles().lock().map_err(|e| e.to_string())?;
+    let mut handles = lock_handles(store.handles());
     if let Some(mut old) = handles.remove(terminal_id) {
         let _ = old.child.kill();
     }
@@ -236,7 +248,7 @@ pub fn pty_write(
     pty_id: &str,
     data: &[u8],
 ) -> Result<(), String> {
-    let mut handles = store.handles().lock().map_err(|e| e.to_string())?;
+    let mut handles = lock_handles(store.handles());
     let handle = handles.values_mut().find(|h| h.pty_id == pty_id)
         .ok_or_else(|| format!("PTY not found: {}", pty_id))?;
 
@@ -251,7 +263,7 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let mut handles = store.handles().lock().map_err(|e| e.to_string())?;
+    let mut handles = lock_handles(store.handles());
     let handle = handles.values_mut().find(|h| h.pty_id == pty_id)
         .ok_or_else(|| format!("PTY not found: {}", pty_id))?;
 
@@ -269,7 +281,7 @@ pub fn pty_kill(
     store: &PtyStore,
     terminal_id: &str,
 ) -> Result<(), String> {
-    let mut handles = store.handles().lock().map_err(|e| e.to_string())?;
+    let mut handles = lock_handles(store.handles());
     if let Some(handle) = handles.get_mut(terminal_id) {
         handle.is_killed.store(true, Ordering::SeqCst);
         let _ = handle.child.kill();
@@ -320,6 +332,26 @@ mod tests {
     fn test_pty_kill_removes_handle() {
         let store = PtyStore::new();
         // Should succeed even if terminal_id doesn't exist (no-op)
+        pty_kill(&store, "term-1").unwrap();
+    }
+
+    #[test]
+    fn test_lock_handles_recovers_from_poison() {
+        let store = PtyStore::new();
+        // Poison the mutex by panicking while holding the guard.
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = store.handles().lock().unwrap();
+            panic!("intentional panic to poison the mutex");
+        }));
+        assert!(poisoned.is_err());
+        assert!(store.handles().lock().is_err(), "mutex should be poisoned");
+
+        // The poison-tolerant helper should still return a usable guard.
+        let handles = lock_handles(store.handles());
+        assert!(handles.is_empty());
+
+        // Public operations relying on the helper keep working post-poison.
+        drop(handles);
         pty_kill(&store, "term-1").unwrap();
     }
 }
