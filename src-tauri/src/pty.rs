@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system, MasterPty};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::Emitter;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use uuid::Uuid;
 
 const DEFAULT_PTY_ROWS: u16 = 24;
@@ -57,13 +58,7 @@ impl PtyStore {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PtyOutputPayload {
-    pub pty_id: String,
-    pub data: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PtySpawnResult {
     pub pty_id: String,
 }
@@ -105,19 +100,13 @@ fn handle_pty_exit(
     }
 }
 
-fn emit_pty_output(app_handle: &tauri::AppHandle, pty_id: &str, data: &[u8]) {
-    let _ = app_handle.emit("pty-output", &PtyOutputPayload {
-        pty_id: pty_id.to_string(),
-        data: data.to_vec(),
-    });
-}
-
 fn run_pty_reader(
     store: Arc<PtyStoreInner>,
     app_handle: tauri::AppHandle,
     terminal_id: String,
-    pty_id: String,
+    _pty_id: String,
     mut reader: Box<dyn Read + Send>,
+    on_event: Channel<InvokeResponseBody>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = [0u8; PTY_READ_BUFFER_SIZE];
@@ -128,7 +117,7 @@ fn run_pty_reader(
 
         let flush = |acc: &mut Vec<u8>, last_flush: &mut std::time::Instant| {
             if !acc.is_empty() {
-                emit_pty_output(&app_handle, &pty_id, acc);
+                let _ = on_event.send(InvokeResponseBody::Raw(acc.clone()));
                 acc.clear();
                 *last_flush = std::time::Instant::now();
             }
@@ -150,6 +139,7 @@ fn run_pty_reader(
                 }
                 Err(_) => {
                     flush(&mut acc, &mut last_flush);
+                    handle_pty_exit(&store, &app_handle, &terminal_id);
                     break;
                 }
             }
@@ -162,6 +152,7 @@ fn spawn_pty_internal(
     app_handle: &tauri::AppHandle,
     terminal_id: &str,
     config: &SpawnConfig,
+    on_event: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
     let pty_id = Uuid::new_v4().to_string();
     let size = PtySize {
@@ -178,6 +169,7 @@ fn spawn_pty_internal(
         terminal_id.to_string(),
         pty_id.clone(),
         reader,
+        on_event,
     );
 
     let handle = PtyHandle {
@@ -226,6 +218,7 @@ pub fn pty_spawn(
     pty_command: Option<String>,
     session_id: String,
     working_directory: String,
+    on_event: Channel<InvokeResponseBody>,
 ) -> Result<PtySpawnResult, String> {
     if let Some(pty_id) = get_existing_pty_id(store, &terminal_id)? {
         return Ok(PtySpawnResult { pty_id });
@@ -234,7 +227,7 @@ pub fn pty_spawn(
     let shell = resolve_shell(pty_command.as_deref());
     let config = SpawnConfig { shell, session_id, working_directory };
     let store_arc = store.arc();
-    let pty_id = spawn_pty_internal(&store_arc, &app_handle, &terminal_id, &config)?;
+    let pty_id = spawn_pty_internal(&store_arc, &app_handle, &terminal_id, &config, on_event)?;
     Ok(PtySpawnResult { pty_id })
 }
 

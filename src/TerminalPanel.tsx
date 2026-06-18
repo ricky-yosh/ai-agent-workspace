@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, type RefObject } from "react"
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "@xterm/xterm/css/xterm.css";
@@ -16,6 +16,7 @@ interface CachedTerminal {
   fitAddon: FitAddon;
   webglAddon: WebglAddon;
   ptyId: string | null;
+  opened: boolean;
 }
 
 class TerminalCache {
@@ -39,16 +40,26 @@ class TerminalCache {
 
 const terminalCache = new TerminalCache();
 
-const ptyOutputCallbacks = new Map<string, (data: number[]) => void>();
 const ptyExitCallbacks = new Map<string, () => void>();
+
+/**
+ * Permanently tear down a terminal. Call this from the explicit panel-close
+ * path (e.g. consuming/joining a pane, or switching a pane away from a
+ * terminal) — NOT from a React unmount, which is transient (StrictMode /
+ * hide-don't-unmount) and must keep the cached terminal alive for reattach.
+ * Disposes the cached xterm instance, kills the backing PTY, and drops the
+ * exit callback so nothing leaks.
+ */
+export function disposeTerminal(terminalId: string): void {
+  terminalCache.dispose(terminalId);
+  ptyExitCallbacks.delete(terminalId);
+  invoke("pty_kill", { terminalId }).catch(() => {});
+}
 
 let globalListenersInitialized = false;
 function ensureGlobalListeners(): void {
   if (globalListenersInitialized) return;
   globalListenersInitialized = true;
-  listen<{ pty_id: string; data: number[] }>("pty-output", (event) => {
-    ptyOutputCallbacks.get(event.payload.pty_id)?.(event.payload.data);
-  });
   listen<{ terminal_id: string }>("pty-exit", (event) => {
     ptyExitCallbacks.get(event.payload.terminal_id)?.();
   });
@@ -68,6 +79,19 @@ function fitAndFocus(
   });
 }
 
+function ensureOpened(cacheKey: string, container: HTMLDivElement): void {
+  const cached = terminalCache.get(cacheKey);
+  if (!cached || cached.opened) return;
+  cached.terminal.open(container);
+  cached.opened = true;
+  requestAnimationFrame(() => {
+    const c = terminalCache.get(cacheKey);
+    if (!c) return;
+    c.fitAddon.fit();
+    c.terminal.focus();
+  });
+}
+
 function useXtermTerminal(
   containerRef: RefObject<HTMLDivElement | null>,
   cacheKey: string,
@@ -81,10 +105,12 @@ function useXtermTerminal(
 
     if (cached) {
       const { terminal, fitAddon } = cached;
-      if (terminal.element) {
+      if (cached.opened && terminal.element) {
         container.appendChild(terminal.element);
+        fitAndFocus(terminal, fitAddon, isMounted);
+      } else if (!cached.opened && container.offsetParent !== null) {
+        ensureOpened(cacheKey, container);
       }
-      fitAndFocus(terminal, fitAddon, isMounted);
     } else {
       const terminal = new Terminal({
         allowProposedApi: true,
@@ -121,10 +147,6 @@ function useXtermTerminal(
       };
       webglAddon.onContextLoss(handleContextLoss);
 
-      terminal.open(container);
-
-      fitAndFocus(terminal, fitAddon, isMounted);
-
       terminal.onData((data) => {
         const c = terminalCache.get(cacheKey);
         if (c?.ptyId) {
@@ -136,18 +158,50 @@ function useXtermTerminal(
         }
       });
 
-      terminalCache.set(cacheKey, { terminal, fitAddon, webglAddon, ptyId: null });
+      // Store in cache first (with opened:false) before calling ensureOpened,
+      // so ensureOpened can find the entry when checking visibility.
+      terminalCache.set(cacheKey, { terminal, fitAddon, webglAddon, ptyId: null, opened: false });
+
+      // Open immediately only if the container is currently visible.
+      // If hidden (display:none on ancestor), defer to first reveal via useTerminalReveal.
+      if (container.offsetParent !== null) {
+        ensureOpened(cacheKey, container);
+      }
     }
 
     return () => {
       isMounted.current = false;
+      // Detach (but DO NOT dispose) the terminal on unmount. The cache is meant
+      // to survive transient unmounts ("hide don't unmount" / StrictMode's
+      // mount→unmount→remount), so the remount can reattach the same terminal.
+      // Disposing here destroyed the terminal and forced the remount to build a
+      // new one, which then diverged from the PTY output Channel the backend had
+      // already bound to the original terminal (idempotent pty_spawn drops the
+      // remount's new channel) — leaving a live terminal wired to nothing.
+      // Real disposal must happen on an explicit panel close, not here.
       const last = terminalCache.get(cacheKey);
       if (last?.terminal.element && last.terminal.element.parentNode === container) {
         container.removeChild(last.terminal.element);
       }
-      terminalCache.dispose(cacheKey);
     };
   }, [cacheKey]);
+}
+
+function spawnPtyWithChannel(
+  terminalId: string,
+  sessionId: string,
+  onBytes: (bytes: ArrayBuffer) => void,
+): Promise<{ pty_id: string }> {
+  // Raw PTY output is streamed as binary (InvokeResponseBody::Raw on the Rust
+  // side), which arrives here as an ArrayBuffer — no JSON number-array encoding.
+  // Process exit is handled separately via the "pty-exit" event (ptyExitCallbacks).
+  const onEvent = new Channel<ArrayBuffer>();
+  onEvent.onmessage = onBytes;
+  return invoke<{ pty_id: string }>("pty_spawn", {
+    terminalId,
+    sessionId,
+    onEvent,
+  });
 }
 
 function usePty(
@@ -161,18 +215,14 @@ function usePty(
   const restartTerminal = useCallback(() => {
     const cached = terminalCache.get(cacheKey);
     if (!cached) return;
-    if (cached.ptyId) {
-      ptyOutputCallbacks.delete(cached.ptyId);
-    }
     cached.ptyId = null;
     setIsExited(false);
     setIsSpawning(true);
-    invoke<{ pty_id: string }>("pty_spawn", { terminalId, sessionId })
+    spawnPtyWithChannel(terminalId, sessionId, (bytes) => {
+      cached.terminal.write(new Uint8Array(bytes));
+    })
       .then(({ pty_id }) => {
         cached.ptyId = pty_id;
-        ptyOutputCallbacks.set(pty_id, (data) => {
-          cached.terminal.write(new Uint8Array(data));
-        });
         setIsSpawning(false);
       })
       .catch((err) => {
@@ -189,13 +239,12 @@ function usePty(
     if (cached.ptyId) {
       setIsSpawning(false);
     } else {
-      invoke<{ pty_id: string }>("pty_spawn", { terminalId, sessionId })
+      spawnPtyWithChannel(terminalId, sessionId, (bytes) => {
+        cached.terminal.write(new Uint8Array(bytes));
+      })
         .then(({ pty_id }) => {
           if (!isMounted.current) return;
           cached.ptyId = pty_id;
-          ptyOutputCallbacks.set(pty_id, (data) => {
-            cached.terminal.write(new Uint8Array(data));
-          });
           setIsSpawning(false);
         })
         .catch((err) => {
@@ -217,10 +266,6 @@ function usePty(
 
     return () => {
       isMounted.current = false;
-      const c = terminalCache.get(cacheKey);
-      if (c?.ptyId) {
-        ptyOutputCallbacks.delete(c.ptyId);
-      }
       ptyExitCallbacks.delete(terminalId);
     };
   }, [cacheKey, sessionId]);
@@ -300,28 +345,23 @@ function useTerminalReveal(
     const container = containerRef.current;
     if (!container) return;
 
-    let wasEverHidden = false;
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
         if (entry.isIntersecting) {
-          if (wasEverHidden) {
-            requestAnimationFrame(() => {
-              const c = terminalCache.get(cacheKey);
-              if (!c) return;
-              c.fitAddon.fit();
-              c.webglAddon.clearTextureAtlas();
-              c.terminal.refresh(0, c.terminal.rows - 1);
-              // focus() is what the click handler does, and clicking is what
-              // empirically un-garbles the view: it kicks the render loop that
-              // was paused while hidden. refresh() alone marks rows dirty but
-              // does not restart the loop.
-              c.terminal.focus();
-            });
-          }
-        } else {
-          wasEverHidden = true;
+          // Lazy-open: open a deferred terminal on first reveal.
+          ensureOpened(cacheKey, container);
+          // After the pane has laid out post-reveal, fit the terminal to the
+          // settled container size and focus it. Without this, a terminal first
+          // revealed during the display:none->block transition gets fit against
+          // a not-yet-laid-out container and stays stuck at ~80x24 in the corner.
+          setTimeout(() => {
+            const c = terminalCache.get(cacheKey);
+            if (!c) return;
+            c.fitAddon.fit();
+            c.terminal.focus();
+          }, 300);
         }
       },
       { threshold: 0 },

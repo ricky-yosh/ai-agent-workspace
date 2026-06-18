@@ -283,6 +283,7 @@ fn pty_spawn(
     app: tauri::AppHandle,
     terminal_id: String,
     session_id: String,
+    on_event: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
 ) -> Result<PtySpawnResult, String> {
     let pty_command = {
         use tauri_plugin_store::StoreExt;
@@ -305,6 +306,7 @@ fn pty_spawn(
         pty_command,
         session_id,
         working_directory,
+        on_event,
     )
 }
 

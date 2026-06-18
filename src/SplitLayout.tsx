@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import { getPanel } from "./panelRegistry";
+import { disposeTerminal } from "./TerminalPanel";
 import PanelTypeSelector from "./PanelTypeSelector";
 import SashContextMenu from "./SashContextMenu";
 import { PanelContext } from "./PanelContext";
@@ -283,7 +283,7 @@ function useJoinMode(
 
       onChange(newTree);
       if (consumedTerminalId) {
-        invoke("pty_kill", { terminalId: consumedTerminalId }).catch(() => {});
+        disposeTerminal(consumedTerminalId);
       }
       cleanupJoinMode();
     };
@@ -434,6 +434,12 @@ function renderPanelNode(
             currentType={panel_type}
             onTypeSelect={(newType) => {
               if (!onLayoutChange) return;
+              // Switching a terminal pane to a non-terminal type permanently
+              // removes that terminal — tear it down so the cached xterm and
+              // its PTY don't leak.
+              if (panel_type === "terminal" && newType !== "terminal" && node.panel.terminal_id) {
+                disposeTerminal(node.panel.terminal_id);
+              }
               const newNode: LayoutNode = {
                 panel: {
                   panel_type: newType,
