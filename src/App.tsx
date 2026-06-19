@@ -356,13 +356,19 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   const [saveAsTarget, setSaveAsTarget] = useState<LayoutTree | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [focusedPath, setFocusedPath] = useState<number[] | null>(null);
+  const focusedPathRef = useRef<number[] | null>(null);
   const [zoomedPath, setZoomedPath] = useState<number[] | null>(null);
 
   const toggleZoom = useCallback(() => {
-    if (!focusedPath) return;
+    const fp = focusedPathRef.current;
+    if (!fp) return;
     setZoomedPath((prev) =>
-      prev && pathsEqual(prev, focusedPath) ? null : focusedPath
+      prev && pathsEqual(prev, fp) ? null : fp
     );
+  }, []);
+
+  useEffect(() => {
+    focusedPathRef.current = focusedPath;
   }, [focusedPath]);
 
   useEffect(() => {
@@ -529,7 +535,7 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
   }, [activeSessionId, setActiveSessionId, refreshSessions, addToast]);
 
   useKeyboardShortcuts([
-    { key: "?", handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
+    { key: "?", shift: true, handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
     { code: "BracketRight", meta: true, shift: true, handler: () => handleCycle(1) },
     { code: "BracketLeft", meta: true, shift: true, handler: () => handleCycle(-1) },
     { key: "ArrowDown", meta: true, alt: true, handler: () => handleCycle(1), ignoreInputs: true },

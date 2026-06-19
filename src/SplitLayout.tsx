@@ -325,7 +325,8 @@ function renderSplitNode(
   onLayoutChange: ((tree: LayoutTree) => void) | undefined,
   joinState: JoinState | null,
   startJoinMode: (splitPath: number[], direction: "vertical" | "horizontal") => void,
-  renderChild: (node: LayoutNode, path: number[]) => React.ReactNode,
+  renderChild: (node: LayoutNode, path: number[], isZoomed?: boolean) => React.ReactNode,
+  isZoomed?: boolean,
 ): React.ReactNode {
   const { direction, ratio, children } = node.split;
   const firstSize = Math.round(ratio * 100);
@@ -373,7 +374,7 @@ function renderSplitNode(
               key={i}
               className={`split-layout-pane${isConsumed ? " join-consumed" : ""}`}
             >
-              {renderChild(child, [...path, i])}
+              {renderChild(child, [...path, i], isZoomed)}
             </div>
           );
         })}
@@ -390,29 +391,20 @@ function renderPanelNode(
   focusedPath: number[] | null | undefined,
   onFocusedPathChange: ((path: number[]) => void) | undefined,
   splitDrag: SplitDragState | null,
-  zoomedPath: number[] | null | undefined,
   treeRef: React.MutableRefObject<LayoutTree>,
   onLayoutChange: ((tree: LayoutTree) => void) | undefined,
   onCornerDragStart: (e: React.MouseEvent, dragPath: number[], corner: "tl" | "tr" | "bl" | "br") => void,
+  isZoomed?: boolean,
 ): React.ReactNode {
   const { panel_type } = node.panel;
   const PanelComponent = getPanel(panel_type);
-  const isZoomMode = zoomedPath && zoomedPath.length > 0;
-  const isZoomed = isZoomMode && pathsEqual(zoomedPath, path);
 
   return (
     <div
       className={`split-layout-panel-outer${pathsEqual(focusedPath, path) ? " focused" : ""}`}
-      style={
-        isZoomMode
-          ? isZoomed
-            ? { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100 }
-            : { display: 'none' }
-          : undefined
-      }
       onMouseDown={() => onFocusedPathChange?.(path)}
     >
-      {!splitDrag && (
+      {!splitDrag && !isZoomed && (
         <>
           <div
             className="corner-handle corner-tl"
@@ -513,16 +505,22 @@ export default function SplitLayout({ workspaceId, sessionId, tree, onLayoutChan
     setSplitDrag(dragState);
   }
 
-  function renderNode(node: LayoutNode, path: number[] = []): React.ReactNode {
+  function renderNode(node: LayoutNode, path: number[] = [], isZoomed = false): React.ReactNode {
     if ("split" in node) {
-      return renderSplitNode(node, path, treeRef, onLayoutChange, joinState, startJoinMode, renderNode);
+      return renderSplitNode(node, path, treeRef, onLayoutChange, joinState, startJoinMode, renderNode, isZoomed);
     }
-    return renderPanelNode(node, path, workspaceId, sessionId, focusedPath, onFocusedPathChange, splitDrag, zoomedPath, treeRef, onLayoutChange, handleCornerDragStart);
+    return renderPanelNode(node, path, workspaceId, sessionId, focusedPath, onFocusedPathChange, splitDrag, treeRef, onLayoutChange, handleCornerDragStart, isZoomed);
   }
+
+  const zoomedNode = zoomedPath != null && zoomedPath.length > 0
+    ? getNodeAtPath(tree.tree, zoomedPath)
+    : null;
 
   return (
     <div className="split-layout">
-      {renderNode(tree.tree)}
+      {zoomedNode && zoomedPath
+        ? renderNode(zoomedNode, zoomedPath, true)
+        : renderNode(tree.tree)}
     </div>
   );
 }
