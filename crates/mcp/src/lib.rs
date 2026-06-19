@@ -10,7 +10,6 @@ use ai_agent_workspace_core::Screen;
 use ai_agent_workspace_core::DomainEvent;
 use ai_agent_workspace_core::Axis;
 use ai_agent_workspace_commands::{AppState, Command, CommandResult, ExecutionOutcome, execute};
-use serde_json;
 #[cfg(feature = "tauri-integration")]
 use tauri::{Emitter, Manager};
 
@@ -20,19 +19,27 @@ fn make_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Optio
     Some(std::sync::Arc::new(move || { let _ = h.emit(event, ()); }) as std::sync::Arc<dyn Fn() + Send + Sync>)
 }
 
+#[cfg(feature = "tauri-integration")]
+fn make_workspace_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>> {
+    let h = handle.clone();
+    Some(std::sync::Arc::new(move |session_id: String, screen: Screen| {
+        let _ = h.emit(event, serde_json::json!({ "session_id": session_id, "screen": screen }));
+    }) as std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>)
+}
+
 fn invoke_callbacks(
     events: &[DomainEvent],
     session_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     layouts_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    workspace_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    workspace_cb: &Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>>,
 ) {
     for event in events {
         match event {
             DomainEvent::SessionsChanged => {
                 if let Some(cb) = session_cb { cb(); }
             }
-            DomainEvent::WorkspaceChanged { .. } => {
-                if let Some(cb) = workspace_cb { cb(); }
+            DomainEvent::WorkspaceChanged { session_id, screen } => {
+                if let Some(cb) = workspace_cb { cb(session_id.clone(), screen.clone()); }
             }
             DomainEvent::LayoutsChanged => {
                 if let Some(cb) = layouts_cb { cb(); }
@@ -98,7 +105,7 @@ macro_rules! run_mcp_command {
 pub struct McpHandler {
     pub db: Database,
     pub on_session_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    pub on_workspace_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>>,
     pub on_layouts_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     pub resolved_session_id: Option<String>,
     pub resolution_source: String,
@@ -592,7 +599,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let handle = app.app_handle().clone();
 
             let on_session_changed = make_change_callback(&handle, "sessions-changed");
-            let on_workspace_changed = make_change_callback(&handle, "workspace-changed");
+            let on_workspace_changed = make_workspace_change_callback(&handle, "workspace-changed");
             let on_layouts_changed = make_change_callback(&handle, "layouts-changed");
 
             std::thread::spawn(move || {

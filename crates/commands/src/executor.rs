@@ -154,7 +154,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             tx.commit()
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
 
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::WorkspaceRemove { session_id, workspace_id } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -172,27 +173,43 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 }
             }
 
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = {
+                let s = sessions_repo.get(&session_id)
+                    .map_err(|e| CommandError::not_found_from_sql("session", &session_id, e))?;
+                match s.active_workspace_id {
+                    Some(ref id) => workspaces_repo.get(id)
+                        .ok()
+                        .map(|w| w.current_screen)
+                        .unwrap_or_default(),
+                    None => Screen::default(),
+                }
+            };
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::WorkspaceRename { session_id, workspace_id, new_name } => {
             let workspaces_repo = state.db.workspaces(&conn);
             workspaces_repo.rename(&workspace_id, &new_name)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = workspaces_repo.get(&workspace_id)
+                .ok()
+                .map(|ws| ws.current_screen)
+                .unwrap_or_default();
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::WorkspaceSetActive { session_id, workspace_id } => {
             let workspaces_repo = state.db.workspaces(&conn);
-            let _ws = workspaces_repo.get(&workspace_id)
+            let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let screen = ws.current_screen.clone();
             let sessions_repo = state.db.sessions(&conn);
             sessions_repo.set_active_workspace(&session_id, &workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::WorkspaceUpdateScreen { session_id, workspace_id, screen } => {
             let workspaces_repo = state.db.workspaces(&conn);
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id, screen: screen.clone() }))
         }
         Command::WorkspaceReset { session_id, workspace_id } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -202,7 +219,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let template = layouts_repo.get(&ws.template_id)?;
             workspaces_repo.update_screen(&workspace_id, &template.screen)?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::SplitArea { session_id, workspace_id, area_id, axis, factor } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -216,7 +234,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -230,7 +249,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::CloseArea { session_id, workspace_id, area_id } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -244,7 +264,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::ResizeEdge { session_id, workspace_id, edge_id, position } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -258,7 +279,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
         Command::ChangePanelType { session_id, workspace_id, area_id, panel_type } => {
             let workspaces_repo = state.db.workspaces(&conn);
@@ -272,7 +294,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+            let screen = ws.current_screen.clone();
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, screen }))
         }
     }
 }
@@ -455,11 +478,19 @@ mod tests {
             },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
         let ws = match outcome.result {
             CommandResult::Workspace(w) => w,
             _ => panic!("Expected Workspace"),
         };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen");
+                assert_eq!(screen.areas.len(), 1, "Screen should have 1 area after add");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
         assert_eq!(ws.name, "General");
         assert_eq!(ws.template_id, layout.id);
 
@@ -536,6 +567,61 @@ mod tests {
     }
 
     #[test]
+    fn test_workspace_remove_last_workspace() {
+        let (state, _tmp) = setup();
+
+        // Create a session (this also creates a default workspace)
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        // Open to get the auto-created workspace
+        let outcome = execute(
+            Command::SessionOpen { session_id: session.id.clone() },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        let ws_id = session.workspaces[0].id.clone();
+
+        // Remove the only workspace
+        let outcome = execute(
+            Command::WorkspaceRemove {
+                session_id: session.id.clone(),
+                workspace_id: ws_id,
+            },
+            &state,
+        ).unwrap();
+
+        // The event should carry a fresh default screen (1 blank area, 4 border edges)
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen.areas.len(), 1, "Screen should have 1 default area when no workspace remains");
+                assert_eq!(screen.vertices.len(), 4, "Default screen has 4 vertices");
+                assert_eq!(screen.edges.len(), 4, "Default screen has 4 edges");
+                assert!(screen.edges.iter().all(|e| e.border), "All edges should be border edges");
+                assert_eq!(screen.areas[0].panel_type, "blank", "Default area should be blank");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
+
+        // CommandResult should be Unit (not Workspace)
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+    }
+
+    #[test]
     fn test_event_assignment_per_command_category() {
         let (state, _tmp) = setup();
 
@@ -574,19 +660,33 @@ mod tests {
         ).unwrap();
         assert!(matches!(outcome.events.as_slice(), [DomainEvent::LayoutsChanged]));
 
-        // Workspace mutating commands → WorkspaceChanged { session_id }
+        // Workspace mutating commands → WorkspaceChanged { session_id, screen }
         let outcome = execute(
             Command::WorkspaceAdd { session_id: sid.clone(), template_id: lid.clone() },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { session_id: ref s }] if s == &sid));
         let wid = match outcome.result { CommandResult::Workspace(w) => w.id, _ => unreachable!() };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: s, screen } => {
+                assert_eq!(s, &sid, "Session ID should match");
+                assert_eq!(screen.areas.len(), 1, "Screen should have 1 area after add");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
 
         let outcome = execute(
             Command::WorkspaceRename { session_id: sid.clone(), workspace_id: wid.clone(), new_name: "W2".into() },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { session_id: ref s }] if s == &sid));
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: s, screen } => {
+                assert_eq!(s, &sid, "Session ID should match");
+                assert_eq!(screen.areas.len(), 1, "Screen should have 1 area after rename");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
 
         // Read-only commands → empty events
         let outcome = execute(Command::SessionList, &state).unwrap();
@@ -642,11 +742,20 @@ mod tests {
             },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
         let ws = match outcome.result {
             CommandResult::Workspace(w) => w,
             _ => panic!("Expected Workspace"),
         };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen");
+                assert_eq!(screen.areas.len(), 2, "Event screen should have 2 areas after split");
+                assert_eq!(screen.vertices.len(), 6, "Event screen should have 6 vertices after split");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
         assert_eq!(ws.current_screen.areas.len(), 2, "Should have 2 areas after split");
         assert_eq!(ws.current_screen.vertices.len(), 6, "Should have 6 vertices after split");
     }
@@ -693,6 +802,15 @@ mod tests {
             _ => panic!("Expected Workspace"),
         };
         assert_eq!(ws.current_screen.areas[0].panel_type, "terminal");
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen");
+                assert_eq!(screen.areas[0].panel_type, "terminal", "Event screen should reflect updated panel type");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
     }
 
     fn create_session_with_workspace(state: &AppState) -> (ai_agent_workspace_core::Session, ai_agent_workspace_core::WorkspaceInstance) {
@@ -754,11 +872,19 @@ mod tests {
             },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
         let ws = match outcome.result {
             CommandResult::Workspace(w) => w,
             _ => panic!("Expected Workspace"),
         };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen");
+                assert_eq!(screen.areas.len(), 1, "Event screen should have 1 area after join");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
         assert_eq!(ws.current_screen.areas.len(), 1, "Should have 1 area after join");
     }
 
@@ -795,11 +921,19 @@ mod tests {
             },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
         let ws = match outcome.result {
             CommandResult::Workspace(w) => w,
             _ => panic!("Expected Workspace"),
         };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen");
+                assert_eq!(screen.areas.len(), 1, "Event screen should have 1 area after close");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
         assert_eq!(ws.current_screen.areas.len(), 1, "Should have 1 area after close");
     }
 
@@ -847,11 +981,18 @@ mod tests {
             },
             &state,
         ).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
         let ws = match outcome.result {
             CommandResult::Workspace(w) => w,
             _ => panic!("Expected Workspace"),
         };
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::WorkspaceChanged { session_id: sid, screen } => {
+                assert_eq!(sid, &session.id);
+                assert_eq!(screen, &ws.current_screen, "Event screen should match workspace screen after resize");
+            }
+            _ => panic!("Expected WorkspaceChanged"),
+        }
 
         // Verify the edge moved — find the edge again and check vertex positions
         let resized_edge = ws.current_screen.edges.iter().find(|e| e.id == internal_edge.id).unwrap();
