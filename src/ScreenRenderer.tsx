@@ -113,6 +113,43 @@ export default function ScreenRenderer({
     : screen.areas;
 
   // ------------------------------------------------------------------
+  // Resize snapping helpers
+  // ------------------------------------------------------------------
+
+  const SNAP_GRID = 1 / 12; // ~8.33%
+  const SNAP_THRESHOLD = 0.015; // snap if within 1.5% of a snap point
+
+  function snapPosition(
+    rawPos: number,
+    screen: Screen,
+    edgeId: string,
+    isHorizontal: boolean,
+  ): number {
+    // 1. Grid snap
+    let snapped = rawPos;
+    const gridSnapped = Math.round(rawPos / SNAP_GRID) * SNAP_GRID;
+    if (Math.abs(gridSnapped - rawPos) < SNAP_THRESHOLD) {
+      snapped = gridSnapped;
+    }
+
+    // 2. Vertex snap — find other vertices on the same axis near this position
+    const edge = screen.edges.find((e) => e.id === edgeId);
+    if (!edge) return snapped;
+
+    const axisCoord: "x" | "y" = isHorizontal ? "y" : "x";
+
+    for (const v of screen.vertices) {
+      const vertexPos = axisCoord === "x" ? v.x : v.y;
+      if (Math.abs(vertexPos - snapped) < SNAP_THRESHOLD) {
+        snapped = vertexPos;
+        break;
+      }
+    }
+
+    return snapped;
+  }
+
+  // ------------------------------------------------------------------
   // Sash drag
   // ------------------------------------------------------------------
   useEffect(() => {
@@ -323,10 +360,23 @@ export default function ScreenRenderer({
     (e: React.MouseEvent, edge: Edge) => {
       e.preventDefault();
       e.stopPropagation();
-      sashDragRef.current = edge;
-      setSashDrag(edge);
+
+      const v1 = vertexMap.get(edge.v1);
+      const v2 = vertexMap.get(edge.v2);
+      if (!v1 || !v2) return;
+
+      const isHorizontal = Math.abs(v1.y - v2.y) < EPSILON;
+      const position = isHorizontal ? v1.y : v1.x;
+
+      const state: SashDragState = {
+        edgeId: edge.id,
+        isHorizontal,
+        position,
+      };
+      sashDragRef.current = state;
+      setSashDrag(state);
     },
-    [],
+    [vertexMap],
   );
 
   const handleSashDoubleClick = useCallback(
