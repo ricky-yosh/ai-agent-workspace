@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::domain::{Session, SessionState, SessionSummary, WorkspaceInstance, LayoutTree};
+use crate::domain::{Session, SessionState, SessionSummary, WorkspaceInstance, Screen};
 
 fn now_epoch_millis() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -37,9 +37,9 @@ pub struct SessionRepository<'a> {
 }
 
 impl<'a> SessionRepository<'a> {
-    pub fn new(db_path: &PathBuf, conn: &'a Connection) -> Self {
+    pub fn new(db_path: &Path, conn: &'a Connection) -> Self {
         SessionRepository {
-            _db_path: db_path.clone(),
+            _db_path: db_path.to_path_buf(),
             conn,
         }
     }
@@ -182,13 +182,13 @@ impl<'a> SessionRepository<'a> {
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
             let tree_json: String = row.get(3)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             Ok(WorkspaceInstance {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 template_id: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                current_tree: tree,
+                current_screen: screen,
             })
         })?;
         rows.collect()
@@ -345,7 +345,7 @@ mod tests {
 
         let layout = {
             let repo = db.layouts(&conn);
-            repo.create("General", crate::domain::LayoutTree::default_layout(), false).unwrap()
+            repo.create("General", crate::domain::Screen::default(), false).unwrap()
         };
 
         let session = {
@@ -355,7 +355,7 @@ mod tests {
 
         let ws = {
             let repo = db.workspaces(&conn);
-            repo.create(&session.id, "General", &layout.id, crate::domain::LayoutTree::default_layout()).unwrap()
+            repo.create(&session.id, "General", &layout.id, crate::domain::Screen::default()).unwrap()
         };
 
         {

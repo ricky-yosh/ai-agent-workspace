@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::domain::{WorkspaceInstance, LayoutTree};
+use crate::domain::{WorkspaceInstance, Screen};
 
 pub struct WorkspaceRepository<'a> {
     _db_path: PathBuf,
@@ -10,9 +10,9 @@ pub struct WorkspaceRepository<'a> {
 }
 
 impl<'a> WorkspaceRepository<'a> {
-    pub fn new(db_path: &PathBuf, conn: &'a Connection) -> Self {
+    pub fn new(db_path: &Path, conn: &'a Connection) -> Self {
         WorkspaceRepository {
-            _db_path: db_path.clone(),
+            _db_path: db_path.to_path_buf(),
             conn,
         }
     }
@@ -22,22 +22,22 @@ impl<'a> WorkspaceRepository<'a> {
         session_id: &str,
         name: &str,
         template_id: &str,
-        tree: LayoutTree,
+        screen: Screen,
     ) -> Result<WorkspaceInstance, rusqlite::Error> {
         let id = Uuid::new_v4().to_string();
-        let tree_json = serde_json::to_string(&tree)
+        let screen_json = serde_json::to_string(&screen)
             .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
         let template_id_opt = if template_id.is_empty() { None } else { Some(template_id) };
         self.conn.execute(
             "INSERT INTO workspaces (id, session_id, name, template_id, current_tree)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, session_id, name, template_id_opt, tree_json],
+            params![id, session_id, name, template_id_opt, screen_json],
         )?;
         Ok(WorkspaceInstance {
             id,
             name: name.to_string(),
             template_id: template_id.to_string(),
-            current_tree: tree,
+            current_screen: screen,
         })
     }
 
@@ -47,13 +47,13 @@ impl<'a> WorkspaceRepository<'a> {
         )?;
         stmt.query_row(params![id], |row| {
             let tree_json: String = row.get(3)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             Ok(WorkspaceInstance {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 template_id: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                current_tree: tree,
+                current_screen: screen,
             })
         })
     }
@@ -64,13 +64,13 @@ impl<'a> WorkspaceRepository<'a> {
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
             let tree_json: String = row.get(3)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             Ok(WorkspaceInstance {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 template_id: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                current_tree: tree,
+                current_screen: screen,
             })
         })?;
         rows.collect()
@@ -84,12 +84,12 @@ impl<'a> WorkspaceRepository<'a> {
         Ok(())
     }
 
-    pub fn update_tree(&self, id: &str, tree: &LayoutTree) -> Result<(), rusqlite::Error> {
-        let tree_json = serde_json::to_string(tree)
+    pub fn update_screen(&self, id: &str, screen: &Screen) -> Result<(), rusqlite::Error> {
+        let screen_json = serde_json::to_string(screen)
             .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
         let affected = self.conn.execute(
             "UPDATE workspaces SET current_tree = ?1 WHERE id = ?2",
-            params![tree_json, id],
+            params![screen_json, id],
         )?;
         if affected == 0 {
             return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -138,8 +138,8 @@ mod tests {
         Database::new(":memory:".into())
     }
 
-    fn default_tree() -> crate::domain::LayoutTree {
-        crate::domain::LayoutTree::default_layout()
+    fn default_screen() -> crate::domain::Screen {
+        crate::domain::Screen::default()
     }
 
     fn create_test_session(db: &Database, conn: &rusqlite::Connection) -> String {
@@ -154,7 +154,7 @@ mod tests {
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        let ws = repo.create(&session_id, "General", "", default_tree()).unwrap();
+        let ws = repo.create(&session_id, "General", "", default_screen()).unwrap();
         assert_eq!(ws.name, "General");
         assert!(ws.template_id.is_empty());
     }
@@ -165,8 +165,8 @@ mod tests {
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        repo.create(&session_id, "WS1", "", default_tree()).unwrap();
-        repo.create(&session_id, "WS2", "", default_tree()).unwrap();
+        repo.create(&session_id, "WS1", "", default_screen()).unwrap();
+        repo.create(&session_id, "WS2", "", default_screen()).unwrap();
         let list = repo.list_by_session(&session_id).unwrap();
         assert_eq!(list.len(), 2);
     }
@@ -177,7 +177,7 @@ mod tests {
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        let created = repo.create(&session_id, "Test", "", default_tree()).unwrap();
+        let created = repo.create(&session_id, "Test", "", default_screen()).unwrap();
         let got = repo.get(&created.id).unwrap();
         assert_eq!(got.id, created.id);
     }
@@ -188,27 +188,23 @@ mod tests {
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        let created = repo.create(&session_id, "Test", "", default_tree()).unwrap();
+        let created = repo.create(&session_id, "Test", "", default_screen()).unwrap();
         repo.delete(&created.id).unwrap();
         assert!(repo.get(&created.id).is_err());
     }
 
     #[test]
-    fn test_update_tree() {
+    fn test_update_screen() {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        let created = repo.create(&session_id, "Test", "", default_tree()).unwrap();
-        let new_tree = crate::domain::LayoutTree {
-            tree: crate::domain::LayoutNode::Panel {
-                panel_type: "tasks".into(),
-                terminal_id: None,
-            },
-        };
-        repo.update_tree(&created.id, &new_tree).unwrap();
+        let created = repo.create(&session_id, "Test", "", default_screen()).unwrap();
+        let mut new_screen = crate::domain::Screen::default();
+        new_screen.areas[0].panel_type = "tasks".to_string();
+        repo.update_screen(&created.id, &new_screen).unwrap();
         let got = repo.get(&created.id).unwrap();
-        assert_eq!(got.current_tree, new_tree);
+        assert_eq!(got.current_screen, new_screen);
     }
 
     #[test]
@@ -218,8 +214,8 @@ mod tests {
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
         assert_eq!(repo.count_by_session(&session_id).unwrap(), 0);
-        repo.create(&session_id, "WS1", "", default_tree()).unwrap();
-        repo.create(&session_id, "WS2", "", default_tree()).unwrap();
+        repo.create(&session_id, "WS1", "", default_screen()).unwrap();
+        repo.create(&session_id, "WS2", "", default_screen()).unwrap();
         assert_eq!(repo.count_by_session(&session_id).unwrap(), 2);
     }
 
@@ -229,7 +225,7 @@ mod tests {
         let conn = db.connection().unwrap();
         let session_id = create_test_session(&db, &conn);
         let repo = db.workspaces(&conn);
-        let created = repo.create(&session_id, "Old Name", "", default_tree()).unwrap();
+        let created = repo.create(&session_id, "Old Name", "", default_screen()).unwrap();
         repo.rename(&created.id, "New Name").unwrap();
         let got = repo.get(&created.id).unwrap();
         assert_eq!(got.name, "New Name");
@@ -243,12 +239,12 @@ mod tests {
 
         let layout = {
             let repo = db.layouts(&conn);
-            repo.create("General", default_tree(), false).unwrap()
+            repo.create("General", default_screen(), false).unwrap()
         };
 
         let ws = {
             let repo = db.workspaces(&conn);
-            repo.create(&session_id, "WS", &layout.id, default_tree()).unwrap()
+            repo.create(&session_id, "WS", &layout.id, default_screen()).unwrap()
         };
 
         assert_eq!(ws.template_id, layout.id);

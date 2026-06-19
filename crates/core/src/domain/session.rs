@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::layout::LayoutTree;
+use super::screen::Screen;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -15,7 +15,7 @@ pub struct WorkspaceInstance {
     pub id: String,
     pub name: String,
     pub template_id: String,
-    pub current_tree: LayoutTree,
+    pub current_screen: Screen,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

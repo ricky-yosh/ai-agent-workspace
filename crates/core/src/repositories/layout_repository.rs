@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::domain::{Layout, LayoutTree};
+use crate::domain::{Layout, Screen};
 
 fn now_epoch_millis() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -14,9 +14,9 @@ pub struct LayoutRepository<'a> {
 }
 
 impl<'a> LayoutRepository<'a> {
-    pub fn new(db_path: &PathBuf, conn: &'a Connection) -> Self {
+    pub fn new(db_path: &Path, conn: &'a Connection) -> Self {
         LayoutRepository {
-            _db_path: db_path.clone(),
+            _db_path: db_path.to_path_buf(),
             conn,
         }
     }
@@ -27,13 +27,13 @@ impl<'a> LayoutRepository<'a> {
         )?;
         let rows = stmt.query_map([], |row| {
             let tree_json: String = row.get(2)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             let built_in: i32 = row.get(3)?;
             Ok(Layout {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                tree,
+                screen,
                 built_in: built_in != 0,
             })
         })?;
@@ -46,32 +46,32 @@ impl<'a> LayoutRepository<'a> {
         )?;
         stmt.query_row(params![id], |row| {
             let tree_json: String = row.get(2)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             let built_in: i32 = row.get(3)?;
             Ok(Layout {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                tree,
+                screen,
                 built_in: built_in != 0,
             })
         })
     }
 
-    pub fn create(&self, name: &str, tree: LayoutTree, built_in: bool) -> Result<Layout, rusqlite::Error> {
+    pub fn create(&self, name: &str, screen: Screen, built_in: bool) -> Result<Layout, rusqlite::Error> {
         let id = Uuid::new_v4().to_string();
         let now = now_epoch_millis();
-        let tree_json = serde_json::to_string(&tree)
+        let screen_json = serde_json::to_string(&screen)
             .map_err(|e| rusqlite::Error::InvalidParameterName(e.to_string()))?;
         self.conn.execute(
             "INSERT INTO layouts (id, name, tree, built_in, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, name, tree_json, built_in as i32, now, now],
+            params![id, name, screen_json, built_in as i32, now, now],
         )?;
         Ok(Layout {
             id,
             name: name.to_string(),
-            tree,
+            screen,
             built_in,
         })
     }
@@ -134,13 +134,13 @@ impl<'a> LayoutRepository<'a> {
         )?;
         stmt.query_row(params![name], |row| {
             let tree_json: String = row.get(2)?;
-            let tree: LayoutTree = serde_json::from_str(&tree_json)
-                .unwrap_or_else(|_| crate::domain::LayoutTree::default_layout());
+            let screen: Screen = serde_json::from_str(&tree_json)
+                .unwrap_or_else(|_| Screen::default());
             let built_in: i32 = row.get(3)?;
             Ok(Layout {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                tree,
+                screen,
                 built_in: built_in != 0,
             })
         })
@@ -155,8 +155,8 @@ mod tests {
         Database::new(":memory:".into())
     }
 
-    fn default_tree() -> crate::domain::LayoutTree {
-        crate::domain::LayoutTree::default_layout()
+    fn default_screen() -> crate::domain::Screen {
+        crate::domain::Screen::default()
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let layout = repo.create("Test", default_tree(), false).unwrap();
+        let layout = repo.create("Test", default_screen(), false).unwrap();
         assert_eq!(layout.name, "Test");
         assert!(!layout.built_in);
     }
@@ -174,8 +174,8 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        repo.create("A", default_tree(), false).unwrap();
-        repo.create("B", default_tree(), false).unwrap();
+        repo.create("A", default_screen(), false).unwrap();
+        repo.create("B", default_screen(), false).unwrap();
         let list = repo.list().unwrap();
         assert_eq!(list.len(), 2);
     }
@@ -185,7 +185,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("Test", default_tree(), false).unwrap();
+        let created = repo.create("Test", default_screen(), false).unwrap();
         let got = repo.get(&created.id).unwrap();
         assert_eq!(got.id, created.id);
     }
@@ -195,7 +195,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("Test", default_tree(), false).unwrap();
+        let created = repo.create("Test", default_screen(), false).unwrap();
         repo.delete(&created.id).unwrap();
         assert!(repo.get(&created.id).is_err());
     }
@@ -205,7 +205,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("General", default_tree(), true).unwrap();
+        let created = repo.create("General", default_screen(), true).unwrap();
         let result = repo.delete_non_builtin(&created.id);
         assert!(result.is_err());
     }
@@ -215,8 +215,8 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        repo.create("User", default_tree(), false).unwrap();
-        repo.create("General", default_tree(), true).unwrap();
+        repo.create("User", default_screen(), false).unwrap();
+        repo.create("General", default_screen(), true).unwrap();
         repo.delete_all().unwrap();
         let remaining = repo.list().unwrap();
         assert_eq!(remaining.len(), 1);
@@ -228,7 +228,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("Old", default_tree(), false).unwrap();
+        let created = repo.create("Old", default_screen(), false).unwrap();
         repo.rename(&created.id, "New").unwrap();
         let got = repo.get(&created.id).unwrap();
         assert_eq!(got.name, "New");
@@ -239,7 +239,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("General", default_tree(), true).unwrap();
+        let created = repo.create("General", default_screen(), true).unwrap();
         let result = repo.rename_non_builtin(&created.id, "Not General");
         assert!(result.is_err());
     }
@@ -249,7 +249,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        repo.create("General", default_tree(), true).unwrap();
+        repo.create("General", default_screen(), true).unwrap();
         let found = repo.find_by_name("General").unwrap();
         assert!(found.built_in);
     }
@@ -259,7 +259,7 @@ mod tests {
         let db = setup_db();
         let conn = db.connection().unwrap();
         let repo = db.layouts(&conn);
-        let created = repo.create("General", default_tree(), true).unwrap();
+        let created = repo.create("General", default_screen(), true).unwrap();
         let got = repo.get(&created.id).unwrap();
         assert!(got.built_in);
     }

@@ -3,5 +3,5 @@ pub mod repositories;
 pub mod domain;
 pub mod graph;
 
-pub use domain::{Session, SessionState, SessionSummary, WorkspaceInstance, Direction, LayoutNode, LayoutTree, Layout, DomainEvent, Vertex, Edge, Area, Screen};
-pub use graph::{Axis, Adjacency};
+pub use domain::{Session, SessionState, SessionSummary, WorkspaceInstance, Layout, DomainEvent, Vertex, Edge, Area, Screen};
+pub use graph::Axis;

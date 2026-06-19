@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
+use super::screen::Screen;
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
@@ -28,22 +30,13 @@ pub struct LayoutTree {
     pub tree: LayoutNode,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct Layout {
     pub id: String,
     pub name: String,
-    pub tree: LayoutTree,
+    pub screen: Screen,
     #[serde(default)]
     pub built_in: bool,
 }
 
-impl LayoutTree {
-    pub fn default_layout() -> Self {
-        LayoutTree {
-            tree: LayoutNode::Panel {
-                panel_type: "blank".into(),
-                terminal_id: None,
-            },
-        }
-    }
-}
+
