@@ -121,7 +121,7 @@ export default function ScreenRenderer({
 
   function snapPosition(
     rawPos: number,
-    screen: Screen,
+    currentScreen: Screen,
     edgeId: string,
     isHorizontal: boolean,
   ): number {
@@ -133,12 +133,12 @@ export default function ScreenRenderer({
     }
 
     // 2. Vertex snap — find other vertices on the same axis near this position
-    const edge = screen.edges.find((e) => e.id === edgeId);
+    const edge = currentScreen.edges.find((e) => e.id === edgeId);
     if (!edge) return snapped;
 
     const axisCoord: "x" | "y" = isHorizontal ? "y" : "x";
 
-    for (const v of screen.vertices) {
+    for (const v of currentScreen.vertices) {
       const vertexPos = axisCoord === "x" ? v.x : v.y;
       if (Math.abs(vertexPos - snapped) < SNAP_THRESHOLD) {
         snapped = vertexPos;
@@ -155,61 +155,84 @@ export default function ScreenRenderer({
   useEffect(() => {
     if (!sashDrag) return;
 
-    // Determine sash orientation from vertices
-    const v1 = vertexMap.get(sashDrag.v1);
-    const v2 = vertexMap.get(sashDrag.v2);
-    const sashIsHorizontal = !!(v1 && v2 && Math.abs(v1.y - v2.y) < EPSILON);
+    const { edgeId, isHorizontal } = sashDrag;
 
-    const handleMouseMove = () => {
-      // no live preview for sash
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const edge = sashDragRef.current;
-      sashDragRef.current = null;
-      setSashDrag(null);
-
-      if (!edge) return;
+    const handleMouseMove = (e: MouseEvent) => {
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
 
-      const ev1 = vertexMap.get(edge.v1);
-      const ev2 = vertexMap.get(edge.v2);
-      if (!ev1 || !ev2) return;
-
-      const isHorizontal = Math.abs(ev1.y - ev2.y) < EPSILON;
       // screen coords: 0-1, origin bottom-left
-      const position = isHorizontal
+      const rawPos = isHorizontal
         ? 1 - (e.clientY - rect.top) / rect.height
         : (e.clientX - rect.left) / rect.width;
+
+      const clampedPos = Math.max(0, Math.min(1, rawPos));
+      const snappedPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
+      const isSnapped = Math.abs(snappedPos - clampedPos) > 0.0001;
+
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        setSashDrag((prev) =>
+          prev ? { ...prev, position: snappedPos, isSnapped } : null,
+        );
+      });
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+
+      sashDragRef.current = null;
+      setSashDrag(null);
+
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+
+      const rawPos = isHorizontal
+        ? 1 - (e.clientY - rect.top) / rect.height
+        : (e.clientX - rect.left) / rect.width;
+
+      const clampedPos = Math.max(0, Math.min(1, rawPos));
+      const finalPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
 
       safeInvoke<WorkspaceResult>("resize_edge", {
         sessionId: sessionIdRef.current,
         workspaceId: workspaceIdRef.current,
-        edgeId: edge.id,
-        position,
-      }, onError)
+        edgeId,
+        position: finalPos,
+      }, onErrorRef.current)
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
         })
-        .catch((err) => console.error("resize_edge failed", err));
+        .catch(() => {});
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
         sashDragRef.current = null;
         setSashDrag(null);
       }
     };
 
-    document.body.style.cursor = sashIsHorizontal ? "row-resize" : "col-resize";
+    document.body.style.cursor = isHorizontal ? "row-resize" : "col-resize";
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       document.removeEventListener("mousemove", handleMouseMove);
@@ -275,11 +298,11 @@ export default function ScreenRenderer({
         areaId: state.area.id,
         axis: state.axis,
         factor,
-      }, onError)
+      }, onErrorRef.current)
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
         })
-        .catch((err) => console.error("split_area failed", err));
+        .catch(() => {});
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -345,6 +368,10 @@ export default function ScreenRenderer({
 
   // Reset interaction states when screen changes (command completed successfully)
   useEffect(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     setSashDrag(null);
     sashDragRef.current = null;
     setSplitDrag(null);
@@ -358,6 +385,7 @@ export default function ScreenRenderer({
 
   const handleSashMouseDown = useCallback(
     (e: React.MouseEvent, edge: Edge) => {
+      if (splitDragRef.current) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -395,6 +423,7 @@ export default function ScreenRenderer({
 
   const handleCornerMouseDown = useCallback(
     (e: React.MouseEvent, area: Area) => {
+      if (sashDragRef.current) return;
       e.preventDefault();
       e.stopPropagation();
       const el = e.currentTarget.parentElement!;
@@ -448,11 +477,11 @@ export default function ScreenRenderer({
         workspaceId: workspaceIdRef.current,
         sourceAreaId: sourceId,
         targetAreaId: targetId,
-      }, onError)
+      }, onErrorRef.current)
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
         })
-        .catch((err) => console.error("join_areas failed", err));
+        .catch(() => {});
     },
     [joinMode],
   );
@@ -472,7 +501,7 @@ export default function ScreenRenderer({
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
         })
-        .catch((err) => console.error("close_area failed", err));
+        .catch(() => {});
     },
     [],
   );
@@ -497,7 +526,7 @@ export default function ScreenRenderer({
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
         })
-        .catch((err) => console.error("change_panel_type failed", err));
+        .catch(() => {});
     },
     [],
   );
@@ -590,6 +619,31 @@ export default function ScreenRenderer({
             />
           );
         })}
+
+      {/* Sash drag preview line */}
+      {sashDrag && (
+        <div
+          className={
+            "screen-sash-preview" +
+            (sashDrag.isSnapped ? " screen-sash-preview--snapped" : "")
+          }
+          style={
+            sashDrag.isHorizontal
+              ? {
+                  top: `${(1 - sashDrag.position) * 100}%`,
+                  left: 0,
+                  width: "100%",
+                  height: 2,
+                }
+              : {
+                  left: `${sashDrag.position * 100}%`,
+                  top: 0,
+                  width: 2,
+                  height: "100%",
+                }
+          }
+        />
+      )}
 
       {/* Render areas */}
       {areasToRender.map((area) => {
