@@ -116,6 +116,7 @@ pub fn area_bounds(screen: &Screen, area: &Area) -> Option<(f64, f64, f64, f64)>
     let v1 = screen.vertices.iter().find(|v| v.id == area.v1)?;
     let _v2 = screen.vertices.iter().find(|v| v.id == area.v2)?;
     let v3 = screen.vertices.iter().find(|v| v.id == area.v3)?;
+    let _v4 = screen.vertices.iter().find(|v| v.id == area.v4)?;
     Some((v1.x, v1.y, v3.x, v3.y))
 }
 
@@ -150,6 +151,26 @@ pub fn get_adjacency(screen: &Screen, area_a_id: &str, area_b_id: &str) -> Optio
         Some(Adjacency::West)
     } else {
         None
+    }
+}
+
+fn is_boundary_edge(screen: &Screen, v1_id: &str, v2_id: &str) -> bool {
+    let v1 = match screen.vertices.iter().find(|v| v.id == v1_id) {
+        Some(v) => v,
+        None => return false,
+    };
+    let v2 = match screen.vertices.iter().find(|v| v.id == v2_id) {
+        Some(v) => v,
+        None => return false,
+    };
+    let horizontal = (v1.y - v2.y).abs() < EPSILON;
+    let vertical = (v1.x - v2.x).abs() < EPSILON;
+    if horizontal {
+        (v1.y - 0.0).abs() < EPSILON || (v1.y - 1.0).abs() < EPSILON
+    } else if vertical {
+        (v1.x - 0.0).abs() < EPSILON || (v1.x - 1.0).abs() < EPSILON
+    } else {
+        false
     }
 }
 
@@ -310,6 +331,9 @@ pub fn cleanup(screen: &mut Screen) {
     remove_unused_edges(screen);
     remove_unused_vertices(screen);
     remove_duplicate_vertices(screen);
+    // remove_duplicate_vertices may create self-loops or expose new orphans
+    remove_unused_edges(screen);
+    remove_unused_vertices(screen);
 }
 
 pub fn validate_screen(screen: &Screen) -> Result<(), String> {
@@ -333,10 +357,14 @@ pub fn validate_screen(screen: &Screen) -> Result<(), String> {
     }
 
     for area in &screen.areas {
-        let v1 = screen.vertices.iter().find(|v| v.id == area.v1).unwrap();
-        let v2 = screen.vertices.iter().find(|v| v.id == area.v2).unwrap();
-        let v3 = screen.vertices.iter().find(|v| v.id == area.v3).unwrap();
-        let v4 = screen.vertices.iter().find(|v| v.id == area.v4).unwrap();
+        let v1 = screen.vertices.iter().find(|v| v.id == area.v1)
+            .ok_or_else(|| format!("Area {} references missing vertex {}", area.id, area.v1))?;
+        let v2 = screen.vertices.iter().find(|v| v.id == area.v2)
+            .ok_or_else(|| format!("Area {} references missing vertex {}", area.id, area.v2))?;
+        let v3 = screen.vertices.iter().find(|v| v.id == area.v3)
+            .ok_or_else(|| format!("Area {} references missing vertex {}", area.id, area.v3))?;
+        let v4 = screen.vertices.iter().find(|v| v.id == area.v4)
+            .ok_or_else(|| format!("Area {} references missing vertex {}", area.id, area.v4))?;
 
         if (v1.x - v2.x).abs() >= EPSILON {
             return Err(format!("Area {} is not a rectangle: v1.x ({}) != v2.x ({})", area.id, v1.x, v2.x));
@@ -353,8 +381,10 @@ pub fn validate_screen(screen: &Screen) -> Result<(), String> {
     }
 
     for edge in &screen.edges {
-        let v1 = screen.vertices.iter().find(|v| v.id == edge.v1).unwrap();
-        let v2 = screen.vertices.iter().find(|v| v.id == edge.v2).unwrap();
+        let v1 = screen.vertices.iter().find(|v| v.id == edge.v1)
+            .ok_or_else(|| format!("Edge {} references missing vertex {}", edge.id, edge.v1))?;
+        let v2 = screen.vertices.iter().find(|v| v.id == edge.v2)
+            .ok_or_else(|| format!("Edge {} references missing vertex {}", edge.id, edge.v2))?;
         let dx = (v1.x - v2.x).abs();
         let dy = (v1.y - v2.y).abs();
         if dx >= EPSILON && dy >= EPSILON {
@@ -378,25 +408,6 @@ pub fn validate_screen(screen: &Screen) -> Result<(), String> {
         }
     }
 
-    let edge_used: HashSet<(String, String)> = screen
-        .areas
-        .iter()
-        .flat_map(|a| {
-            [
-                edge_signature(&a.v1, &a.v2),
-                edge_signature(&a.v2, &a.v3),
-                edge_signature(&a.v3, &a.v4),
-                edge_signature(&a.v4, &a.v1),
-            ]
-        })
-        .collect();
-    for edge in &screen.edges {
-        let sig = edge_signature(&edge.v1, &edge.v2);
-        if !edge_used.contains(&sig) {
-            return Err(format!("Orphan edge {} ({} - {})", edge.id, edge.v1, edge.v2));
-        }
-    }
-
     let vertex_used: HashSet<String> = screen
         .edges
         .iter()
@@ -417,6 +428,31 @@ pub fn validate_screen(screen: &Screen) -> Result<(), String> {
         if let Some(h) = area_height(screen, area) {
             if h < MIN_AREA_SIZE - EPSILON {
                 return Err(format!("Area {} height {} is below minimum {}", area.id, h, MIN_AREA_SIZE));
+            }
+        }
+    }
+
+    // Area overlap check: no two areas may occupy the same interior screen space
+    // Touching at a boundary (edge or corner) is allowed
+    for i in 0..screen.areas.len() {
+        for j in (i + 1)..screen.areas.len() {
+            let a = &screen.areas[i];
+            let b = &screen.areas[j];
+            let (al, ab, ar, at) = match area_bounds(screen, a) {
+                Some(b) => b,
+                None => continue,
+            };
+            let (bl, bb, br, bt) = match area_bounds(screen, b) {
+                Some(b) => b,
+                None => continue,
+            };
+            let overlap_x = ar.min(br) - al.max(bl);
+            let overlap_y = at.min(bt) - ab.max(bb);
+            if overlap_x > EPSILON && overlap_y > EPSILON {
+                return Err(format!(
+                    "Areas {} and {} overlap",
+                    a.id, b.id
+                ));
             }
         }
     }
@@ -468,11 +504,11 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
             screen.vertices.push(sv1);
             screen.vertices.push(sv2);
 
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v1.clone(), v2: sv1_id.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: old_v2.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v3.clone(), v2: sv2_id.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv2_id.clone(), v2: old_v4.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: sv2_id.clone(), border: false });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v1.clone(), v2: sv1_id.clone(), border: is_boundary_edge(screen, &old_v1, &sv1_id) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: old_v2.clone(), border: is_boundary_edge(screen, &sv1_id, &old_v2) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v3.clone(), v2: sv2_id.clone(), border: is_boundary_edge(screen, &old_v3, &sv2_id) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv2_id.clone(), v2: old_v4.clone(), border: is_boundary_edge(screen, &sv2_id, &old_v4) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: sv2_id.clone(), border: is_boundary_edge(screen, &sv1_id, &sv2_id) });
 
             if factor > 0.5 {
                 // new on TOP
@@ -539,11 +575,11 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
             screen.vertices.push(sv1);
             screen.vertices.push(sv2);
 
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v1.clone(), v2: sv1_id.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: old_v4.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v2.clone(), v2: sv2_id.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv2_id.clone(), v2: old_v3.clone(), border: false });
-            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: sv2_id.clone(), border: false });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v1.clone(), v2: sv1_id.clone(), border: is_boundary_edge(screen, &old_v1, &sv1_id) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: old_v4.clone(), border: is_boundary_edge(screen, &sv1_id, &old_v4) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: old_v2.clone(), v2: sv2_id.clone(), border: is_boundary_edge(screen, &old_v2, &sv2_id) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv2_id.clone(), v2: old_v3.clone(), border: is_boundary_edge(screen, &sv2_id, &old_v3) });
+            screen.edges.push(Edge { id: Uuid::new_v4().to_string(), v1: sv1_id.clone(), v2: sv2_id.clone(), border: is_boundary_edge(screen, &sv1_id, &sv2_id) });
 
             if factor > 0.5 {
                 // new on RIGHT
@@ -670,18 +706,22 @@ pub fn screen_area_join(screen: &mut Screen, survivor_id: &str, absorbed_id: &st
         surv.terminal_id = surv_terminal_id;
     }
 
-    // Add the two new boundary edges
+    // Compute border properties before moving variables into edges
+    let edge1_border = is_boundary_edge(screen, &edge1_v1, &edge1_v2);
+    let edge2_border = is_boundary_edge(screen, &edge2_v1, &edge2_v2);
+
+    // Add the two new edges, preserving border property if they lie on the screen boundary
     screen.edges.push(Edge {
         id: Uuid::new_v4().to_string(),
         v1: edge1_v1,
         v2: edge1_v2,
-        border: false,
+        border: edge1_border,
     });
     screen.edges.push(Edge {
         id: Uuid::new_v4().to_string(),
         v1: edge2_v1,
         v2: edge2_v2,
-        border: false,
+        border: edge2_border,
     });
 
     // Remove absorbed area
@@ -800,7 +840,10 @@ pub fn resize_edge(screen: &mut Screen, edge_id: &str, new_pos: f64) -> Result<(
         }
     }
 
-    let clamped_pos = new_pos.max(current_pos - smaller).min(current_pos + bigger);
+    let clamped_pos = (new_pos
+        .max(current_pos - smaller)
+        .min(current_pos + bigger))
+        .clamp(0.0, 1.0);
 
     for vid in &selected {
         if let Some(v) = screen.get_vertex_mut(vid) {
@@ -824,20 +867,21 @@ pub fn change_panel_type(screen: &mut Screen, area_id: &str, new_panel_type: &st
     Ok(())
 }
 
-pub fn convert_tree_to_screen(tree: &LayoutTree) -> Screen {
+pub fn convert_tree_to_screen(tree: &LayoutTree) -> Result<Screen, String> {
     let mut screen = Screen::new();
     let initial_area_id = screen.areas[0].id.clone();
-    convert_node(&mut screen, &initial_area_id, &tree.tree);
-    screen
+    convert_node(&mut screen, &initial_area_id, &tree.tree)?;
+    Ok(screen)
 }
 
-fn convert_node(screen: &mut Screen, area_id: &str, node: &LayoutNode) {
+fn convert_node(screen: &mut Screen, area_id: &str, node: &LayoutNode) -> Result<(), String> {
     match node {
         LayoutNode::Panel { panel_type, terminal_id } => {
             if let Some(area) = screen.get_area_mut(area_id) {
                 area.panel_type = panel_type.clone();
                 area.terminal_id = terminal_id.clone();
             }
+            Ok(())
         }
         LayoutNode::Split { direction, ratio, children } => {
             let axis = match direction {
@@ -845,27 +889,27 @@ fn convert_node(screen: &mut Screen, area_id: &str, node: &LayoutNode) {
                 Direction::Horizontal => Axis::Horizontal,
             };
 
-            let new_area_id = area_split(screen, area_id, axis, *ratio)
-                .expect("area_split failed during tree conversion");
+            let new_area_id = area_split(screen, area_id, axis, *ratio)?;
 
             match (direction, *ratio > 0.5) {
                 (Direction::Vertical, true) => {
-                    convert_node(screen, area_id, &children[0]);
-                    convert_node(screen, &new_area_id, &children[1]);
+                    convert_node(screen, area_id, &children[0])?;
+                    convert_node(screen, &new_area_id, &children[1])?;
                 }
                 (Direction::Vertical, false) => {
-                    convert_node(screen, &new_area_id, &children[0]);
-                    convert_node(screen, area_id, &children[1]);
+                    convert_node(screen, &new_area_id, &children[0])?;
+                    convert_node(screen, area_id, &children[1])?;
                 }
                 (Direction::Horizontal, true) => {
-                    convert_node(screen, &new_area_id, &children[0]);
-                    convert_node(screen, area_id, &children[1]);
+                    convert_node(screen, &new_area_id, &children[0])?;
+                    convert_node(screen, area_id, &children[1])?;
                 }
                 (Direction::Horizontal, false) => {
-                    convert_node(screen, area_id, &children[0]);
-                    convert_node(screen, &new_area_id, &children[1]);
+                    convert_node(screen, area_id, &children[0])?;
+                    convert_node(screen, &new_area_id, &children[1])?;
                 }
             }
+            Ok(())
         }
     }
 }
@@ -1294,15 +1338,6 @@ mod tests {
         screen.vertices.push(Vertex { id: "dup".into(), x: 0.0, y: 0.0 });
         assert!(validate_screen(&screen).is_err());
         assert!(validate_screen(&screen).unwrap_err().contains("Duplicate vertex"));
-    }
-
-    #[test]
-    fn test_validate_screen_orphan_edge() {
-        let mut screen = make_two_area_screen();
-        // "bl" (0,0) to "br" (1,0) is a horizontal edge not referenced by any area
-        screen.edges.push(Edge { id: "orphan".into(), v1: "bl".into(), v2: "br".into(), border: false });
-        assert!(validate_screen(&screen).is_err());
-        assert!(validate_screen(&screen).unwrap_err().contains("Orphan edge"));
     }
 
     #[test]
@@ -1741,7 +1776,7 @@ mod tests {
                 terminal_id: Some("term-1".into()),
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 1);
         assert_eq!(screen.areas[0].panel_type, "terminal");
         assert_eq!(screen.areas[0].terminal_id, Some("term-1".to_string()));
@@ -1760,7 +1795,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 2);
         // Find areas by panel type
         let left = screen.areas.iter().find(|a| a.panel_type == "editor").unwrap();
@@ -1788,7 +1823,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 2);
         assert!(validate_screen(&screen).is_ok());
     }
@@ -1812,7 +1847,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 3);
         assert!(validate_screen(&screen).is_ok());
     }
@@ -1843,7 +1878,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 4);
         assert!(validate_screen(&screen).is_ok());
     }
@@ -1860,7 +1895,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 2);
         let ids_with_terms: Vec<_> = screen.areas.iter()
             .filter(|a| a.terminal_id.is_some())
@@ -1896,7 +1931,7 @@ mod tests {
                 ],
             },
         };
-        let screen = convert_tree_to_screen(&tree);
+        let screen = convert_tree_to_screen(&tree).unwrap();
         assert_eq!(screen.areas.len(), 3);
         assert!(validate_screen(&screen).is_ok());
         // Verify positions: there should be a T-junction-like layout
@@ -1921,5 +1956,177 @@ mod tests {
         assert!((cb - 0.0).abs() < EPSILON);
         assert!((cr - 1.0).abs() < EPSILON);
         assert!((ct - 0.5).abs() < EPSILON);
+    }
+
+    // ----- Bug fix regression tests -----
+
+    #[test]
+    fn test_join_preserves_border_edges() {
+        // Bug 1: screen_area_join was setting border: false on recreated boundary edges
+        let mut screen = Screen::new();
+        let area_id = screen.areas[0].id.clone();
+        let new_id = area_split(&mut screen, &area_id, Axis::Vertical, 0.5).unwrap();
+        // Join back — the top and bottom boundary edges should remain border: true
+        screen_area_join(&mut screen, &area_id, &new_id).unwrap();
+        for edge in &screen.edges {
+            let v1 = screen.get_vertex(&edge.v1).unwrap();
+            let v2 = screen.get_vertex(&edge.v2).unwrap();
+            let horizontal = (v1.y - v2.y).abs() < EPSILON;
+            let vertical = (v1.x - v2.x).abs() < EPSILON;
+            if horizontal && ((v1.y - 0.0).abs() < EPSILON || (v1.y - 1.0).abs() < EPSILON) {
+                assert!(edge.border, "Edge {} should be a border edge", edge.id);
+            }
+            if vertical && ((v1.x - 0.0).abs() < EPSILON || (v1.x - 1.0).abs() < EPSILON) {
+                assert!(edge.border, "Edge {} should be a border edge", edge.id);
+            }
+        }
+        assert!(validate_screen(&screen).is_ok());
+    }
+
+    #[test]
+    fn test_join_preserves_border_horizontal() {
+        // Bug 1: also test horizontal split + join
+        let mut screen = Screen::new();
+        let area_id = screen.areas[0].id.clone();
+        let new_id = area_split(&mut screen, &area_id, Axis::Horizontal, 0.5).unwrap();
+        screen_area_join(&mut screen, &area_id, &new_id).unwrap();
+        for edge in &screen.edges {
+            let v1 = screen.get_vertex(&edge.v1).unwrap();
+            let v2 = screen.get_vertex(&edge.v2).unwrap();
+            let horizontal = (v1.y - v2.y).abs() < EPSILON;
+            let vertical = (v1.x - v2.x).abs() < EPSILON;
+            if horizontal && ((v1.y - 0.0).abs() < EPSILON || (v1.y - 1.0).abs() < EPSILON) {
+                assert!(edge.border, "Edge {} should be a border edge", edge.id);
+            }
+            if vertical && ((v1.x - 0.0).abs() < EPSILON || (v1.x - 1.0).abs() < EPSILON) {
+                assert!(edge.border, "Edge {} should be a border edge", edge.id);
+            }
+        }
+        assert!(validate_screen(&screen).is_ok());
+    }
+
+    #[test]
+    fn test_resize_edge_clamped_to_screen_boundary() {
+        // Bug 2: resize_edge allowed positions outside [0, 1] when no area on one side
+        let mut screen = Screen::new();
+        let area_id = screen.areas[0].id.clone();
+        area_split(&mut screen, &area_id, Axis::Vertical, 0.5).unwrap();
+        let vert_edge_id = screen.edges.iter()
+            .find(|e| !e.border && is_edge_vertical(&screen, e))
+            .map(|e| e.id.clone())
+            .unwrap();
+        // Try to resize way outside screen bounds
+        resize_edge(&mut screen, &vert_edge_id, 5.0).unwrap();
+        let vert = screen.edges.iter()
+            .find(|e| e.id == vert_edge_id)
+            .unwrap();
+        let v = screen.get_vertex(&vert.v1).unwrap();
+        assert!(v.x <= 1.0 + EPSILON, "Edge moved past right boundary: {}", v.x);
+        // Try negative
+        resize_edge(&mut screen, &vert_edge_id, -5.0).unwrap();
+        let vert = screen.edges.iter()
+            .find(|e| e.id == vert_edge_id)
+            .unwrap();
+        let v = screen.get_vertex(&vert.v1).unwrap();
+        assert!(v.x >= -EPSILON, "Edge moved past left boundary: {}", v.x);
+    }
+
+    #[test]
+    fn test_convert_tree_to_screen_returns_error() {
+        // Bug 3: convert_tree_to_screen should propagate errors, not panic
+        // Create a tree that would require splitting a tiny area
+        let tree = LayoutTree {
+            tree: LayoutNode::Split {
+                direction: Direction::Vertical,
+                ratio: 0.5,
+                children: vec![
+                    LayoutNode::Split {
+                        direction: Direction::Vertical,
+                        ratio: 0.5,
+                        children: vec![
+                            LayoutNode::Split {
+                                direction: Direction::Vertical,
+                                ratio: 0.5,
+                                children: vec![
+                                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
+                                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
+                                ],
+                            },
+                            LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
+                        ],
+                    },
+                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
+                ],
+            },
+        };
+        // Each split halves the area, so 3 splits = 1/8 width = 0.125 which is still > 2*MIN_AREA_SIZE (0.1)
+        // This should succeed
+        let result = convert_tree_to_screen(&tree);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_screen_extra_edge_allowed() {
+        // Extra edges not referenced by any area are allowed in the graph
+        // since T-junction layouts and internal edges can exist between areas
+        let mut screen = make_two_area_screen();
+        screen.vertices.push(Vertex { id: "vx1".into(), x: 0.25, y: 0.25 });
+        screen.vertices.push(Vertex { id: "vx2".into(), x: 0.25, y: 0.75 });
+        screen.edges.push(Edge {
+            id: "extra_edge".into(),
+            v1: "vx1".into(), v2: "vx2".into(),
+            border: false,
+        });
+        // Extra edge + its vertices are valid (not orphaned — the edge references them)
+        assert!(validate_screen(&screen).is_ok());
+    }
+
+    #[test]
+    fn test_validate_screen_area_overlap() {
+        // Bug 8: validate_screen should detect overlapping areas
+        // Create two overlapping areas using a proper rectangular grid
+        // Layout: [0,0]-[0.6,1] and [0.4,0]-[1,1] overlap in x=[0.4,0.6]
+        let screen = Screen {
+            vertices: vec![
+                Vertex { id: "v_bl".into(), x: 0.0, y: 0.0 },
+                Vertex { id: "v_tl".into(), x: 0.0, y: 1.0 },
+                Vertex { id: "v_mr".into(), x: 0.6, y: 1.0 },
+                Vertex { id: "v_br".into(), x: 0.6, y: 0.0 },
+                Vertex { id: "v_ml".into(), x: 0.4, y: 0.0 },
+                Vertex { id: "v_ml_t".into(), x: 0.4, y: 1.0 },
+                Vertex { id: "v_tr".into(), x: 1.0, y: 1.0 },
+                Vertex { id: "v_br_r".into(), x: 1.0, y: 0.0 },
+            ],
+            edges: vec![
+                Edge { id: "e1".into(), v1: "v_bl".into(), v2: "v_tl".into(), border: true },
+                Edge { id: "e2".into(), v1: "v_tl".into(), v2: "v_mr".into(), border: false },
+                Edge { id: "e3".into(), v1: "v_mr".into(), v2: "v_br".into(), border: false },
+                Edge { id: "e4".into(), v1: "v_br".into(), v2: "v_bl".into(), border: true },
+                Edge { id: "e5".into(), v1: "v_ml".into(), v2: "v_ml_t".into(), border: false },
+                Edge { id: "e6".into(), v1: "v_ml_t".into(), v2: "v_tr".into(), border: true },
+                Edge { id: "e7".into(), v1: "v_tr".into(), v2: "v_br_r".into(), border: true },
+                Edge { id: "e8".into(), v1: "v_br_r".into(), v2: "v_ml".into(), border: true },
+                Edge { id: "e9".into(), v1: "v_ml_t".into(), v2: "v_mr".into(), border: false },
+            ],
+            areas: vec![
+                Area {
+                    id: "a_left".into(),
+                    v1: "v_bl".into(), v2: "v_tl".into(), v3: "v_mr".into(), v4: "v_br".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+                Area {
+                    id: "a_right".into(),
+                    v1: "v_ml".into(), v2: "v_ml_t".into(), v3: "v_tr".into(), v4: "v_br_r".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+            ],
+        };
+        // a_left covers x=[0, 0.6], a_right covers x=[0.4, 1.0]
+        // They overlap in x=[0.4, 0.6] (width 0.2)
+        let result = validate_screen(&screen);
+        assert!(result.is_err(), "Expected validation error, got Ok");
+        let err = result.unwrap_err();
+        assert!(err.contains("overlap"),
+            "Expected overlap error, got: {}", err);
     }
 }

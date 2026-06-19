@@ -5,7 +5,7 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, LayoutTree, DomainEvent,
+    Layout, Screen, DomainEvent,
 };
 
 mod pty;
@@ -197,7 +197,7 @@ unit_return!(delete_all_sessions, SessionDeleteAll);
 // ── Layout / template commands ──────────────────────────────────────
 
 layouts_return!(list_layouts, TemplateList);
-single_return!(save_layout, TemplateSave { name, tree }, name: String, tree: LayoutTree);
+single_return!(save_layout, TemplateSave { name, screen }, name: String, screen: Screen);
 unit_return!(delete_layout, TemplateDelete { layout_id }, layout_id: String);
 unit_return!(rename_layout, TemplateRename { layout_id, new_name }, layout_id: String, new_name: String);
 unit_return!(delete_all_templates, TemplateDeleteAll);
@@ -211,6 +211,11 @@ unit_return!(remove_workspace, WorkspaceRemove { session_id, workspace_id }, ses
 unit_return!(rename_workspace, WorkspaceRename { session_id, workspace_id, new_name }, session_id: String, workspace_id: String, new_name: String);
 unit_return!(set_active_workspace, WorkspaceSetActive { session_id, workspace_id }, session_id: String, workspace_id: String);
 workspace_return!(reset_workspace_to_template, WorkspaceReset { session_id, workspace_id }, session_id: String, workspace_id: String);
+workspace_return!(split_area, SplitArea { session_id, workspace_id, area_id, axis, factor }, session_id: String, workspace_id: String, area_id: String, axis: ai_agent_workspace_core::Axis, factor: f64);
+workspace_return!(join_areas, JoinAreas { session_id, workspace_id, source_area_id, target_area_id }, session_id: String, workspace_id: String, source_area_id: String, target_area_id: String);
+workspace_return!(close_area, CloseArea { session_id, workspace_id, area_id }, session_id: String, workspace_id: String, area_id: String);
+workspace_return!(resize_edge, ResizeEdge { session_id, workspace_id, edge_id, position }, session_id: String, workspace_id: String, edge_id: String, position: f64);
+workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id, area_id, panel_type }, session_id: String, workspace_id: String, area_id: String, panel_type: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -220,15 +225,15 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn persist_workspace_tree(
+fn persist_workspace_screen(
     state: tauri::State<AppState>,
     app: tauri::AppHandle,
     session_id: String,
     workspace_id: String,
-    tree: LayoutTree,
+    screen: Screen,
 ) -> Result<(), String> {
     unit_void_return!(
-        WorkspaceUpdateTree { session_id: session_id.clone(), workspace_id: workspace_id.clone(), tree },
+        WorkspaceUpdateScreen { session_id: session_id.clone(), workspace_id: workspace_id.clone(), screen },
         state, app
     );
     Ok(())
@@ -466,8 +471,13 @@ pub fn run() {
             remove_workspace,
             rename_workspace,
             set_active_workspace,
-            persist_workspace_tree,
+            persist_workspace_screen,
             reset_workspace_to_template,
+            split_area,
+            join_areas,
+            close_area,
+            resize_edge,
+            change_panel_type,
             open_preferences,
             open_in_app,
             is_git_repo,

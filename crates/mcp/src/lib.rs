@@ -6,8 +6,9 @@ use rmcp::{ServerHandler, tool};
 use rmcp::serve_server;
 use rmcp::model::{CallToolResult, Content, ServerInfo, ServerCapabilities};
 use ai_agent_workspace_core::database::Database;
-use ai_agent_workspace_core::LayoutTree;
+use ai_agent_workspace_core::Screen;
 use ai_agent_workspace_core::DomainEvent;
+use ai_agent_workspace_core::Axis;
 use ai_agent_workspace_commands::{AppState, Command, CommandResult, ExecutionOutcome, execute};
 use serde_json;
 #[cfg(feature = "tauri-integration")]
@@ -134,8 +135,13 @@ impl McpHandler {
         workspace_remove,
         workspace_rename,
         workspace_set_active,
-        workspace_update_tree,
-        workspace_reset
+        workspace_update_screen,
+        workspace_reset,
+        split_area,
+        join_areas,
+        close_area,
+        resize_edge,
+        change_panel_type
     });
 
     #[tool(description = "List all sessions")]
@@ -180,9 +186,9 @@ impl McpHandler {
     }
 
     #[tool(description = "Save a layout template")]
-    async fn template_save(&self, #[tool(param)] name: String, #[tool(param)] tree: LayoutTree) -> Result<CallToolResult, rmcp::Error> {
+    async fn template_save(&self, #[tool(param)] name: String, #[tool(param)] screen: Screen) -> Result<CallToolResult, rmcp::Error> {
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::TemplateSave { name, tree }, &state, Layout, layout, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+        run_mcp_command!(Command::TemplateSave { name, screen }, &state, Layout, layout, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
 
     #[tool(description = "Delete a layout template")]
@@ -271,11 +277,11 @@ impl McpHandler {
         run_mcp_command!(Command::WorkspaceSetActive { session_id, workspace_id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
 
-    #[tool(description = "Update the layout tree of a workspace instance")]
-    async fn workspace_update_tree(&self, #[tool(param)] workspace_id: String, #[tool(param)] tree: LayoutTree) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Update the screen of a workspace instance")]
+    async fn workspace_update_screen(&self, #[tool(param)] workspace_id: String, #[tool(param)] screen: Screen) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::WorkspaceUpdateTree { session_id, workspace_id, tree }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+        run_mcp_command!(Command::WorkspaceUpdateScreen { session_id, workspace_id, screen }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
 
     #[tool(description = "Reset a workspace instance to the template layout")]
@@ -283,6 +289,41 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
         run_mcp_command!(Command::WorkspaceReset { session_id, workspace_id }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+    }
+
+    #[tool(description = "Split an area in the workspace screen")]
+    async fn split_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] axis: Axis, #[tool(param)] factor: f64) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::SplitArea { session_id, workspace_id, area_id, axis, factor }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+    }
+
+    #[tool(description = "Join two adjacent areas. source_area_id is absorbed (removed) and target_area_id survives (grows to fill the space).")]
+    async fn join_areas(&self, #[tool(param)] workspace_id: String, #[tool(param)] source_area_id: String, #[tool(param)] target_area_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+    }
+
+    #[tool(description = "Close an area in the workspace screen")]
+    async fn close_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CloseArea { session_id, workspace_id, area_id }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+    }
+
+    #[tool(description = "Resize an edge in the workspace screen")]
+    async fn resize_edge(&self, #[tool(param)] workspace_id: String, #[tool(param)] edge_id: String, #[tool(param)] position: f64) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::ResizeEdge { session_id, workspace_id, edge_id, position }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
+    }
+
+    #[tool(description = "Change the panel type of an area in the workspace screen")]
+    async fn change_panel_type(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] panel_type: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::ChangePanelType { session_id, workspace_id, area_id, panel_type }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
 }
 
@@ -417,13 +458,8 @@ mod tests {
     #[tokio::test]
     async fn test_template_save_and_list() {
         let (handler, _dir) = setup();
-        let tree = LayoutTree {
-            tree: ai_agent_workspace_core::LayoutNode::Panel {
-                panel_type: "terminal".into(),
-                terminal_id: None,
-            },
-        };
-        let result = handler.template_save("My Template".into(), tree).await.unwrap();
+        let screen = ai_agent_workspace_core::Screen::default();
+        let result = handler.template_save("My Template".into(), screen).await.unwrap();
         let text = extract_text(result);
         assert!(text.contains("My Template"));
 
@@ -484,13 +520,9 @@ mod tests {
 
         handler.resolved_session_id = Some(session_id);
 
-        let tree = LayoutTree {
-            tree: ai_agent_workspace_core::LayoutNode::Panel {
-                panel_type: "terminal".into(),
-                terminal_id: None,
-            },
-        };
-        let tmpl_result = handler.template_save("WS Template".into(), tree).await.unwrap();
+        let mut terminal_screen = ai_agent_workspace_core::Screen::new();
+        terminal_screen.areas[0].panel_type = "terminal".to_string();
+        let tmpl_result = handler.template_save("WS Template".into(), terminal_screen).await.unwrap();
         let tmpl_text = extract_text(tmpl_result);
         let tmpl: serde_json::Value = serde_json::from_str(&tmpl_text).unwrap();
         let template_id = tmpl["id"].as_str().unwrap().to_string();
@@ -511,15 +543,10 @@ mod tests {
     #[tokio::test]
     async fn test_cannot_delete_builtin_template() {
         let (handler, _dir) = setup();
-        let tree = LayoutTree {
-            tree: ai_agent_workspace_core::LayoutNode::Panel {
-                panel_type: "blank".into(),
-                terminal_id: None,
-            },
-        };
+        let screen = ai_agent_workspace_core::Screen::default();
         let conn = handler.db.connection().unwrap();
         let layouts = handler.db.layouts(&conn);
-        let builtin = layouts.create("General", tree, true).unwrap();
+        let builtin = layouts.create("General", screen, true).unwrap();
         let result = handler.template_delete(builtin.id.clone()).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -530,15 +557,10 @@ mod tests {
     #[tokio::test]
     async fn test_cannot_rename_builtin_template() {
         let (handler, _dir) = setup();
-        let tree = LayoutTree {
-            tree: ai_agent_workspace_core::LayoutNode::Panel {
-                panel_type: "blank".into(),
-                terminal_id: None,
-            },
-        };
+        let screen = ai_agent_workspace_core::Screen::default();
         let conn = handler.db.connection().unwrap();
         let layouts = handler.db.layouts(&conn);
-        let builtin = layouts.create("General", tree, true).unwrap();
+        let builtin = layouts.create("General", screen, true).unwrap();
         let result = handler.template_rename(builtin.id.clone(), "Not General".into()).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -549,15 +571,10 @@ mod tests {
     #[tokio::test]
     async fn test_builtin_shows_in_list() {
         let (handler, _dir) = setup();
-        let tree = LayoutTree {
-            tree: ai_agent_workspace_core::LayoutNode::Panel {
-                panel_type: "blank".into(),
-                terminal_id: None,
-            },
-        };
+        let screen = ai_agent_workspace_core::Screen::default();
         let conn = handler.db.connection().unwrap();
         let layouts = handler.db.layouts(&conn);
-        let _builtin = layouts.create("General", tree, true).unwrap();
+        let _builtin = layouts.create("General", screen, true).unwrap();
         let result = handler.template_list().await.unwrap();
         let text = extract_text(result);
         assert!(text.contains("General"));

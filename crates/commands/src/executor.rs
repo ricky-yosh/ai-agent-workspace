@@ -2,7 +2,8 @@ use crate::command::Command;
 use crate::result::{CommandResult, ExecutionOutcome};
 use crate::error::CommandError;
 use crate::state::AppState;
-use ai_agent_workspace_core::{DomainEvent, LayoutNode, LayoutTree};
+use ai_agent_workspace_core::{DomainEvent, Screen};
+use ai_agent_workspace_core::graph;
 
 pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, CommandError> {
     let mut conn = state.db.connection().map_err(|e| CommandError::internal(&e.to_string()))?;
@@ -39,21 +40,17 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
 
             if session.workspaces.is_empty() {
                 let layouts_repo = state.db.layouts(&conn);
-                let (template_id, template_name, default_tree) = match layouts_repo.find_by_name("General") {
-                    Ok(general) => (general.id, general.name, general.tree),
+                let (template_id, template_name, default_screen) = match layouts_repo.find_by_name("General") {
+                    Ok(general) => (general.id, general.name, general.screen),
                     Err(_) => {
-                        let terminal_tree = LayoutTree {
-                            tree: LayoutNode::Panel {
-                                panel_type: "terminal".into(),
-                                terminal_id: None,
-                            },
-                        };
-                        let layout = layouts_repo.create("General", terminal_tree, true)?;
-                        (layout.id, layout.name, layout.tree)
+                        let mut terminal_screen = Screen::new();
+                        terminal_screen.areas[0].panel_type = "terminal".to_string();
+                        let layout = layouts_repo.create("General", terminal_screen, true)?;
+                        (layout.id, layout.name, layout.screen)
                     }
                 };
                 let workspaces_repo = state.db.workspaces(&conn);
-                let ws = workspaces_repo.create(&session_id, &template_name, &template_id, default_tree)?;
+                let ws = workspaces_repo.create(&session_id, &template_name, &template_id, default_screen)?;
                 sessions_repo.set_active_workspace(&session_id, &ws.id)?;
             }
 
@@ -79,9 +76,9 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let list = layouts.list()?;
             Ok(ExecutionOutcome::none(CommandResult::Layouts(list)))
         }
-        Command::TemplateSave { name, tree } => {
+        Command::TemplateSave { name, screen } => {
             let layouts = state.db.layouts(&conn);
-            let layout = layouts.create(&name, tree, false)?;
+            let layout = layouts.create(&name, screen, false)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Layout(layout), DomainEvent::LayoutsChanged))
         }
         Command::TemplateDelete { layout_id } => {
@@ -145,7 +142,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let template = layouts_repo.get(&template_id)
                 .map_err(|e| CommandError::not_found_from_sql("layout", &template_id, e))?;
             let workspaces_repo = state.db.workspaces(&tx);
-            let ws = workspaces_repo.create(&session_id, &template.name, &template_id, template.tree.clone())?;
+            let ws = workspaces_repo.create(&session_id, &template.name, &template_id, template.screen.clone())?;
 
             let sessions_repo = state.db.sessions(&tx);
             let session = sessions_repo.get(&session_id)
@@ -191,9 +188,9 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             sessions_repo.set_active_workspace(&session_id, &workspace_id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
         }
-        Command::WorkspaceUpdateTree { session_id, workspace_id, tree } => {
+        Command::WorkspaceUpdateScreen { session_id, workspace_id, screen } => {
             let workspaces_repo = state.db.workspaces(&conn);
-            workspaces_repo.update_tree(&workspace_id, &tree)
+            workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id }))
         }
@@ -203,7 +200,77 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let layouts_repo = state.db.layouts(&conn);
             let template = layouts_repo.get(&ws.template_id)?;
-            workspaces_repo.update_tree(&workspace_id, &template.tree)?;
+            workspaces_repo.update_screen(&workspace_id, &template.screen)?;
+            let ws = workspaces_repo.get(&workspace_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+        }
+        Command::SplitArea { session_id, workspace_id, area_id, axis, factor } => {
+            let workspaces_repo = state.db.workspaces(&conn);
+            let ws = workspaces_repo.get(&workspace_id)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let mut screen = ws.current_screen.clone();
+            graph::area_split(&mut screen, &area_id, axis, factor)
+                .map_err(|e| CommandError::invalid_input(&e))?;
+            graph::validate_screen(&screen)
+                .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
+            workspaces_repo.update_screen(&workspace_id, &screen)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let ws = workspaces_repo.get(&workspace_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+        }
+        Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id } => {
+            let workspaces_repo = state.db.workspaces(&conn);
+            let ws = workspaces_repo.get(&workspace_id)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let mut screen = ws.current_screen.clone();
+            graph::screen_area_join(&mut screen, &target_area_id, &source_area_id)
+                .map_err(|e| CommandError::invalid_input(&e))?;
+            graph::validate_screen(&screen)
+                .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
+            workspaces_repo.update_screen(&workspace_id, &screen)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let ws = workspaces_repo.get(&workspace_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+        }
+        Command::CloseArea { session_id, workspace_id, area_id } => {
+            let workspaces_repo = state.db.workspaces(&conn);
+            let ws = workspaces_repo.get(&workspace_id)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let mut screen = ws.current_screen.clone();
+            graph::screen_area_close(&mut screen, &area_id)
+                .map_err(|e| CommandError::invalid_input(&e))?;
+            graph::validate_screen(&screen)
+                .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
+            workspaces_repo.update_screen(&workspace_id, &screen)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let ws = workspaces_repo.get(&workspace_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+        }
+        Command::ResizeEdge { session_id, workspace_id, edge_id, position } => {
+            let workspaces_repo = state.db.workspaces(&conn);
+            let ws = workspaces_repo.get(&workspace_id)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let mut screen = ws.current_screen.clone();
+            graph::resize_edge(&mut screen, &edge_id, position)
+                .map_err(|e| CommandError::invalid_input(&e))?;
+            graph::validate_screen(&screen)
+                .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
+            workspaces_repo.update_screen(&workspace_id, &screen)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let ws = workspaces_repo.get(&workspace_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
+        }
+        Command::ChangePanelType { session_id, workspace_id, area_id, panel_type } => {
+            let workspaces_repo = state.db.workspaces(&conn);
+            let ws = workspaces_repo.get(&workspace_id)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
+            let mut screen = ws.current_screen.clone();
+            graph::change_panel_type(&mut screen, &area_id, &panel_type)
+                .map_err(|e| CommandError::invalid_input(&e))?;
+            graph::validate_screen(&screen)
+                .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
+            workspaces_repo.update_screen(&workspace_id, &screen)
+                .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id }))
         }
@@ -298,12 +365,12 @@ mod tests {
     #[test]
     fn test_template_save_and_list() {
         let (state, _tmp) = setup();
-        let tree = ai_agent_workspace_core::LayoutTree::default_layout();
+        let screen = ai_agent_workspace_core::Screen::default();
 
         let outcome = execute(
             Command::TemplateSave {
                 name: "My Template".to_string(),
-                tree,
+                screen,
             },
             &state,
         ).unwrap();
@@ -368,11 +435,11 @@ mod tests {
             _ => panic!("Expected Session"),
         };
 
-        let tree = ai_agent_workspace_core::LayoutTree::default_layout();
+        let screen = ai_agent_workspace_core::Screen::default();
         let outcome = execute(
             Command::TemplateSave {
                 name: "General".to_string(),
-                tree,
+                screen,
             },
             &state,
         ).unwrap();
@@ -458,10 +525,10 @@ mod tests {
         assert!(result.is_err());
 
         let result = execute(
-            Command::WorkspaceUpdateTree {
+            Command::WorkspaceUpdateScreen {
                 session_id: session.id.clone(),
                 workspace_id: "nonexistent".to_string(),
-                tree: ai_agent_workspace_core::LayoutTree::default_layout(),
+                screen: ai_agent_workspace_core::Screen::default(),
             },
             &state,
         );
@@ -493,9 +560,9 @@ mod tests {
         assert!(matches!(outcome.events.as_slice(), [DomainEvent::SessionsChanged]));
 
         // Template mutating commands → LayoutsChanged
-        let tree = ai_agent_workspace_core::LayoutTree::default_layout();
+        let screen = ai_agent_workspace_core::Screen::default();
         let outcome = execute(
-            Command::TemplateSave { name: "T1".into(), tree },
+            Command::TemplateSave { name: "T1".into(), screen },
             &state,
         ).unwrap();
         assert!(matches!(outcome.events.as_slice(), [DomainEvent::LayoutsChanged]));
@@ -533,5 +600,265 @@ mod tests {
 
         let outcome = execute(Command::WorkspaceGetActive { session_id: sid.clone() }, &state).unwrap();
         assert!(outcome.events.is_empty());
+    }
+
+    #[test]
+    fn test_split_area_command() {
+        let (state, _tmp) = setup();
+
+        // Create session
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        // Open session to get default workspace
+        let outcome = execute(
+            Command::SessionOpen { session_id: session.id.clone() },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        let ws = &session.workspaces[0];
+        let area_id = ws.current_screen.areas[0].id.clone();
+
+        // Split the area vertically
+        let outcome = execute(
+            Command::SplitArea {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: area_id.clone(),
+                axis: ai_agent_workspace_core::Axis::Vertical,
+                factor: 0.5,
+            },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas.len(), 2, "Should have 2 areas after split");
+        assert_eq!(ws.current_screen.vertices.len(), 6, "Should have 6 vertices after split");
+    }
+
+    #[test]
+    fn test_change_panel_type_command() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::SessionOpen { session_id: session.id.clone() },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        let ws = &session.workspaces[0];
+        let area_id = ws.current_screen.areas[0].id.clone();
+
+        // Change panel type to terminal
+        let outcome = execute(
+            Command::ChangePanelType {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: area_id.clone(),
+                panel_type: "terminal".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas[0].panel_type, "terminal");
+    }
+
+    fn create_session_with_workspace(state: &AppState) -> (ai_agent_workspace_core::Session, ai_agent_workspace_core::WorkspaceInstance) {
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        let outcome = execute(
+            Command::SessionOpen { session_id: session.id.clone() },
+            state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        let ws = session.workspaces[0].clone();
+        (session, ws)
+    }
+
+    #[test]
+    fn test_join_areas_command() {
+        let (state, _tmp) = setup();
+        let (session, ws) = create_session_with_workspace(&state);
+
+        // Split first so we have 2 areas
+        let area_id = ws.current_screen.areas[0].id.clone();
+        let outcome = execute(
+            Command::SplitArea {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: area_id.clone(),
+                axis: ai_agent_workspace_core::Axis::Vertical,
+                factor: 0.5,
+            },
+            &state,
+        ).unwrap();
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas.len(), 2);
+
+        // Join the two areas back
+        let source_id = ws.current_screen.areas[1].id.clone();
+        let target_id = ws.current_screen.areas[0].id.clone();
+        let outcome = execute(
+            Command::JoinAreas {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                source_area_id: source_id,
+                target_area_id: target_id,
+            },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas.len(), 1, "Should have 1 area after join");
+    }
+
+    #[test]
+    fn test_close_area_command() {
+        let (state, _tmp) = setup();
+        let (session, ws) = create_session_with_workspace(&state);
+
+        // Split first so we have 2 areas
+        let area_id = ws.current_screen.areas[0].id.clone();
+        let outcome = execute(
+            Command::SplitArea {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: area_id.clone(),
+                axis: ai_agent_workspace_core::Axis::Horizontal,
+                factor: 0.5,
+            },
+            &state,
+        ).unwrap();
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas.len(), 2);
+
+        // Close the second area
+        let close_id = ws.current_screen.areas[1].id.clone();
+        let outcome = execute(
+            Command::CloseArea {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: close_id,
+            },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+        assert_eq!(ws.current_screen.areas.len(), 1, "Should have 1 area after close");
+    }
+
+    #[test]
+    fn test_resize_edge_command() {
+        let (state, _tmp) = setup();
+        let (session, ws) = create_session_with_workspace(&state);
+
+        // Split first so we have an internal edge to resize
+        let area_id = ws.current_screen.areas[0].id.clone();
+        let outcome = execute(
+            Command::SplitArea {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                area_id: area_id.clone(),
+                axis: ai_agent_workspace_core::Axis::Vertical,
+                factor: 0.5,
+            },
+            &state,
+        ).unwrap();
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+
+        // Find the truly internal edge — not on any screen boundary (x=0, x=1, y=0, y=1)
+        let internal_edge = ws.current_screen.edges.iter().find(|e| {
+            if e.border { return false; }
+            let v1 = ws.current_screen.get_vertex(&e.v1).unwrap();
+            let v2 = ws.current_screen.get_vertex(&e.v2).unwrap();
+            let on_x0 = v1.x.abs() < 0.01 && v2.x.abs() < 0.01;
+            let on_x1 = (v1.x - 1.0).abs() < 0.01 && (v2.x - 1.0).abs() < 0.01;
+            let on_y0 = v1.y.abs() < 0.01 && v2.y.abs() < 0.01;
+            let on_y1 = (v1.y - 1.0).abs() < 0.01 && (v2.y - 1.0).abs() < 0.01;
+            !(on_x0 || on_x1 || on_y0 || on_y1)
+        }).expect("Should have an internal edge").clone();
+
+        // Resize it to 0.7
+        let outcome = execute(
+            Command::ResizeEdge {
+                session_id: session.id.clone(),
+                workspace_id: ws.id.clone(),
+                edge_id: internal_edge.id.clone(),
+                position: 0.7,
+            },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::WorkspaceChanged { .. }]));
+        let ws = match outcome.result {
+            CommandResult::Workspace(w) => w,
+            _ => panic!("Expected Workspace"),
+        };
+
+        // Verify the edge moved — find the edge again and check vertex positions
+        let resized_edge = ws.current_screen.edges.iter().find(|e| e.id == internal_edge.id).unwrap();
+        let v1 = ws.current_screen.get_vertex(&resized_edge.v1).unwrap();
+        let v2 = ws.current_screen.get_vertex(&resized_edge.v2).unwrap();
+        // Vertical split → the internal edge is vertical → x should be ~0.7
+        assert!((v1.x - 0.7).abs() < 0.01, "Vertex x should be ~0.7, got {}", v1.x);
+        assert!((v2.x - 0.7).abs() < 0.01, "Vertex x should be ~0.7, got {}", v2.x);
     }
 }

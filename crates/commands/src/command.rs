@@ -1,4 +1,4 @@
-use ai_agent_workspace_core::LayoutTree;
+use ai_agent_workspace_core::Screen;
 
 pub enum Command {
     SessionCreate {
@@ -23,7 +23,7 @@ pub enum Command {
     TemplateList,
     TemplateSave {
         name: String,
-        tree: LayoutTree,
+        screen: Screen,
     },
     TemplateDelete {
         layout_id: String,
@@ -56,13 +56,43 @@ pub enum Command {
         session_id: String,
         workspace_id: String,
     },
-    WorkspaceUpdateTree {
+    WorkspaceUpdateScreen {
         session_id: String,
         workspace_id: String,
-        tree: LayoutTree,
+        screen: Screen,
     },
     WorkspaceReset {
         session_id: String,
         workspace_id: String,
+    },
+    SplitArea {
+        session_id: String,
+        workspace_id: String,
+        area_id: String,
+        axis: ai_agent_workspace_core::Axis,
+        factor: f64,
+    },
+    JoinAreas {
+        session_id: String,
+        workspace_id: String,
+        source_area_id: String,
+        target_area_id: String,
+    },
+    CloseArea {
+        session_id: String,
+        workspace_id: String,
+        area_id: String,
+    },
+    ResizeEdge {
+        session_id: String,
+        workspace_id: String,
+        edge_id: String,
+        position: f64,
+    },
+    ChangePanelType {
+        session_id: String,
+        workspace_id: String,
+        area_id: String,
+        panel_type: String,
     },
 }
