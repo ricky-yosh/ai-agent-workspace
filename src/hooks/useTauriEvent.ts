@@ -5,7 +5,7 @@ async function safeUnlisten(fn: UnlistenFn) {
   try { await fn(); } catch {}
 }
 
-export function useTauriEvent(event: string, handler: () => void, deps: unknown[] = []) {
+export function useTauriEvent<T = void>(event: string, handler: (payload: T) => void, deps: unknown[] = []) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
@@ -13,7 +13,7 @@ export function useTauriEvent(event: string, handler: () => void, deps: unknown[
     let cancelled = false;
     const unlistens = new Set<UnlistenFn>();
 
-    listen(event, () => handlerRef.current()).then((fn) => {
+    listen<T>(event, (e) => handlerRef.current(e.payload)).then((fn) => {
       unlistens.add(fn);
       if (cancelled) {
         safeUnlisten(fn);

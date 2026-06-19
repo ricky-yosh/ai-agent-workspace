@@ -11,7 +11,6 @@ import "./TerminalPanel.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
-import { pathsEqual } from "./utils/pathUtils";
 import { requestWebgl, releaseWebgl, disposeWebgl } from "./webglPool";
 
 interface CachedTerminal {
@@ -360,11 +359,11 @@ function usePty(
 }
 
 function useTerminalDragDrop(cacheKey: string): void {
-  const { path, focusedPath } = usePanelContext();
-  const focusedPathRef = useRef(focusedPath);
-  focusedPathRef.current = focusedPath;
-  const pathRef = useRef(path);
-  pathRef.current = path;
+  const { areaId, focusedAreaId } = usePanelContext();
+  const focusedAreaIdRef = useRef(focusedAreaId);
+  focusedAreaIdRef.current = focusedAreaId;
+  const areaIdRef = useRef(areaId);
+  areaIdRef.current = areaId;
 
   useEffect(() => {
     const cached = terminalCache.get(cacheKey);
@@ -375,7 +374,7 @@ function useTerminalDragDrop(cacheKey: string): void {
       const c = terminalCache.get(cacheKey);
       if (!c || !c.ptyId) return;
       if (event.payload.type === "drop" && event.payload.paths.length > 0) {
-        if (!pathsEqual(focusedPathRef.current, pathRef.current)) return;
+        if (focusedAreaIdRef.current !== areaIdRef.current) return;
         for (const p of event.payload.paths) {
           invoke("pty_write", { ptyId: c.ptyId, data: p + " " });
         }
@@ -489,7 +488,7 @@ function useTerminalReveal(
 }
 
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId: _workspaceId, sessionId, path: _path, terminalId: contextTerminalId } = usePanelContext();
+  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId } = usePanelContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalIdRef = useRef(contextTerminalId ?? crypto.randomUUID());
   const terminalId = terminalIdRef.current;

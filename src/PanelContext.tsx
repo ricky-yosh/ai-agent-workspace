@@ -3,9 +3,9 @@ import { createContext, useContext } from "react";
 export interface PanelContextType {
   workspaceId: string;
   sessionId: string;
-  path: number[];
-  terminalId?: string;
-  focusedPath: number[] | null;
+  areaId: string;
+  terminalId: string | null;
+  focusedAreaId: string | null;
 }
 
 export const PanelContext = createContext<PanelContextType | null>(null);

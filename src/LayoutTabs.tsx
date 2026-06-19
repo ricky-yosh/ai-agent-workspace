@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
-import type { Layout, LayoutTree } from "./SplitLayout";
+import type { Layout, Screen } from "./types/screen";
 import { useClickOutside } from "./hooks/useClickOutside";
 import { useAnchoredPosition } from "./hooks/useAnchoredPosition";
 import "./LayoutTabs.css";
@@ -10,7 +10,7 @@ interface WorkspaceInstance {
   id: string;
   name: string;
   template_id: string;
-  current_tree: LayoutTree;
+  current_screen: Screen;
 }
 
 interface LayoutTabsProps {
@@ -22,7 +22,7 @@ interface LayoutTabsProps {
   onCloseWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, newName: string) => void;
   onResetToTemplate: (workspaceId: string) => void;
-  onSaveAsTemplate: (tree: LayoutTree) => void;
+  onSaveAsTemplate: (screen: Screen) => void;
   onOpenTemplateManager: () => void;
 }
 
@@ -107,7 +107,7 @@ export default function LayoutTabs({
   function handleSaveAs() {
     if (!ctxMenu) return;
     const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
-    if (ws) onSaveAsTemplate(ws.current_tree);
+    if (ws) onSaveAsTemplate(ws.current_screen);
     setCtxMenu(null);
   }
 

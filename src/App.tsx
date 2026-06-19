@@ -2,15 +2,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { safeInvoke } from "./safeInvoke";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
-import SplitLayout from "./SplitLayout";
+import ScreenRenderer from "./ScreenRenderer";
 import LayoutTabs from "./LayoutTabs";
 import ManageTemplatesModal from "./ManageTemplatesModal";
-import type { Layout, LayoutTree } from "./SplitLayout";
+import type { Layout, Screen } from "./types/screen";
 import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider, useToast } from "./ToastContext";
 import { ToastContainer } from "./Toast";
-import { pathsEqual } from "./utils/pathUtils";
-import { migrateWorkspaceTree } from "./utils/migrateTree";
 import { useEventListener } from "./hooks/useEventListener";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { Dialog } from "./components/Dialog";
@@ -25,7 +23,7 @@ interface WorkspaceInstance {
   id: string;
   name: string;
   template_id: string;
-  current_tree: LayoutTree;
+  current_screen: Screen;
 }
 
 interface Shortcut {
@@ -73,7 +71,6 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
   const [sessionData, setSessionData] = useState<Map<string, SessionWorkspaceData>>(new Map());
   const loadedSessionsRef = useRef<Set<string>>(new Set());
 
-  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
@@ -100,7 +97,7 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
             const next = new Map(prev);
             next.set(sid, {
               workspaces: wsList,
-              activeWorkspace: active ? { ...active, current_tree: migrateWorkspaceTree(active.current_tree) } : null,
+              activeWorkspace: active ?? null,
               loading: false,
             });
             return next;
@@ -137,7 +134,8 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
   const activeWorkspaceRef = useRef(activeWorkspace);
   activeWorkspaceRef.current = activeWorkspace;
 
-  const handleWorkspaceTreeChange = useCallback((workspaceId: string, newTree: LayoutTree) => {
+  /** Update local screen state without persisting (backend already persists). */
+  const handleScreenChange = useCallback((workspaceId: string, newScreen: Screen) => {
     const sid = activeSessionIdRef.current;
     if (!sid) return;
     setSessionData(prev => {
@@ -147,22 +145,33 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
       next.set(sid, {
         ...sd,
         workspaces: sd.workspaces.map(w =>
-          w.id === workspaceId ? { ...w, current_tree: newTree } : w
+          w.id === workspaceId ? { ...w, current_screen: newScreen } : w
         ),
         activeWorkspace: sd.activeWorkspace?.id === workspaceId
-          ? { ...sd.activeWorkspace, current_tree: newTree }
+          ? { ...sd.activeWorkspace, current_screen: newScreen }
           : sd.activeWorkspace,
       });
       return next;
     });
-    if (persistTimeoutRef.current) clearTimeout(persistTimeoutRef.current);
-    persistTimeoutRef.current = setTimeout(() => {
-      safeInvoke("persist_workspace_tree", {
-        sessionId: sid,
-        workspaceId,
-        tree: newTree,
-      }, onError).catch(console.error);
-    }, 200);
+  }, []);
+
+  /** Handle a `workspace-changed` event from the backend.
+   *  Updates any session's active workspace screen (not just the active session). */
+  const handleExternalScreenChange = useCallback((sessionId: string, newScreen: Screen) => {
+    setSessionData(prev => {
+      const next = new Map(prev);
+      const sd = next.get(sessionId);
+      if (!sd) return prev;           // session not loaded yet — ignore
+      if (!sd.activeWorkspace) return prev; // no active workspace
+      next.set(sessionId, {
+        ...sd,
+        workspaces: sd.workspaces.map(w =>
+          w.id === sd.activeWorkspace!.id ? { ...w, current_screen: newScreen } : w
+        ),
+        activeWorkspace: { ...sd.activeWorkspace, current_screen: newScreen },
+      });
+      return next;
+    });
   }, []);
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
@@ -295,7 +304,8 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
     activeWorkspace,
     loading,
     sessionData,
-    handleWorkspaceTreeChange,
+    handleScreenChange,
+    handleExternalScreenChange,
     handleWorkspaceSwitch,
     handleAddWorkspace,
     handleCloseWorkspace,
@@ -345,7 +355,8 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
   const {
     workspaces, activeWorkspace, loading, sessionData,
-    handleWorkspaceTreeChange, handleWorkspaceSwitch,
+    handleWorkspaceSwitch, handleScreenChange,
+    handleExternalScreenChange,
     handleAddWorkspace, handleCloseWorkspace,
     handleRenameWorkspace, handleResetToTemplate,
     handleCycleWorkspace,
@@ -353,30 +364,31 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
 
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
-  const [saveAsTarget, setSaveAsTarget] = useState<LayoutTree | null>(null);
+  const [saveAsTarget, setSaveAsTarget] = useState<Screen | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
-  const [focusedPath, setFocusedPath] = useState<number[] | null>(null);
-  const focusedPathRef = useRef<number[] | null>(null);
-  const [zoomedPath, setZoomedPath] = useState<number[] | null>(null);
+  const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null);
+  const focusedAreaIdRef = useRef<string | null>(null);
+  const [zoomedAreaId, setZoomedAreaId] = useState<string | null>(null);
 
   const toggleZoom = useCallback(() => {
-    const fp = focusedPathRef.current;
-    if (!fp) return;
-    setZoomedPath((prev) =>
-      prev && pathsEqual(prev, fp) ? null : fp
+    const faId = focusedAreaIdRef.current;
+    if (!faId) return;
+    setZoomedAreaId((prev) =>
+      prev === faId ? null : faId
     );
   }, []);
 
   useEffect(() => {
-    focusedPathRef.current = focusedPath;
-  }, [focusedPath]);
+    focusedAreaIdRef.current = focusedAreaId;
+  }, [focusedAreaId]);
 
   useEffect(() => {
     toggleZoomRef.current = toggleZoom;
   }, [toggleZoom, toggleZoomRef]);
 
   useEffect(() => {
-    setZoomedPath(null);
+    setZoomedAreaId(null);
+    setFocusedAreaId(null);
   }, [activeWorkspace?.id]);
 
   const refreshTemplates = useCallback(() => {
@@ -389,14 +401,21 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
 
   useTauriEvent("layouts-changed", useCallback(() => refreshTemplates(), [refreshTemplates]));
 
-  const handleSaveAsTemplate = useCallback((tree: LayoutTree) => {
-    setSaveAsTarget(tree);
+  useTauriEvent<{ session_id: string; screen: Screen }>(
+    "workspace-changed",
+    useCallback((payload) => {
+      handleExternalScreenChange(payload.session_id, payload.screen);
+    }, [handleExternalScreenChange]),
+  );
+
+  const handleSaveAsTemplate = useCallback((screen: Screen) => {
+    setSaveAsTarget(screen);
     setSaveAsName("");
   }, []);
 
   const confirmSaveAsTemplate = useCallback(() => {
     if (!saveAsTarget || !saveAsName.trim()) return;
-    safeInvoke<Layout>("save_layout", { name: saveAsName.trim(), tree: saveAsTarget }, onError)
+    safeInvoke<Layout>("save_layout", { name: saveAsName.trim(), screen: saveAsTarget }, onError)
       .then(() => refreshTemplates())
       .then(() => setSaveAsTarget(null))
       .catch(console.error);
@@ -480,14 +499,15 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
                   key={ws.id}
                   style={{ display: ws.id === sd.activeWorkspace?.id ? 'block' : 'none', width: '100%', height: '100%' }}
                 >
-                  <SplitLayout
+                  <ScreenRenderer
                     workspaceId={ws.id}
                     sessionId={session.id}
-                    tree={ws.current_tree}
-                    onLayoutChange={(newTree) => handleWorkspaceTreeChange(ws.id, newTree)}
-                    focusedPath={focusedPath}
-                    onFocusedPathChange={setFocusedPath}
-                    zoomedPath={zoomedPath}
+                    screen={ws.current_screen}
+                    focusedAreaId={focusedAreaId}
+                    onFocusedAreaChange={setFocusedAreaId}
+                    zoomedAreaId={zoomedAreaId}
+                    onScreenChange={(screen) => handleScreenChange(ws.id, screen)}
+                    onError={onError}
                   />
                 </div>
               ))}

@@ -9,7 +9,7 @@ import {
   Check,
   LayoutTemplate,
 } from "lucide-react";
-import type { Layout } from "./SplitLayout";
+import type { Layout } from "./types/screen";
 import "./ManageTemplatesModal.css";
 
 interface ManageTemplatesModalProps {
