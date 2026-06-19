@@ -19,6 +19,12 @@ import "./App.css";
 import "./Toast.css";
 import "./Dialog.css";
 
+// [sjdbg] monotonic seq counter for split/join race diagnosis
+let _sjdbgSeq = 0;
+function sjdbg(...args: unknown[]) {
+  console.debug(`[sjdbg] ${++_sjdbgSeq} ${Date.now()}`, ...args);
+}
+
 interface WorkspaceInstance {
   id: string;
   name: string;
@@ -161,6 +167,7 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
     setSessionData(prev => {
       const next = new Map(prev);
       const sd = next.get(sessionId);
+      sjdbg("handleExternalScreenChange", { sessionId, incomingAreaIds: newScreen.areas.map(a => a.id), activeWsId: sd?.activeWorkspace?.id ?? null, sdFound: !!sd });
       if (!sd) return prev;           // session not loaded yet — ignore
       if (!sd.activeWorkspace) return prev; // no active workspace
       next.set(sessionId, {
@@ -176,10 +183,15 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
 
   const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
     const sid = activeSessionIdRef.current;
+    sjdbg("handleWorkspaceSwitch start", { targetWorkspaceId: workspaceId, sessionId: sid });
     if (!sid) return;
     safeInvoke("set_active_workspace", { sessionId: sid, workspaceId }, onError)
-      .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError))
+      .then(() => {
+        sjdbg("handleWorkspaceSwitch set_active_workspace resolved", { workspaceId });
+        return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError);
+      })
       .then((active) => {
+        sjdbg("handleWorkspaceSwitch get_active_workspace resolved", { returnedWsId: active?.id ?? null, areaIds: active?.current_screen.areas.map(a => a.id) ?? [] });
         setSessionData(prev => {
           const next = new Map(prev);
           const sd = next.get(sid);
@@ -404,6 +416,7 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   useTauriEvent<{ session_id: string; screen: Screen }>(
     "workspace-changed",
     useCallback((payload) => {
+      sjdbg("workspace-changed event received", { session_id: payload.session_id, areaIds: payload.screen.areas.map(a => a.id) });
       handleExternalScreenChange(payload.session_id, payload.screen);
     }, [handleExternalScreenChange]),
   );

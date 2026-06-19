@@ -642,6 +642,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
 }
 
 pub fn screen_area_join(screen: &mut Screen, survivor_id: &str, absorbed_id: &str) -> Result<(), String> {
+    eprintln!("[sjdbg] screen_area_join survivor={} absorbed={} area_ids={:?} edge_ids={:?}", survivor_id, absorbed_id, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>(), screen.edges.iter().map(|e| &e.id).collect::<Vec<_>>());
     let adj = get_adjacency(screen, survivor_id, absorbed_id)
         .ok_or_else(|| "Areas are not adjacent".to_string())?;
 
@@ -786,6 +787,7 @@ pub fn screen_area_close(screen: &mut Screen, area_id: &str) -> Result<(), Strin
 }
 
 pub fn resize_edge(screen: &mut Screen, edge_id: &str, new_pos: f64) -> Result<(), String> {
+    eprintln!("[sjdbg] resize_edge edge_id={} new_pos={} area_ids={:?} edge_ids={:?}", edge_id, new_pos, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>(), screen.edges.iter().map(|e| &e.id).collect::<Vec<_>>());
     let (is_horizontal, is_vertical) = {
         let edge = screen.get_edge(edge_id).ok_or_else(|| "Edge not found".to_string())?;
         (is_edge_horizontal(screen, edge), is_edge_vertical(screen, edge))

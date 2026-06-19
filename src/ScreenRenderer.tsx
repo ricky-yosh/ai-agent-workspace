@@ -7,6 +7,12 @@ import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
 import "./ScreenRenderer.css";
 
+// [sjdbg] monotonic seq counter for split/join race diagnosis
+let _sjdbgSeq = 0;
+function sjdbg(...args: unknown[]) {
+  console.debug(`[sjdbg] ${++_sjdbgSeq} ${Date.now()}`, ...args);
+}
+
 const EPSILON = 0.0001;
 const SASH_SIZE = 4; // px
 const MIN_DRAG_DISTANCE = 24;
@@ -199,6 +205,8 @@ export default function ScreenRenderer({
       const clampedPos = Math.max(0, Math.min(1, rawPos));
       const finalPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
 
+      sjdbg("sash drag mouseup", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, edgeId, finalPos, edgeIds: screen.edges.map(e => e.id) });
+
       safeInvoke<WorkspaceResult>("resize_edge", {
         sessionId: sessionIdRef.current,
         workspaceId: workspaceIdRef.current,
@@ -292,6 +300,8 @@ export default function ScreenRenderer({
       }
       factor = Math.max(0.05, Math.min(0.95, factor));
 
+      sjdbg("split drag mouseup", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, areaId: state.area.id, axis: state.axis, factor });
+
       safeInvoke<WorkspaceResult>("split_area", {
         sessionId: sessionIdRef.current,
         workspaceId: workspaceIdRef.current,
@@ -368,6 +378,7 @@ export default function ScreenRenderer({
 
   // Reset interaction states when screen changes (command completed successfully)
   useEffect(() => {
+    sjdbg("screen prop changed - resetting drag/join state", { areaIds: screen.areas.map(a => a.id) });
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -464,6 +475,8 @@ export default function ScreenRenderer({
       const targetId = areaId;
       const sourceId = areaA.id === areaId ? areaB.id : areaA.id;
       const source = areaA.id === areaId ? areaB : areaA;
+
+      sjdbg("handleJoinAreaClick", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, targetId, sourceId, screenAreaIds: screen.areas.map(a => a.id) });
 
       setJoinMode(null);
 
