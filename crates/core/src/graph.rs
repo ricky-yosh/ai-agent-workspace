@@ -857,6 +857,7 @@ pub fn resize_edge(screen: &mut Screen, edge_id: &str, new_pos: f64) -> Result<(
         }
     }
 
+    cleanup(screen);
     Ok(())
 }
 
@@ -2130,5 +2131,53 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("overlap"),
             "Expected overlap error, got: {}", err);
+    }
+
+    #[test]
+    fn test_resize_edge_merges_coincident_vertices() {
+        // Regression: resize_edge must call cleanup() so that a moved vertex
+        // that lands on an existing vertex is merged rather than producing
+        // "Duplicate vertex" errors in validate_screen.
+        let mut screen = make_two_area_screen();
+
+        // Add an extra vertical edge at x=0.3 whose vertices will become
+        // coincident when the main divider (x=0.5) is resized to 0.3.
+        let vx_bot_id = "vx_bot";
+        let vx_top_id = "vx_top";
+        screen.vertices.push(Vertex { id: vx_bot_id.into(), x: 0.3, y: 0.0 });
+        screen.vertices.push(Vertex { id: vx_top_id.into(), x: 0.3, y: 1.0 });
+        screen.edges.push(Edge {
+            id: "e_x".into(),
+            v1: vx_bot_id.into(),
+            v2: vx_top_id.into(),
+            border: false,
+        });
+
+        // Sanity: screen is still valid before resize
+        assert!(validate_screen(&screen).is_ok());
+
+        // Find the internal divider edge e_mid (connects mt and mb)
+        let mid_edge_id = "e_mid";
+
+        // Resize the divider from x=0.5 to x=0.3 so that mt/mb land exactly
+        // on vx_top/vx_bot.
+        let result = resize_edge(&mut screen, mid_edge_id, 0.3);
+        assert!(result.is_ok(), "resize_edge failed: {:?}", result);
+
+        // Core regression assertion: screen must be valid (no duplicate vertices)
+        assert!(validate_screen(&screen).is_ok(),
+            "Screen should be valid after resize_edge with cleanup, but got: {:?}",
+            validate_screen(&screen));
+
+        // Verify coincident vertices were merged: only 1 vertex at each position
+        let at_pos = |x: f64, y: f64| -> usize {
+            screen.vertices.iter()
+                .filter(|v| (v.x - x).abs() < EPSILON && (v.y - y).abs() < EPSILON)
+                .count()
+        };
+        assert_eq!(at_pos(0.3, 0.0), 1,
+            "Expected exactly 1 vertex at (0.3, 0.0) after merge");
+        assert_eq!(at_pos(0.3, 1.0), 1,
+            "Expected exactly 1 vertex at (0.3, 1.0) after merge");
     }
 }
