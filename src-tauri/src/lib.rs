@@ -22,13 +22,14 @@ fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
         match event {
             DomainEvent::SessionsChanged => { let _ = app.emit("sessions-changed", ()); }
             DomainEvent::LayoutsChanged => { let _ = app.emit("layouts-changed", ()); }
-            DomainEvent::WorkspaceChanged { session_id, screen } => {
+            DomainEvent::WorkspaceChanged { session_id, workspace_id, screen } => {
                 #[derive(serde::Serialize, Clone)]
                 struct WorkspaceChangedPayload {
                     session_id: String,
+                    workspace_id: String,
                     screen: Screen,
                 }
-                let _ = app.emit("workspace-changed", WorkspaceChangedPayload { session_id: session_id.clone(), screen: screen.clone() });
+                let _ = app.emit("workspace-changed", WorkspaceChangedPayload { session_id: session_id.clone(), workspace_id: workspace_id.clone(), screen: screen.clone() });
             }
         }
     }

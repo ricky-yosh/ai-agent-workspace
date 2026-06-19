@@ -162,20 +162,26 @@ function useWorkspaceManager(onError?: (msg: string) => void) {
   }, []);
 
   /** Handle a `workspace-changed` event from the backend.
-   *  Updates any session's active workspace screen (not just the active session). */
-  const handleExternalScreenChange = useCallback((sessionId: string, newScreen: Screen) => {
+   *  Routes by explicit workspace_id — never by "current active workspace". */
+  const handleExternalScreenChange = useCallback((sessionId: string, workspaceId: string, newScreen: Screen) => {
     setSessionData(prev => {
       const next = new Map(prev);
       const sd = next.get(sessionId);
-      sjdbg("handleExternalScreenChange", { sessionId, incomingAreaIds: newScreen.areas.map(a => a.id), activeWsId: sd?.activeWorkspace?.id ?? null, sdFound: !!sd });
+      const targetWs = sd?.workspaces.find(w => w.id === workspaceId);
+      sjdbg("handleExternalScreenChange", { sessionId, workspaceId, incomingAreaIds: newScreen.areas.map(a => a.id), activeWsId: sd?.activeWorkspace?.id ?? null, foundMatch: !!targetWs, sdFound: !!sd });
       if (!sd) return prev;           // session not loaded yet — ignore
-      if (!sd.activeWorkspace) return prev; // no active workspace
+      if (!targetWs) {
+        sjdbg("handleExternalScreenChange — no matching workspace found", { sessionId, workspaceId, availableIds: sd.workspaces.map(w => w.id) });
+        return prev; // workspace not in list — leave state unchanged
+      }
       next.set(sessionId, {
         ...sd,
         workspaces: sd.workspaces.map(w =>
-          w.id === sd.activeWorkspace!.id ? { ...w, current_screen: newScreen } : w
+          w.id === workspaceId ? { ...w, current_screen: newScreen } : w
         ),
-        activeWorkspace: { ...sd.activeWorkspace, current_screen: newScreen },
+        activeWorkspace: sd.activeWorkspace?.id === workspaceId
+          ? { ...sd.activeWorkspace, current_screen: newScreen }
+          : sd.activeWorkspace,
       });
       return next;
     });
@@ -413,11 +419,11 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
 
   useTauriEvent("layouts-changed", useCallback(() => refreshTemplates(), [refreshTemplates]));
 
-  useTauriEvent<{ session_id: string; screen: Screen }>(
+  useTauriEvent<{ session_id: string; workspace_id: string; screen: Screen }>(
     "workspace-changed",
     useCallback((payload) => {
-      sjdbg("workspace-changed event received", { session_id: payload.session_id, areaIds: payload.screen.areas.map(a => a.id) });
-      handleExternalScreenChange(payload.session_id, payload.screen);
+      sjdbg("workspace-changed event received", { session_id: payload.session_id, workspace_id: payload.workspace_id, areaIds: payload.screen.areas.map(a => a.id) });
+      handleExternalScreenChange(payload.session_id, payload.workspace_id, payload.screen);
     }, [handleExternalScreenChange]),
   );
 

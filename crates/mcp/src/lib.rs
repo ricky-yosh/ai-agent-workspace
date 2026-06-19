@@ -20,26 +20,26 @@ fn make_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Optio
 }
 
 #[cfg(feature = "tauri-integration")]
-fn make_workspace_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>> {
+fn make_workspace_change_callback(handle: &tauri::AppHandle, event: &'static str) -> Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>> {
     let h = handle.clone();
-    Some(std::sync::Arc::new(move |session_id: String, screen: Screen| {
-        let _ = h.emit(event, serde_json::json!({ "session_id": session_id, "screen": screen }));
-    }) as std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>)
+    Some(std::sync::Arc::new(move |session_id: String, workspace_id: String, screen: Screen| {
+        let _ = h.emit(event, serde_json::json!({ "session_id": session_id, "workspace_id": workspace_id, "screen": screen }));
+    }) as std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>)
 }
 
 fn invoke_callbacks(
     events: &[DomainEvent],
     session_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     layouts_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    workspace_cb: &Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>>,
+    workspace_cb: &Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
 ) {
     for event in events {
         match event {
             DomainEvent::SessionsChanged => {
                 if let Some(cb) = session_cb { cb(); }
             }
-            DomainEvent::WorkspaceChanged { session_id, screen } => {
-                if let Some(cb) = workspace_cb { cb(session_id.clone(), screen.clone()); }
+            DomainEvent::WorkspaceChanged { session_id, workspace_id, screen } => {
+                if let Some(cb) = workspace_cb { cb(session_id.clone(), workspace_id.clone(), screen.clone()); }
             }
             DomainEvent::LayoutsChanged => {
                 if let Some(cb) = layouts_cb { cb(); }
@@ -105,7 +105,7 @@ macro_rules! run_mcp_command {
 pub struct McpHandler {
     pub db: Database,
     pub on_session_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, Screen) + Send + Sync>>,
+    pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
     pub on_layouts_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     pub resolved_session_id: Option<String>,
     pub resolution_source: String,
