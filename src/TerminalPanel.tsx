@@ -58,6 +58,25 @@ const terminalCache = new TerminalCache();
 const ptyExitCallbacks = new Map<string, () => void>();
 
 /**
+ * Force xterm to detach the document-level mouse listeners it attaches during a
+ * drag, by resetting the active mouse protocol to NONE. Safe to call regardless
+ * of whether any are currently attached (NONE is idempotent). Reaches into
+ * `_core.coreMouseService`, a private field — wrapped in try/catch so a future
+ * xterm internals change degrades to the prior (crashing) behaviour rather than
+ * breaking teardown outright.
+ */
+function releaseDocumentMouseListeners(terminal: Terminal): void {
+  try {
+    const cms = (terminal as unknown as {
+      _core?: { coreMouseService?: { activeProtocol: string } };
+    })._core?.coreMouseService;
+    if (cms && cms.activeProtocol !== "NONE") cms.activeProtocol = "NONE";
+  } catch {
+    // Private API moved/renamed — nothing safe to do; fall through to dispose.
+  }
+}
+
+/**
  * Permanently tear down a terminal. Call this from the explicit panel-close
  * path (e.g. consuming/joining a pane, or switching a pane away from a
  * terminal) — NOT from a React unmount, which is transient (StrictMode /
@@ -70,6 +89,22 @@ export function disposeTerminal(terminalId: string): void {
   // renderer), then drop the cached Terminal and kill the PTY. Order matters
   // only loosely, but freeing the renderer before disposing the Terminal keeps
   // the addon's canvas references valid while we tear the context down.
+  const dyingTerminal = terminalCache.get(terminalId)?.terminal;
+  // Drop xterm's document-level mouse drag listeners BEFORE disposing the
+  // terminal. When mouse reporting is active, a mousedown in the terminal makes
+  // xterm attach `mouseup`/`mousemove(mousedrag)` handlers to `document` (xterm
+  // bindMouse). Unlike the element listeners, these are added with a raw
+  // addEventListener — NOT via the terminal's disposable registry — and are
+  // removed only on the matching mouseup. So if we dispose the terminal mid-drag
+  // (e.g. consuming/joining a pane during a session/workspace swap), those
+  // document listeners survive, still pointing at the now-disposed RenderService.
+  // The next mouseup/mousedrag then reads `this._renderer.value.dimensions` on a
+  // disposed service (the getter has no null guard) and throws.
+  //
+  // Resetting the mouse protocol to NONE fires xterm's onProtocolChange(0), whose
+  // handler removeEventListener()s exactly those two document listeners — scoped
+  // to this terminal, synchronously, while it's still alive.
+  if (dyingTerminal) releaseDocumentMouseListeners(dyingTerminal);
   disposeWebgl(terminalId);
   terminalCache.dispose(terminalId);
   ptyExitCallbacks.delete(terminalId);
