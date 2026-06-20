@@ -22,15 +22,6 @@
   transition: none;
 }
 
-.screen-area--focused {
-  box-shadow: inset 0 0 0 2px var(--accent-color, #7c3aed);
-  border-radius: 2px;
-  /* No z-index: a stacking context here would trap the corner split-handles
-     (z-index 8) below the root-level sashes (z-index 5), letting the sash steal
-     corner clicks. The focus ring is an inset box-shadow within the area's own
-     non-overlapping bounds, so it needs no z-index lift. */
-}
-
 .screen-area-content {
   width: 100%;
   height: 100%;
@@ -82,16 +73,12 @@
   inset: -4px;
 }
 
-.screen-sash:hover {
-  background: var(--accent-color, #7c3aed);
-  opacity: 0.4;
-}
+/* No hover color: the resize cursor is the affordance. */
 
-/* Snap cue: highlight the dragged sash itself when it snaps to grid/vertex. */
+/* Snap cue: neutral brighten of the dragged sash when it locks to grid/vertex. */
 .screen-sash--snapped {
-  background: var(--accent-color, #7c3aed);
+  background: rgba(255, 255, 255, 0.5);
   opacity: 1;
-  box-shadow: 0 0 6px var(--accent-color, #7c3aed);
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,7 +93,7 @@
   opacity: 0.22;
   transition: opacity 0.15s ease;
   border-radius: 50%;
-  background: var(--accent-color, #7c3aed);
+  background: var(--text-muted, #aaa);
 }
 
 .screen-corner-handle--tl {
@@ -131,7 +118,7 @@
 
 .screen-area:hover .screen-corner-handle {
   opacity: 1;
-  background: var(--accent-color, #7c3aed);
+  background: var(--text-muted, #aaa);
 }
 
 /* ------------------------------------------------------------------ */
