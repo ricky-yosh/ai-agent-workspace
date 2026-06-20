@@ -7,12 +7,6 @@ import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
 import "./ScreenRenderer.css";
 
-// [sjdbg] monotonic seq counter for split/join race diagnosis
-let _sjdbgSeq = 0;
-function sjdbg(...args: unknown[]) {
-  console.debug(`[sjdbg] ${++_sjdbgSeq} ${Date.now()}`, ...args);
-}
-
 const EPSILON = 0.0001;
 const SASH_SIZE = 4; // px
 const MIN_DRAG_DISTANCE = 24;
@@ -61,11 +55,54 @@ interface JoinModeState {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Find the areas that share both vertices of `edge`. */
+/** Check if two collinear segments [a1, a2] and [b1, b2] overlap (interval length > 0). */
+function segmentsOverlap(a1: number, a2: number, b1: number, b2: number): boolean {
+  const [amin, amax] = a1 < a2 ? [a1, a2] : [a2, a1];
+  const [bmin, bmax] = b1 < b2 ? [b1, b2] : [b2, b1];
+  return Math.min(amax, bmax) - Math.max(amin, bmin) > EPSILON;
+}
+
+/** Find the areas whose boundary overlaps the edge segment. */
 function findAdjacentAreas(screen: Screen, edge: Edge): Area[] {
+  const v1 = screen.vertices.find((v) => v.id === edge.v1);
+  const v2 = screen.vertices.find((v) => v.id === edge.v2);
+  if (!v1 || !v2) return [];
+
+  const ex1 = v1.x, ey1 = v1.y;
+  const ex2 = v2.x, ey2 = v2.y;
+
   return screen.areas.filter((a) => {
-    const verts = [a.v1, a.v2, a.v3, a.v4];
-    return verts.includes(edge.v1) && verts.includes(edge.v2);
+    const av1 = screen.vertices.find((v) => v.id === a.v1);
+    const av2 = screen.vertices.find((v) => v.id === a.v2);
+    const av3 = screen.vertices.find((v) => v.id === a.v3);
+    const av4 = screen.vertices.find((v) => v.id === a.v4);
+    if (!av1 || !av2 || !av3 || !av4) return false;
+
+    // Area bounds: v1=BL, v2=TL, v3=TR, v4=BR
+    const left = av1.x, bottom = av1.y, right = av3.x, top = av3.y;
+
+    // Check if edge overlaps any of the area's 4 sides:
+    // Bottom: y=bottom, x in [left, right]
+    // Top: y=top, x in [left, right]
+    // Left: x=left, y in [bottom, top]
+    // Right: x=right, y in [bottom, top]
+
+    const isHorizontal = Math.abs(ey1 - ey2) < EPSILON;
+    const isVertical = Math.abs(ex1 - ex2) < EPSILON;
+
+    if (isHorizontal && Math.abs(ey1 - bottom) < EPSILON && segmentsOverlap(ex1, ex2, left, right)) {
+      return true; // overlaps bottom side
+    }
+    if (isHorizontal && Math.abs(ey1 - top) < EPSILON && segmentsOverlap(ex1, ex2, left, right)) {
+      return true; // overlaps top side
+    }
+    if (isVertical && Math.abs(ex1 - left) < EPSILON && segmentsOverlap(ey1, ey2, bottom, top)) {
+      return true; // overlaps left side
+    }
+    if (isVertical && Math.abs(ex1 - right) < EPSILON && segmentsOverlap(ey1, ey2, bottom, top)) {
+      return true; // overlaps right side
+    }
+    return false;
   });
 }
 
@@ -98,11 +135,14 @@ export default function ScreenRenderer({
   const [sashDrag, setSashDrag] = useState<SashDragState | null>(null);
   const sashDragRef = useRef<SashDragState | null>(null);
   const rafRef = useRef<number | null>(null);
+  const sashMovedRef = useRef(false);
 
   const [splitDrag, setSplitDrag] = useState<SplitDragState | null>(null);
   const splitDragRef = useRef<SplitDragState | null>(null);
 
   const [joinMode, setJoinMode] = useState<JoinModeState | null>(null);
+  const joinModeRef = useRef<JoinModeState | null>(null);
+  joinModeRef.current = joinMode;
 
   // ---------- Vertex lookup ----------
   const vertexMap = useMemo(() => {
@@ -166,6 +206,7 @@ export default function ScreenRenderer({
     const handleMouseMove = (e: MouseEvent) => {
       const container = containerRef.current;
       if (!container) return;
+      sashMovedRef.current = true;
       const rect = container.getBoundingClientRect();
 
       // screen coords: 0-1, origin bottom-left
@@ -194,29 +235,29 @@ export default function ScreenRenderer({
       sashDragRef.current = null;
       setSashDrag(null);
 
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
+      if (sashMovedRef.current) {
+        const container = containerRef.current;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
 
-      const rawPos = isHorizontal
-        ? 1 - (e.clientY - rect.top) / rect.height
-        : (e.clientX - rect.left) / rect.width;
+        const rawPos = isHorizontal
+          ? 1 - (e.clientY - rect.top) / rect.height
+          : (e.clientX - rect.left) / rect.width;
 
-      const clampedPos = Math.max(0, Math.min(1, rawPos));
-      const finalPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
+        const clampedPos = Math.max(0, Math.min(1, rawPos));
+        const finalPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
 
-      sjdbg("sash drag mouseup", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, edgeId, finalPos, edgeIds: screen.edges.map(e => e.id) });
-
-      safeInvoke<WorkspaceResult>("resize_edge", {
-        sessionId: sessionIdRef.current,
-        workspaceId: workspaceIdRef.current,
-        edgeId,
-        position: finalPos,
-      }, onErrorRef.current)
-        .then((result) => {
-          onScreenChangeRef.current(result.current_screen);
-        })
-        .catch(() => {});
+        safeInvoke<WorkspaceResult>("resize_edge", {
+          sessionId: sessionIdRef.current,
+          workspaceId: workspaceIdRef.current,
+          edgeId,
+          position: finalPos,
+        }, onErrorRef.current)
+          .then((result) => {
+            onScreenChangeRef.current(result.current_screen);
+          })
+          .catch(() => {});
+      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -300,8 +341,6 @@ export default function ScreenRenderer({
       }
       factor = Math.max(0.05, Math.min(0.95, factor));
 
-      sjdbg("split drag mouseup", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, areaId: state.area.id, axis: state.axis, factor });
-
       safeInvoke<WorkspaceResult>("split_area", {
         sessionId: sessionIdRef.current,
         workspaceId: workspaceIdRef.current,
@@ -378,7 +417,6 @@ export default function ScreenRenderer({
 
   // Reset interaction states when screen changes (command completed successfully)
   useEffect(() => {
-    sjdbg("screen prop changed - resetting drag/join state", { areaIds: screen.areas.map(a => a.id) });
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -387,7 +425,17 @@ export default function ScreenRenderer({
     sashDragRef.current = null;
     setSplitDrag(null);
     splitDragRef.current = null;
-    setJoinMode(null);
+    // Preserve join mode if its areas still exist in the new screen
+    if (
+      joinModeRef.current &&
+      joinModeRef.current.adjacentAreas.every((a) =>
+        screen.areas.some((sa) => sa.id === a.id),
+      )
+    ) {
+      // keep join mode active
+    } else {
+      setJoinMode(null);
+    }
   }, [screen]);
 
   // ------------------------------------------------------------------
@@ -412,6 +460,7 @@ export default function ScreenRenderer({
         isHorizontal,
         position,
       };
+      sashMovedRef.current = false;
       sashDragRef.current = state;
       setSashDrag(state);
     },
@@ -475,8 +524,6 @@ export default function ScreenRenderer({
       const targetId = areaId;
       const sourceId = areaA.id === areaId ? areaB.id : areaA.id;
       const source = areaA.id === areaId ? areaB : areaA;
-
-      sjdbg("handleJoinAreaClick", { sessionId: sessionIdRef.current, workspaceId: workspaceIdRef.current, targetId, sourceId, screenAreaIds: screen.areas.map(a => a.id) });
 
       setJoinMode(null);
 

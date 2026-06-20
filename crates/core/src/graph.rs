@@ -641,11 +641,187 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
     Ok(new_area_id)
 }
 
+/// Given two areas and their adjacency direction, compute how much each area
+/// overhangs beyond the overlap interval along the shared axis.
+///
+/// Returns `(survivor_overhang_near, survivor_overhang_far,
+///          absorbed_overhang_near, absorbed_overhang_far)`.
+///
+/// *Near* is the side toward the shared boundary (bottom for E/W, left for N/S).
+/// *Far* is the opposite side (top for E/W, right for N/S).
+/// All values are ≥ 0 (aligned areas produce 0).
+fn compute_join_overlaps(
+    screen: &Screen,
+    survivor_id: &str,
+    absorbed_id: &str,
+    adj: Adjacency,
+) -> Result<(f64, f64, f64, f64), String> {
+    let survivor = screen.areas.iter().find(|a| a.id == survivor_id)
+        .ok_or_else(|| "Survivor area not found".to_string())?;
+    let absorbed = screen.areas.iter().find(|a| a.id == absorbed_id)
+        .ok_or_else(|| "Absorbed area not found".to_string())?;
+
+    let (surv_left, surv_bottom, surv_right, surv_top) = area_bounds(screen, survivor)
+        .ok_or_else(|| "Cannot compute survivor bounds".to_string())?;
+    let (abs_left, abs_bottom, abs_right, abs_top) = area_bounds(screen, absorbed)
+        .ok_or_else(|| "Cannot compute absorbed bounds".to_string())?;
+
+    let (overlap_start, overlap_end) = match adj {
+        Adjacency::East | Adjacency::West => {
+            // Shared boundary is vertical, overlap on y-axis
+            (surv_bottom.max(abs_bottom), surv_top.min(abs_top))
+        }
+        Adjacency::North | Adjacency::South => {
+            // Shared boundary is horizontal, overlap on x-axis
+            (surv_left.max(abs_left), surv_right.min(abs_right))
+        }
+    };
+
+    let (survivor_overhang_near, survivor_overhang_far) = match adj {
+        Adjacency::East | Adjacency::West => {
+            ((overlap_start - surv_bottom).max(0.0), (surv_top - overlap_end).max(0.0))
+        }
+        Adjacency::North | Adjacency::South => {
+            ((overlap_start - surv_left).max(0.0), (surv_right - overlap_end).max(0.0))
+        }
+    };
+
+    let (absorbed_overhang_near, absorbed_overhang_far) = match adj {
+        Adjacency::East | Adjacency::West => {
+            ((overlap_start - abs_bottom).max(0.0), (abs_top - overlap_end).max(0.0))
+        }
+        Adjacency::North | Adjacency::South => {
+            ((overlap_start - abs_left).max(0.0), (abs_right - overlap_end).max(0.0))
+        }
+    };
+
+    Ok((survivor_overhang_near, survivor_overhang_far, absorbed_overhang_near, absorbed_overhang_far))
+}
+
+/// After splitting an area, determine which piece (the original or the new area)
+/// has its near-boundary (bottom for horizontal, left for vertical) or far-boundary
+/// (top for horizontal, right for vertical) at `split_pos`.
+///
+/// * `check_start = true` → look for the piece whose `bottom` (horizontal) / `left` (vertical) ≈ `split_pos`
+/// * `check_start = false` → look for the piece whose `top` (horizontal) / `right` (vertical) ≈ `split_pos`
+fn piece_with_bound_at(
+    screen: &Screen,
+    orig_id: &str,
+    new_id: &str,
+    split_pos: f64,
+    axis: Axis,
+    check_start: bool,
+) -> String {
+    let get_bounds = |id: &str| {
+        let area = screen.areas.iter().find(|a| a.id == id).unwrap();
+        area_bounds(screen, area).unwrap()
+    };
+    let (o_l, o_b, o_r, o_t) = get_bounds(orig_id);
+
+    match axis {
+        Axis::Horizontal => {
+            if check_start {
+                // Aligned piece has bottom ≈ split_pos (upper piece)
+                if (o_b - split_pos).abs() < EPSILON { orig_id.to_string() } else { new_id.to_string() }
+            } else {
+                // Aligned piece has top ≈ split_pos (lower piece)
+                if (o_t - split_pos).abs() < EPSILON { orig_id.to_string() } else { new_id.to_string() }
+            }
+        }
+        Axis::Vertical => {
+            if check_start {
+                // Aligned piece has left ≈ split_pos (right piece)
+                if (o_l - split_pos).abs() < EPSILON { orig_id.to_string() } else { new_id.to_string() }
+            } else {
+                // Aligned piece has right ≈ split_pos (left piece)
+                if (o_r - split_pos).abs() < EPSILON { orig_id.to_string() } else { new_id.to_string() }
+            }
+        }
+    }
+}
+
 pub fn screen_area_join(screen: &mut Screen, survivor_id: &str, absorbed_id: &str) -> Result<(), String> {
-    eprintln!("[sjdbg] screen_area_join survivor={} absorbed={} area_ids={:?} edge_ids={:?}", survivor_id, absorbed_id, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>(), screen.edges.iter().map(|e| &e.id).collect::<Vec<_>>());
     let adj = get_adjacency(screen, survivor_id, absorbed_id)
         .ok_or_else(|| "Areas are not adjacent".to_string())?;
 
+    let (survivor_near, survivor_far, absorbed_near, absorbed_far) =
+        compute_join_overlaps(screen, survivor_id, absorbed_id, adj)?;
+
+    // Fast path: no overhangs → aligned merge (preserves current behavior)
+    if survivor_near <= EPSILON
+        && survivor_far <= EPSILON
+        && absorbed_near <= EPSILON
+        && absorbed_far <= EPSILON
+    {
+        return screen_area_join_aligned(screen, survivor_id, absorbed_id, adj);
+    }
+
+    let (split_axis, is_ns) = match adj {
+        Adjacency::East | Adjacency::West => (Axis::Horizontal, false),
+        Adjacency::North | Adjacency::South => (Axis::Vertical, true),
+    };
+
+    // Compute the fixed overlap interval from the original areas
+    let (overlap_start, overlap_end) = {
+        let surv = screen.areas.iter().find(|a| a.id == survivor_id).unwrap();
+        let abs = screen.areas.iter().find(|a| a.id == absorbed_id).unwrap();
+        let (sl, sb, sr, st) = area_bounds(screen, surv).unwrap();
+        let (al, ab, ar, at) = area_bounds(screen, abs).unwrap();
+        match adj {
+            Adjacency::East | Adjacency::West => (sb.max(ab), st.min(at)),
+            Adjacency::North | Adjacency::South => (sl.max(al), sr.min(ar)),
+        }
+    };
+
+    // Track which area IDs hold the aligned portions after trimming
+    let mut survivor_aligned_id = survivor_id.to_string();
+    let mut absorbed_aligned_id = absorbed_id.to_string();
+
+    // Helper: split `area_id` at `split_pos` along `split_axis`, then update
+    // `area_id` to whichever piece is the one that continues the overlap.
+    let mut trim = |area_id: &mut String, split_pos: f64, is_near: bool| -> Result<(), String> {
+        // Read current bounds of the piece to be split
+        let (l, b, r, t) = {
+            let area = screen.areas.iter().find(|a| a.id == *area_id).unwrap();
+            area_bounds(screen, area).unwrap()
+        };
+        let (near_dim, far_dim) = if is_ns { (l, r) } else { (b, t) };
+        let total = far_dim - near_dim;
+        let factor = (split_pos - near_dim) / total;
+        let new_id = area_split(screen, area_id, split_axis.clone(), factor)?;
+        let aligned =
+            piece_with_bound_at(screen, area_id, &new_id, split_pos, split_axis.clone(), is_near);
+        *area_id = aligned;
+        Ok(())
+    };
+
+    // Trim survivor near-side overhang
+    if survivor_near > EPSILON {
+        trim(&mut survivor_aligned_id, overlap_start, true)?;
+    }
+    // Trim survivor far-side overhang
+    if survivor_far > EPSILON {
+        trim(&mut survivor_aligned_id, overlap_end, false)?;
+    }
+    // Trim absorbed near-side overhang
+    if absorbed_near > EPSILON {
+        trim(&mut absorbed_aligned_id, overlap_start, true)?;
+    }
+    // Trim absorbed far-side overhang
+    if absorbed_far > EPSILON {
+        trim(&mut absorbed_aligned_id, overlap_end, false)?;
+    }
+
+    // Merge the now-aligned pieces
+    screen_area_join_aligned(screen, &survivor_aligned_id, &absorbed_aligned_id, adj)
+}
+
+fn screen_area_join_aligned(
+    screen: &mut Screen,
+    survivor_id: &str,
+    absorbed_id: &str,
+    adj: Adjacency,
+) -> Result<(), String> {
     // Clone all needed data before mutations
     let (absorbed_v1, absorbed_v2, absorbed_v3, absorbed_v4) = {
         let absorbed = screen.get_area(absorbed_id)
@@ -787,7 +963,6 @@ pub fn screen_area_close(screen: &mut Screen, area_id: &str) -> Result<(), Strin
 }
 
 pub fn resize_edge(screen: &mut Screen, edge_id: &str, new_pos: f64) -> Result<(), String> {
-    eprintln!("[sjdbg] resize_edge edge_id={} new_pos={} area_ids={:?} edge_ids={:?}", edge_id, new_pos, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>(), screen.edges.iter().map(|e| &e.id).collect::<Vec<_>>());
     let (is_horizontal, is_vertical) = {
         let edge = screen.get_edge(edge_id).ok_or_else(|| "Edge not found".to_string())?;
         (is_edge_horizontal(screen, edge), is_edge_vertical(screen, edge))
@@ -1599,6 +1774,299 @@ mod tests {
         let mut screen = Screen::new();
         let result = screen_area_join(&mut screen, "nonexistent", "other");
         assert!(result.is_err());
+    }
+
+    // ----- Partial-overlap join tests -----
+
+    /// Layout:
+    /// ```
+    /// +--------+-------+
+    /// |        |   B   |
+    /// |   A    +-------+
+    /// |        |   C   |
+    /// +--------+-------+
+    /// ```
+    /// A: x:0–0.5, y:0–1 (full-height left bar)
+    /// B: x:0.5–1, y:0.5–1 (top-right)
+    /// C: x:0.5–1, y:0–0.5 (bottom-right)
+    fn make_abc_t_junction_screen() -> Screen {
+        Screen {
+            vertices: vec![
+                Vertex { id: "v_bl".into(), x: 0.0, y: 0.0 },
+                Vertex { id: "v_tl".into(), x: 0.0, y: 1.0 },
+                Vertex { id: "v_mt".into(), x: 0.5, y: 1.0 },
+                Vertex { id: "v_tr".into(), x: 1.0, y: 1.0 },
+                Vertex { id: "v_mr".into(), x: 1.0, y: 0.5 },
+                Vertex { id: "v_br".into(), x: 1.0, y: 0.0 },
+                Vertex { id: "v_mm".into(), x: 0.5, y: 0.5 },
+                Vertex { id: "v_mb".into(), x: 0.5, y: 0.0 },
+            ],
+            edges: vec![
+                Edge { id: "e_left".into(), v1: "v_bl".into(), v2: "v_tl".into(), border: true },
+                Edge { id: "e_topl".into(), v1: "v_tl".into(), v2: "v_mt".into(), border: true },
+                Edge { id: "e_topr".into(), v1: "v_mt".into(), v2: "v_tr".into(), border: true },
+                Edge { id: "e_rightt".into(), v1: "v_tr".into(), v2: "v_mr".into(), border: true },
+                Edge { id: "e_rightb".into(), v1: "v_mr".into(), v2: "v_br".into(), border: true },
+                Edge { id: "e_bot".into(), v1: "v_br".into(), v2: "v_bl".into(), border: true },
+                // Internal edges
+                Edge { id: "e_aur".into(), v1: "v_mt".into(), v2: "v_mm".into(), border: false },
+                Edge { id: "e_alr".into(), v1: "v_mb".into(), v2: "v_mm".into(), border: false },
+                Edge { id: "e_bbot".into(), v1: "v_mm".into(), v2: "v_mr".into(), border: false },
+            ],
+            areas: vec![
+                Area {
+                    id: "a".into(),
+                    v1: "v_bl".into(), v2: "v_tl".into(), v3: "v_mt".into(), v4: "v_mb".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+                Area {
+                    id: "b".into(),
+                    v1: "v_mm".into(), v2: "v_mt".into(), v3: "v_tr".into(), v4: "v_mr".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+                Area {
+                    id: "c".into(),
+                    v1: "v_mb".into(), v2: "v_mm".into(), v3: "v_mr".into(), v4: "v_br".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_screen_area_join_partial_overlap_west() {
+        // Join C toward A: survivor=A (West), absorbed=C (East).
+        // A overhangs above the overlap; its lower half merges with C.
+        let mut screen = make_abc_t_junction_screen();
+        screen_area_join(&mut screen, "a", "c").unwrap();
+        assert_eq!(screen.areas.len(), 3);
+        assert!(validate_screen(&screen).is_ok());
+
+        // Expected:
+        // 1. Full-width bottom: x:0–1, y:0–0.5  (C expanded)
+        // 2. Top-left:          x:0–0.5, y:0.5–1 (A's remainder)
+        // 3. Top-right:         x:0.5–1, y:0.5–1 (B unchanged)
+
+        let full = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.0).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 0.5).abs() < EPSILON
+        });
+        assert_eq!(full.count(), 1, "Expected one full-width bottom area");
+
+        let top_left = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.5).abs() < EPSILON
+                && (r - 0.5).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(top_left.count(), 1, "Expected one top-left area");
+
+        let top_right = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.5).abs() < EPSILON
+                && (b - 0.5).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(top_right.count(), 1, "Expected one top-right area");
+    }
+
+    #[test]
+    fn test_screen_area_join_partial_overlap_east() {
+        // Join A toward C: survivor=C (East), absorbed=A (West).
+        // C overhangs above (it's taller); same 3-area outcome.
+        let mut screen = make_abc_t_junction_screen();
+        screen_area_join(&mut screen, "c", "a").unwrap();
+        assert_eq!(screen.areas.len(), 3);
+        assert!(validate_screen(&screen).is_ok());
+
+        // Same layout expected as the west test:
+        // 1. Full-width bottom: x:0–1, y:0–0.5
+        // 2. Top-left:          x:0–0.5, y:0.5–1
+        // 3. Top-right:         x:0.5–1, y:0.5–1
+
+        let full = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.0).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 0.5).abs() < EPSILON
+        });
+        assert_eq!(full.count(), 1, "Expected one full-width bottom area");
+
+        let top_left = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.5).abs() < EPSILON
+                && (r - 0.5).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(top_left.count(), 1, "Expected one top-left area");
+
+        let top_right = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.5).abs() < EPSILON
+                && (b - 0.5).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(top_right.count(), 1, "Expected one top-right area");
+    }
+
+    #[test]
+    fn test_screen_area_join_partial_overlap_both_overhang() {
+        // Two areas side-by-side where both overhang beyond their shared overlap:
+        //
+        //   A: x:0–0.5,   y:0.2–0.9
+        //   D: x:0.5–1,   y:0–0.8
+        //
+        // Overlap on y: 0.2–0.8 (height 0.6).
+        // A overhangs above by 0.1. D overhangs below by 0.2.
+        //
+        // Join D toward A: survivor=A, absorbed=D.
+        //
+        // After trim-then-join:
+        //   1. Merged:         x:0–1,     y:0.2–0.8
+        //   2. A's remainder:  x:0–0.5,   y:0.8–0.9   (above overlap)
+        //   3. D's remainder:  x:0.5–1,   y:0–0.2     (below overlap)
+        let mut screen = Screen {
+            vertices: vec![
+                Vertex { id: "a_bl".into(), x: 0.0, y: 0.2 },
+                Vertex { id: "a_tl".into(), x: 0.0, y: 0.9 },
+                Vertex { id: "a_tr".into(), x: 0.5, y: 0.9 },
+                Vertex { id: "int_top".into(), x: 0.5, y: 0.8 },
+                Vertex { id: "int_bot".into(), x: 0.5, y: 0.2 },
+                Vertex { id: "d_bl".into(), x: 0.5, y: 0.0 },
+                Vertex { id: "d_tr".into(), x: 1.0, y: 0.8 },
+                Vertex { id: "d_br".into(), x: 1.0, y: 0.0 },
+            ],
+            edges: vec![
+                // Border edges tracing the screen outline
+                Edge { id: "e_left".into(), v1: "a_bl".into(), v2: "a_tl".into(), border: true },
+                Edge { id: "e_topl".into(), v1: "a_tl".into(), v2: "a_tr".into(), border: true },
+                Edge { id: "e_top_step".into(), v1: "a_tr".into(), v2: "int_top".into(), border: true },
+                Edge { id: "e_topr".into(), v1: "int_top".into(), v2: "d_tr".into(), border: true },
+                Edge { id: "e_right".into(), v1: "d_tr".into(), v2: "d_br".into(), border: true },
+                Edge { id: "e_botr".into(), v1: "d_br".into(), v2: "d_bl".into(), border: true },
+                Edge { id: "e_bot_step".into(), v1: "d_bl".into(), v2: "int_bot".into(), border: true },
+                Edge { id: "e_botl".into(), v1: "int_bot".into(), v2: "a_bl".into(), border: true },
+                // Internal shared edge
+                Edge { id: "e_int".into(), v1: "int_bot".into(), v2: "int_top".into(), border: false },
+            ],
+            areas: vec![
+                Area {
+                    id: "a".into(),
+                    v1: "a_bl".into(), v2: "a_tl".into(), v3: "a_tr".into(), v4: "int_bot".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+                Area {
+                    id: "d".into(),
+                    v1: "d_bl".into(), v2: "int_top".into(), v3: "d_tr".into(), v4: "d_br".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+            ],
+        };
+        screen_area_join(&mut screen, "a", "d").unwrap();
+        assert_eq!(screen.areas.len(), 3);
+        assert!(validate_screen(&screen).is_ok());
+
+        // 1. Merged: x:0–1, y:0.2–0.8
+        let merged = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.2).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 0.8).abs() < EPSILON
+        });
+        assert_eq!(merged.count(), 1, "Expected one merged area (0, 0.2, 1, 0.8)");
+
+        // 2. A's far remainder: x:0–0.5, y:0.8–0.9
+        let far_rem = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.8).abs() < EPSILON
+                && (r - 0.5).abs() < EPSILON
+                && (t - 0.9).abs() < EPSILON
+        });
+        assert_eq!(far_rem.count(), 1, "Expected one A overhang remainder (0, 0.8, 0.5, 0.9)");
+
+        // 3. D's near remainder: x:0.5–1, y:0–0.2
+        let near_rem = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.5).abs() < EPSILON
+                && (b - 0.0).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 0.2).abs() < EPSILON
+        });
+        assert_eq!(near_rem.count(), 1, "Expected one D overhang remainder (0.5, 0, 1, 0.2)");
+    }
+
+    #[test]
+    fn test_screen_area_join_partial_overlap_existing_t_junction() {
+        // Use the existing t-junction screen. Join a_a toward a_c:
+        //   survivor=a_c (bottom, full-width), absorbed=a_a (top-left).
+        //
+        // a_c overlaps a_a on x:0–0.5. a_c overhangs right by 0.5.
+        //
+        // Expected:
+        //   1. Merged left column: x:0–0.5, y:0–1  (a_c expanded to full height)
+        //   2. Remainder:          x:0.5–1, y:0–0.5 (right overhang of a_c)
+        //   3. a_b:                x:0.5–1, y:0.5–1 (unchanged)
+        let mut screen = make_t_junction_screen();
+        screen_area_join(&mut screen, "a_c", "a_a").unwrap();
+        assert_eq!(screen.areas.len(), 3);
+        assert!(validate_screen(&screen).is_ok());
+
+        // Merged left column
+        let merged = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.0).abs() < EPSILON
+                && (b - 0.0).abs() < EPSILON
+                && (r - 0.5).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(merged.count(), 1, "Expected one merged left column (0, 0, 0.5, 1)");
+
+        // Right overhang of a_c
+        let overhang = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.5).abs() < EPSILON
+                && (b - 0.0).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 0.5).abs() < EPSILON
+        });
+        assert_eq!(overhang.count(), 1, "Expected one right overhang (0.5, 0, 1, 0.5)");
+
+        // a_b (top-right) unchanged
+        let top_right = screen.areas.iter().filter(|a| {
+            let (l, b, r, t) = area_bounds(&screen, a).unwrap();
+            (l - 0.5).abs() < EPSILON
+                && (b - 0.5).abs() < EPSILON
+                && (r - 1.0).abs() < EPSILON
+                && (t - 1.0).abs() < EPSILON
+        });
+        assert_eq!(top_right.count(), 1, "Expected one top-right area (0.5, 0.5, 1, 1)");
+    }
+
+    #[test]
+    fn test_screen_area_join_no_overhang_regression() {
+        // Full-edge join: split then join back (fast path where all overhangs are 0).
+        let mut screen = Screen::new();
+        let area_id = screen.areas[0].id.clone();
+        let new_id = area_split(&mut screen, &area_id, Axis::Vertical, 0.5).unwrap();
+        assert_eq!(screen.areas.len(), 2);
+        screen_area_join(&mut screen, &area_id, &new_id).unwrap();
+        assert_eq!(screen.areas.len(), 1);
+        let (l, b, r, t) = area_bounds(&screen, &screen.areas[0]).unwrap();
+        assert!((l - 0.0).abs() < EPSILON);
+        assert!((b - 0.0).abs() < EPSILON);
+        assert!((r - 1.0).abs() < EPSILON);
+        assert!((t - 1.0).abs() < EPSILON);
+        assert!(validate_screen(&screen).is_ok());
     }
 
     // ----- Close tests -----
