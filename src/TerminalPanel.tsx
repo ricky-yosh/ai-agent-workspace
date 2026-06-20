@@ -11,6 +11,7 @@ import "./TerminalPanel.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
+import { matchesAnyShortcut, TERMINAL_PASSTHROUGH_SHORTCUTS } from "./App";
 import { requestWebgl, releaseWebgl, disposeWebgl } from "./webglPool";
 
 interface CachedTerminal {
@@ -185,6 +186,14 @@ function useXtermTerminal(
           cursor: "#cccccc",
           selectionBackground: "#264f78",
         },
+      });
+
+      // Allow host-level keyboard shortcuts (Cmd+N, Cmd+W, etc.) to reach the
+      // app even when the terminal is focused. Only keydown is considered for
+      // passthrough; keyup/keypress are left to xterm entirely.
+      terminal.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown") return true;
+        return !matchesAnyShortcut(e, TERMINAL_PASSTHROUGH_SHORTCUTS);
       });
 
       const rawOpts = (terminal as any)._core?.optionsService?.rawOptions;
