@@ -8,7 +8,7 @@
   box-shadow: var(--shadow-island);
   flex-shrink: 0;
   height: 34px;
-  margin: 8px 8px 0;
+  margin: 8px 4px 0;
 }
 
 .layout-tabs-bar {
