@@ -105,6 +105,10 @@ export function resizeEdgeLocal(
   const edge = screen.edges.find((e) => e.id === edgeId);
   if (!edge) throw new Error("Edge not found");
 
+  // Border edges are pinned to the container boundary and must never move.
+  // Return the screen unchanged rather than throwing so a stray call can't crash the UI.
+  if (edge.border) return screen;
+
   const ev1 = findVertex(screen, edge.v1);
   const ev2 = findVertex(screen, edge.v2);
   const isHorizontal = !!ev1 && !!ev2 && Math.abs(ev1.y - ev2.y) < EPSILON;
@@ -171,9 +175,17 @@ export function resizeEdgeLocal(
 
   const vertices: Vertex[] = screen.vertices.map((v) => {
     if (!selected.has(v.id)) return { ...v };
-    return isHorizontal
-      ? { ...v, y: clampedPos }
-      : { ...v, x: clampedPos };
+    // Pin any selected vertex that sits on a container boundary along the axis
+    // being moved. This prevents an internal-sash flood-fill from pulling a
+    // shared boundary vertex inward and opening a gap at the container edge.
+    // Only the moving axis is pinned; the perpendicular coordinate is untouched.
+    if (isHorizontal) {
+      if (Math.abs(v.y) < EPSILON || Math.abs(v.y - 1) < EPSILON) return { ...v };
+      return { ...v, y: clampedPos };
+    } else {
+      if (Math.abs(v.x) < EPSILON || Math.abs(v.x - 1) < EPSILON) return { ...v };
+      return { ...v, x: clampedPos };
+    }
   });
 
   return {
