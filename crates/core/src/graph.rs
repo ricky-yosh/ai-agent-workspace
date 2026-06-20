@@ -2069,6 +2069,57 @@ mod tests {
         assert!(validate_screen(&screen).is_ok());
     }
 
+    #[test]
+    fn test_screen_area_join_rejects_small_overlap() {
+        // Two areas with overlap below MIN_AREA_SIZE (0.05):
+        //
+        //   A: x:0–0.5,   y:0–0.52   (height 0.52)
+        //   B: x:0.5–1,   y:0.50–1   (height 0.50)
+        //
+        // Overlap on y: 0.50–0.52 (height 0.02 = MIN_AREA_SIZE * 0.4).
+        // This is below the adjacency threshold, so screen_area_join should reject.
+        let mut screen = Screen {
+            vertices: vec![
+                Vertex { id: "v_a_bl".into(), x: 0.0, y: 0.0 },
+                Vertex { id: "v_a_tl".into(), x: 0.0, y: 0.5 + MIN_AREA_SIZE * 0.4 },
+                Vertex { id: "v_a_tr".into(), x: 0.5, y: 0.5 + MIN_AREA_SIZE * 0.4 },
+                Vertex { id: "v_int_bot".into(), x: 0.5, y: 0.5 },
+                Vertex { id: "v_a_br".into(), x: 0.5, y: 0.0 },
+                Vertex { id: "v_b_tl".into(), x: 0.5, y: 1.0 },
+                Vertex { id: "v_b_tr".into(), x: 1.0, y: 1.0 },
+                Vertex { id: "v_b_br".into(), x: 1.0, y: 0.5 },
+            ],
+            edges: vec![
+                // Border edges tracing the screen outline
+                Edge { id: "e_left".into(), v1: "v_a_bl".into(), v2: "v_a_tl".into(), border: true },
+                Edge { id: "e_top_a".into(), v1: "v_a_tl".into(), v2: "v_a_tr".into(), border: true },
+                Edge { id: "e_b_left_above".into(), v1: "v_a_tr".into(), v2: "v_b_tl".into(), border: true },
+                Edge { id: "e_top_b".into(), v1: "v_b_tl".into(), v2: "v_b_tr".into(), border: true },
+                Edge { id: "e_right".into(), v1: "v_b_tr".into(), v2: "v_b_br".into(), border: true },
+                Edge { id: "e_bot_b".into(), v1: "v_b_br".into(), v2: "v_int_bot".into(), border: true },
+                Edge { id: "e_a_right_below".into(), v1: "v_int_bot".into(), v2: "v_a_br".into(), border: true },
+                Edge { id: "e_bot_a".into(), v1: "v_a_br".into(), v2: "v_a_bl".into(), border: true },
+                // Internal shared edge (overlap region)
+                Edge { id: "e_int".into(), v1: "v_int_bot".into(), v2: "v_a_tr".into(), border: false },
+            ],
+            areas: vec![
+                Area {
+                    id: "a".into(),
+                    v1: "v_a_bl".into(), v2: "v_a_tl".into(), v3: "v_a_tr".into(), v4: "v_a_br".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+                Area {
+                    id: "b".into(),
+                    v1: "v_int_bot".into(), v2: "v_b_tl".into(), v3: "v_b_tr".into(), v4: "v_b_br".into(),
+                    panel_type: "blank".into(), terminal_id: None,
+                },
+            ],
+        };
+        let result = screen_area_join(&mut screen, "a", "b");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not adjacent"));
+    }
+
     // ----- Close tests -----
 
     #[test]
