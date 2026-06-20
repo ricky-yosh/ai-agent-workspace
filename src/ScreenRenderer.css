@@ -8,13 +8,20 @@
 .screen-area {
   position: absolute;
   overflow: hidden;
-  background: var(--bg-primary);
+  background: transparent;
+  padding: calc(var(--gutter) / 2);
+  box-sizing: border-box;
+  transition: filter 120ms ease;
+}
+
+.screen-area:not(.screen-area--focused):not(.screen-area--exiting) {
+  filter: brightness(0.7);
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .screen-area {
     transition: left 0.12s ease, top 0.12s ease, width 0.12s ease,
-      height 0.12s ease;
+      height 0.12s ease, filter 120ms ease;
   }
 }
 
@@ -26,6 +33,14 @@
 .screen-area-content {
   width: 100%;
   height: 100%;
+  background: var(--bg-panel);
+  border-radius: var(--radius-island);
+  box-shadow: var(--shadow-island);
+  overflow: hidden;
+}
+
+.screen-area--focused .screen-area-content {
+  background: var(--bg-panel-raised);
 }
 
 .screen-area-unknown {
@@ -33,7 +48,6 @@
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  background: var(--bg-primary);
   font-size: 13px;
 }
 
@@ -45,7 +59,6 @@
   justify-content: center;
   gap: 4px;
   height: 100%;
-  background: var(--bg-primary);
   color: var(--text-muted);
   font-size: 13px;
   user-select: none;
@@ -63,22 +76,35 @@
 .screen-sash {
   position: absolute;
   z-index: 5;
-  background: var(--border-color, rgba(0, 120, 212, 0.15));
-  transition: background 0.15s ease;
+  background: transparent;
+  transition: background 120ms ease;
 }
 
-/* Widen the pointer hit area without moving the thin visual line */
+/* Widen the pointer hit area without moving the thin visual line.
+   Widening is perpendicular to the edge only; along the edge the hit area
+   is pulled back from both ends so it clears the corner drag handles. */
 .screen-sash::before {
   content: '';
   position: absolute;
-  inset: -7px;
 }
 
-/* No hover color: the resize cursor is the affordance. */
+.screen-sash--vertical::before {
+  inset: 16px -7px;
+}
 
-/* Snap cue: neutral brighten of the dragged sash when it locks to grid/vertex. */
+.screen-sash--horizontal::before {
+  inset: -7px 16px;
+}
+
+.screen-sash:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+}
+
+/* Snap cue: brighter gray pill when the sash locks to grid/vertex. */
 .screen-sash--snapped {
   background: rgba(255, 255, 255, 0.5);
+  border-radius: 2px;
   opacity: 1;
 }
 
@@ -95,6 +121,13 @@
   transition: opacity 0.15s ease;
   border-radius: 50%;
   background: var(--text-muted, #aaa);
+}
+
+/* Enlarge the grab area beyond the visible dot so the corner is easy to hit. */
+.screen-corner-handle::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 .screen-corner-handle--tl {
@@ -154,7 +187,7 @@
 .screen-area--exiting-fill {
   width: 100%;
   height: 100%;
-  background: var(--bg-primary, #1a1a2e);
+  background: var(--bg-panel, #232324);
 }
 
 /* Exit collapse (Bundle 3) is now driven by WAAPI in ScreenRenderer.tsx. */
@@ -173,7 +206,7 @@
   background: rgba(0, 0, 0, 0.7);
   pointer-events: none;
   z-index: 19;
-  border-radius: 3px;
+  border-radius: var(--radius-island);
 }
 
 /* Combined-rect outline spanning the grabbed + absorbed areas. */
@@ -184,7 +217,7 @@
   box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  border-radius: var(--radius-island);
 }
 
 /* Fade-in animation when motion is allowed (Blender-like ease-in). */

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { Plus } from "lucide-react";
 import type { Layout, Screen } from "./types/screen";
 import { useClickOutside } from "./hooks/useClickOutside";
@@ -47,12 +47,68 @@ export default function LayoutTabs({
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
 
+  // Sliding pill indicator
+  const barRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const pillRef = useRef<HTMLDivElement>(null);
+  const pillReadyRef = useRef(false);
+  const [pillStyle, setPillStyle] = useState<{ left: number; width: number } | null>(null);
+
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
       renameInputRef.current.focus();
       renameInputRef.current.select();
     }
   }, [renamingId]);
+
+  // Measure the active tab and position the pill
+  const measurePill = useCallback(() => {
+    if (!barRef.current || !activeWorkspaceId) {
+      setPillStyle(null);
+      return;
+    }
+    const tabEl = tabRefs.current.get(activeWorkspaceId);
+    if (!tabEl) {
+      setPillStyle(null);
+      return;
+    }
+    // offsetLeft is relative to offsetParent; since barRef has position:relative
+    // it will be the offsetParent of the tab divs.
+    const left = tabEl.offsetLeft;
+    const width = tabEl.offsetWidth;
+    setPillStyle({ left, width });
+  }, [activeWorkspaceId]);
+
+  // Run measurement synchronously after layout so pill position is set before paint
+  useLayoutEffect(() => {
+    if (workspaces.length === 0) {
+      setPillStyle(null);
+      pillReadyRef.current = false;
+      return;
+    }
+    measurePill();
+    if (!pillReadyRef.current) {
+      // After first measurement we need one rAF to let the browser paint the
+      // initial (non-animated) position, then mark the pill as ready so
+      // transitions are enabled for all subsequent changes.
+      const raf = requestAnimationFrame(() => {
+        pillReadyRef.current = true;
+        if (pillRef.current) {
+          pillRef.current.setAttribute("data-ready", "true");
+        }
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [activeWorkspaceId, workspaces, measurePill]);
+
+  // Re-measure on container resize
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const ro = new ResizeObserver(() => measurePill());
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [measurePill]);
 
   const closeDropdown = useCallback(() => setDropdownOpen(false), []);
   useClickOutside(dropdownRef, closeDropdown);
@@ -118,10 +174,22 @@ export default function LayoutTabs({
 
   return (
     <div className="layout-tabs" onContextMenu={(e) => e.preventDefault()}>
-      <div className="layout-tabs-bar">
+      <div className="layout-tabs-bar" ref={barRef}>
+        {/* Sliding pill behind the active tab */}
+        {pillStyle && (
+          <div
+            ref={pillRef}
+            className="layout-tab-indicator"
+            style={{ left: pillStyle.left, width: pillStyle.width }}
+          />
+        )}
         {workspaces.map((ws) => (
           <div
             key={ws.id}
+            ref={(el) => {
+              if (el) tabRefs.current.set(ws.id, el);
+              else tabRefs.current.delete(ws.id);
+            }}
             className={`layout-tab${ws.id === activeWorkspaceId ? " layout-tab-active" : ""}`}
             onClick={() => {
               if (renamingId !== ws.id) onWorkspaceSwitch(ws.id);

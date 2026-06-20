@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput, Pencil, X } from "lucide-react";
 import { safeInvoke } from "./safeInvoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -562,7 +562,7 @@ export default function SessionSidebar() {
                           handleStartRename(s);
                         }}
                       >
-                        &#9998;
+                        <Pencil size={13} />
                       </button>
                       <button
                         className="session-action-btn"
@@ -573,7 +573,7 @@ export default function SessionSidebar() {
                           setDeleteConfirmId(s.id);
                         }}
                       >
-                        &#10005;
+                        <X size={13} />
                       </button>
                     </div>
                   </div>
@@ -604,8 +604,13 @@ export default function SessionSidebar() {
           </div>
         </div>
 
-        <div className="sidebar-resize" onMouseDown={handleMouseDown} />
       </aside>
+
+      <div
+        className={`sidebar-resize${isResizing ? " sidebar-resize-active" : ""}`}
+        style={{ left: 8 + (sidebarCollapsed ? 42 : sidebarWidth) }}
+        onMouseDown={handleMouseDown}
+      />
 
       {showNewSessionDialog && (
         <NewSessionDialog

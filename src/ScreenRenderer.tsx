@@ -987,11 +987,17 @@ export default function ScreenRenderer({
           if (!style) return null;
           const isSnappedSash =
             sashDrag?.edgeId === edge.id && !!sashDrag.isSnapped;
+          const orientClass =
+            style.cursor === "col-resize"
+              ? " screen-sash--vertical"
+              : " screen-sash--horizontal";
           return (
             <div
               key={edge.id}
               className={
-                "screen-sash" + (isSnappedSash ? " screen-sash--snapped" : "")
+                "screen-sash" +
+                orientClass +
+                (isSnappedSash ? " screen-sash--snapped" : "")
               }
               style={style}
               title="Drag to resize"

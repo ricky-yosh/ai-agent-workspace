@@ -3,10 +3,12 @@
   align-items: center;
   justify-content: center;
   padding: 0 6px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-panel, #232324);
+  border-radius: var(--radius-island, 8px);
+  box-shadow: var(--shadow-island);
   flex-shrink: 0;
   height: 34px;
+  margin: 8px 8px 0;
 }
 
 .layout-tabs-bar {
@@ -17,10 +19,30 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  position: relative;
 }
 
 .layout-tabs-bar::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Sliding pill indicator ─────────────────────────────────────── */
+.layout-tab-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 22px;
+  background: var(--bg-panel-raised, #2c2c2e);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 0;
+  /* Transitions enabled only after first measurement (data-ready attr) */
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .layout-tab-indicator[data-ready="true"] {
+    transition: left 180ms ease-out, width 180ms ease-out;
+  }
 }
 
 .layout-tab {
@@ -36,27 +58,33 @@
   height: 22px;
   box-sizing: border-box;
   border: none;
-  transition: background 0.1s, color 0.1s;
+  position: relative;
+  z-index: 1;
+  transition: color 0.1s;
 }
 
 .layout-tab:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  /* Subtle ghost hover — pill already shows the active surface,
+     so we keep this very faint to avoid fighting the pill */
+  background: rgba(255, 255, 255, 0.04);
 }
 
+/* Active tab: pill provides the background; only text needs to change */
 .layout-tab-active {
   color: var(--text-primary);
-  background: var(--bg-active);
+  font-weight: 600;
+  background: transparent;
 }
 
 .layout-tab-active:hover {
   color: var(--text-primary);
-  background: var(--bg-active);
+  background: transparent;
 }
 
 .layout-tab-active:active {
   color: var(--text-primary);
-  background: var(--bg-hover);
+  background: transparent;
 }
 
 .layout-tab-rename-input {
@@ -76,6 +104,7 @@
   align-items: center;
   margin-left: 2px;
   height: 22px;
+  z-index: 1;
 }
 
 .layout-tabs-add {
