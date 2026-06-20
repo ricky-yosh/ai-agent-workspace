@@ -800,6 +800,8 @@ export default function ScreenRenderer({
   const handleSashMouseDown = useCallback(
     (e: React.MouseEvent, edge: Edge) => {
       if (splitDragRef.current) return;
+      // Border edges are pinned to the container; never start a drag on them.
+      if (edge.border) return;
       e.preventDefault();
       e.stopPropagation();
 
@@ -1050,32 +1052,6 @@ export default function ScreenRenderer({
             onClick={() => onFocusedAreaChange?.(area.id)}
             data-area-id={area.id}
           >
-            {/* Corner handles for split (only when not zoomed and not dragging) */}
-            {!zoomedAreaId && !splitDrag && (
-              <>
-                <div
-                  className="screen-corner-handle screen-corner-handle--tl"
-                  title="Drag to split"
-                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
-                />
-                <div
-                  className="screen-corner-handle screen-corner-handle--tr"
-                  title="Drag to split"
-                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
-                />
-                <div
-                  className="screen-corner-handle screen-corner-handle--bl"
-                  title="Drag to split"
-                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
-                />
-                <div
-                  className="screen-corner-handle screen-corner-handle--br"
-                  title="Drag to split"
-                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
-                />
-              </>
-            )}
-
             {/* Panel content */}
             {PanelComponent ? (
               <PanelContext.Provider
@@ -1087,28 +1063,28 @@ export default function ScreenRenderer({
                   focusedAreaId,
                 }}
               >
-                <PanelTypeSelector
-                  currentType={area.panel_type}
-                  onTypeSelect={(newType) =>
-                    handlePanelTypeChange(area, newType)
-                  }
-                />
                 <div className="screen-area-content">
+                  <PanelTypeSelector
+                    currentType={area.panel_type}
+                    onTypeSelect={(newType) =>
+                      handlePanelTypeChange(area, newType)
+                    }
+                  />
                   <PanelComponent panelType={area.panel_type} />
                 </div>
               </PanelContext.Provider>
             ) : (
-              <>
+              <div className="screen-area-content">
                 <PanelTypeSelector
                   currentType={area.panel_type}
                   onTypeSelect={(newType) =>
                     handlePanelTypeChange(area, newType)
                   }
                 />
-                <div className="screen-area-content screen-area-unknown">
+                <div className="screen-area-unknown">
                   {area.panel_type}
                 </div>
-              </>
+              </div>
             )}
 
             {/* Split preview line */}
@@ -1144,6 +1120,68 @@ export default function ScreenRenderer({
           </div>
         );
       })}
+
+      {/* Corner-handle overlay layer — sits above sashes (z-index 6 > 5) and
+          outside every .screen-area so CSS filter on unfocused panels cannot
+          trap the handles inside a degraded stacking context. Each per-area box
+          is positioned at the same percentage rect as its corresponding
+          .screen-area so the --tl/--tr/--bl/--br offsets (4px) still land on
+          the panel's visual corners. pointer-events: none on the layer and each
+          box lets sash/area events fall through; only the handles themselves
+          have pointer-events: auto. */}
+      {!zoomedAreaId && !splitDrag && (
+        <div className="screen-corner-layer">
+          {areasToRender.map((area) => {
+            const v1 = vertexMap.get(area.v1);
+            const v2 = vertexMap.get(area.v2);
+            const v3 = vertexMap.get(area.v3);
+            const v4 = vertexMap.get(area.v4);
+            if (!v1 || !v2 || !v3 || !v4) return null;
+
+            const isZoomed = zoomedAreaId === area.id;
+            const left = isZoomed ? 0 : v1.x * 100;
+            const top = isZoomed ? 0 : (1 - v2.y) * 100;
+            const width = isZoomed ? 100 : (v3.x - v1.x) * 100;
+            const height = isZoomed ? 100 : (v2.y - v1.y) * 100;
+
+            return (
+              <div
+                key={area.id}
+                className="screen-corner-area-box"
+                style={{
+                  position: "absolute",
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${width}%`,
+                  height: `${height}%`,
+                  pointerEvents: "none",
+                }}
+              >
+                <div
+                  className="screen-corner-handle screen-corner-handle--tl"
+                  title="Drag to split"
+                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
+                />
+                <div
+                  className="screen-corner-handle screen-corner-handle--tr"
+                  title="Drag to split"
+                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
+                />
+                <div
+                  className="screen-corner-handle screen-corner-handle--bl"
+                  title="Drag to split"
+                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
+                />
+                <div
+                  className="screen-corner-handle screen-corner-handle--br"
+                  title="Drag to split"
+                  onMouseDown={(e) => handleCornerMouseDown(e, area)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Combined-rect outline for join drag (Bundle C) */}
       {joinCombinedRect && (

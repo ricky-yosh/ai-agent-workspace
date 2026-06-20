@@ -31,6 +31,8 @@
 }
 
 .screen-area-content {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   background: var(--bg-panel);
@@ -44,6 +46,8 @@
 }
 
 .screen-area-unknown {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -81,19 +85,21 @@
 }
 
 /* Widen the pointer hit area without moving the thin visual line.
-   Widening is perpendicular to the edge only; along the edge the hit area
-   is pulled back from both ends so it clears the corner drag handles. */
+   Perpendicular: ~6px to each side (thin, Blender-style ~5px edge tolerance).
+   Along the edge: full length (no end pullback). Corner handles win near the
+   ends via the higher-z .screen-corner-layer (z-index 6 > sash z-index 5),
+   so there is no need to pull the sash back from the corners. */
 .screen-sash::before {
   content: '';
   position: absolute;
 }
 
 .screen-sash--vertical::before {
-  inset: 16px -7px;
+  inset: 0 -6px;
 }
 
 .screen-sash--horizontal::before {
-  inset: -7px 16px;
+  inset: -6px 0;
 }
 
 .screen-sash:hover {
@@ -109,50 +115,62 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* Corner-handle overlay layer                                         */
+/* ------------------------------------------------------------------ */
+/* Non-filtered overlay that sits above the sashes (z-index 6 > 5). No
+   filter/opacity/transform so it never creates a stacking-context trap.
+   pointer-events: none lets sash and area events fall through; only the
+   .screen-corner-handle children opt back in with pointer-events: auto. */
+.screen-corner-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* ------------------------------------------------------------------ */
 /* Corner handles — split drag triggers                                */
 /* ------------------------------------------------------------------ */
 .screen-corner-handle {
   position: absolute;
-  width: 18px;
-  height: 18px;
-  z-index: 8;
+  width: 20px;
+  height: 20px;
   cursor: crosshair;
-  opacity: 0.22;
-  transition: opacity 0.15s ease;
-  border-radius: 50%;
-  background: var(--text-muted, #aaa);
+  pointer-events: auto;
+  /* No background or border-radius — the handle itself is invisible. */
+  background: transparent;
 }
 
-/* Enlarge the grab area beyond the visible dot so the corner is easy to hit. */
+/* Modest invisible hit area. Priority (z-order in .screen-corner-layer)
+   now does the work of winning over sashes, so a large inset is no longer
+   needed. inset: -10px gives a comfortable ~40px reach around each corner. */
 .screen-corner-handle::before {
   content: '';
   position: absolute;
-  inset: -8px;
+  inset: -10px;
 }
 
+/* Position the handle flush with the panel's inner corner.
+   The per-area box in .screen-corner-layer matches .screen-area's outer
+   rect exactly, so these offsets land on the grey island's corners as before. */
 .screen-corner-handle--tl {
-  top: -9px;
-  left: -9px;
+  top: 4px;
+  left: 4px;
 }
 
 .screen-corner-handle--tr {
-  top: -9px;
-  right: -9px;
+  top: 4px;
+  right: 4px;
 }
 
 .screen-corner-handle--bl {
-  bottom: -9px;
-  left: -9px;
+  bottom: 4px;
+  left: 4px;
 }
 
 .screen-corner-handle--br {
-  bottom: -9px;
-  right: -9px;
-}
-
-.screen-area:hover .screen-corner-handle {
-  opacity: 1;
-  background: var(--text-muted, #aaa);
+  bottom: 4px;
+  right: 4px;
 }
 
 /* ------------------------------------------------------------------ */
