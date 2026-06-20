@@ -860,26 +860,6 @@ export default function ScreenRenderer({
     [vertexMap],
   );
 
-  const handleClose = useCallback(
-    (area: Area) => {
-      // Dispose terminal first if present
-      if (area.terminal_id) {
-        disposeTerminal(area.terminal_id);
-      }
-
-      safeInvoke<WorkspaceResult>("close_area", {
-        sessionId: sessionIdRef.current,
-        workspaceId: workspaceIdRef.current,
-        areaId: area.id,
-      }, onErrorRef.current)
-        .then((result) => {
-          onScreenChangeRef.current(result.current_screen);
-        })
-        .catch(() => {});
-    },
-    [],
-  );
-
   const handlePanelTypeChange = useCallback(
     (area: Area, newType: string) => {
       // Dispose terminal if switching away from terminal
@@ -974,8 +954,6 @@ export default function ScreenRenderer({
     [activeScreen.edges],
   );
 
-  const canClose = activeScreen.areas.length > 1;
-
   // Combined-rect for join drag visual feedback (Bundle C)
   let joinCombinedRect: { left: number; top: number; width: number; height: number } | null = null;
   if (
@@ -1030,10 +1008,11 @@ export default function ScreenRenderer({
         const v4 = vertexMap.get(area.v4);
         if (!v1 || !v2 || !v3 || !v4) return null;
 
-        const left = v1.x * 100;
-        const top = (1 - v2.y) * 100;
-        const width = (v3.x - v1.x) * 100;
-        const height = (v2.y - v1.y) * 100;
+        const isZoomed = zoomedAreaId === area.id;
+        const left = isZoomed ? 0 : v1.x * 100;
+        const top = isZoomed ? 0 : (1 - v2.y) * 100;
+        const width = isZoomed ? 100 : (v3.x - v1.x) * 100;
+        const height = isZoomed ? 100 : (v2.y - v1.y) * 100;
 
         const isFocused = focusedAreaId === area.id;
         const PanelComponent = getPanel(area.panel_type);
@@ -1089,20 +1068,6 @@ export default function ScreenRenderer({
                   onMouseDown={(e) => handleCornerMouseDown(e, area)}
                 />
               </>
-            )}
-
-            {/* Close button */}
-            {canClose && !zoomedAreaId && (
-              <button
-                className="screen-close-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleClose(area);
-                }}
-                title="Close panel"
-              >
-                ×
-              </button>
             )}
 
             {/* Panel content */}

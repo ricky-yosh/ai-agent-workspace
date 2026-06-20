@@ -8,6 +8,7 @@
 .screen-area {
   position: absolute;
   overflow: hidden;
+  background: var(--bg-primary);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -70,7 +71,7 @@
 .screen-sash::before {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -7px;
 }
 
 /* No hover color: the resize cursor is the affordance. */
@@ -86,8 +87,8 @@
 /* ------------------------------------------------------------------ */
 .screen-corner-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 18px;
+  height: 18px;
   z-index: 8;
   cursor: crosshair;
   opacity: 0.22;
@@ -97,62 +98,28 @@
 }
 
 .screen-corner-handle--tl {
-  top: -5px;
-  left: -5px;
+  top: -9px;
+  left: -9px;
 }
 
 .screen-corner-handle--tr {
-  top: -5px;
-  right: -5px;
+  top: -9px;
+  right: -9px;
 }
 
 .screen-corner-handle--bl {
-  bottom: -5px;
-  left: -5px;
+  bottom: -9px;
+  left: -9px;
 }
 
 .screen-corner-handle--br {
-  bottom: -5px;
-  right: -5px;
+  bottom: -9px;
+  right: -9px;
 }
 
 .screen-area:hover .screen-corner-handle {
   opacity: 1;
   background: var(--text-muted, #aaa);
-}
-
-/* ------------------------------------------------------------------ */
-/* Close button                                                        */
-/* ------------------------------------------------------------------ */
-.screen-close-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 12;
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
-  border: none;
-  border-radius: 3px;
-  color: var(--text-muted, #aaa);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
-  padding: 0;
-}
-
-.screen-area:hover .screen-close-btn {
-  opacity: 1;
-}
-
-.screen-close-btn:hover {
-  background: rgba(200, 50, 50, 0.7);
-  color: #fff;
 }
 
 /* ------------------------------------------------------------------ */
