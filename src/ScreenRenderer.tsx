@@ -5,6 +5,7 @@ import { PanelContext } from "./PanelContext";
 import PanelTypeSelector from "./PanelTypeSelector";
 import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
+import { resizeEdgeLocal } from "./screenGeometry";
 import "./ScreenRenderer.css";
 
 const EPSILON = 0.0001;
@@ -33,7 +34,6 @@ interface ScreenRendererProps {
 interface SashDragState {
   edgeId: string;
   isHorizontal: boolean;
-  position: number;
   isSnapped?: boolean;
 }
 
@@ -137,6 +137,14 @@ export default function ScreenRenderer({
   const rafRef = useRef<number | null>(null);
   const sashMovedRef = useRef(false);
 
+  // Ephemeral draft screen recomputed each frame during a sash drag.
+  // Rendering reads `activeScreen = draftScreen ?? screen` so panels reflow
+  // live under the cursor. Cleared only in the [screen] reset effect (+Escape).
+  const [draftScreen, setDraftScreen] = useState<Screen | null>(null);
+  // Base prop screen captured at drag start. resizeEdgeLocal is ALWAYS fed from
+  // this (never the draft) to avoid cumulative drift.
+  const dragBaseScreenRef = useRef<Screen | null>(null);
+
   const [splitDrag, setSplitDrag] = useState<SplitDragState | null>(null);
   const splitDragRef = useRef<SplitDragState | null>(null);
 
@@ -144,19 +152,24 @@ export default function ScreenRenderer({
   const joinModeRef = useRef<JoinModeState | null>(null);
   joinModeRef.current = joinMode;
 
+  // During a sash drag we render every panel from the ephemeral draft screen.
+  // Only geometry/layout reads switch to `activeScreen`; non-geometry reads of
+  // `screen` (child props, terminal ids, join/split logic) stay on `screen`.
+  const activeScreen = draftScreen ?? screen;
+
   // ---------- Vertex lookup ----------
   const vertexMap = useMemo(() => {
     const map = new Map<string, Vertex>();
-    for (const v of screen.vertices) {
+    for (const v of activeScreen.vertices) {
       map.set(v.id, v);
     }
     return map;
-  }, [screen.vertices]);
+  }, [activeScreen.vertices]);
 
   // ---------- Areas to render ----------
   const areasToRender = zoomedAreaId
-    ? screen.areas.filter((a) => a.id === zoomedAreaId)
-    : screen.areas;
+    ? activeScreen.areas.filter((a) => a.id === zoomedAreaId)
+    : activeScreen.areas;
 
   // ------------------------------------------------------------------
   // Resize snapping helpers
@@ -214,15 +227,22 @@ export default function ScreenRenderer({
         ? 1 - (e.clientY - rect.top) / rect.height
         : (e.clientX - rect.left) / rect.width;
 
+      const base = dragBaseScreenRef.current;
+      if (!base) return;
+
       const clampedPos = Math.max(0, Math.min(1, rawPos));
-      const snappedPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
+      const snappedPos = snapPosition(clampedPos, base, edgeId, isHorizontal);
       const isSnapped = Math.abs(snappedPos - clampedPos) > 0.0001;
 
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
-        setSashDrag((prev) =>
-          prev ? { ...prev, position: snappedPos, isSnapped } : null,
-        );
+        // Always recompute from the captured base, never the prior draft.
+        try {
+          setDraftScreen(resizeEdgeLocal(base, edgeId, snappedPos));
+        } catch {
+          // Leave the previous draft in place; don't crash the drag.
+        }
+        setSashDrag((prev) => (prev ? { ...prev, isSnapped } : null));
       });
     };
 
@@ -237,7 +257,8 @@ export default function ScreenRenderer({
 
       if (sashMovedRef.current) {
         const container = containerRef.current;
-        if (!container) return;
+        const base = dragBaseScreenRef.current;
+        if (!container || !base) return;
         const rect = container.getBoundingClientRect();
 
         const rawPos = isHorizontal
@@ -245,8 +266,17 @@ export default function ScreenRenderer({
           : (e.clientX - rect.left) / rect.width;
 
         const clampedPos = Math.max(0, Math.min(1, rawPos));
-        const finalPos = snapPosition(clampedPos, screen, edgeId, isHorizontal);
+        // One snapped position used for BOTH the final rendered draft and the
+        // commit, so the on-release swap is a visual no-op. (mouseup cancelled
+        // the pending rAF above, so set the final draft here explicitly.)
+        const finalPos = snapPosition(clampedPos, base, edgeId, isHorizontal);
+        try {
+          setDraftScreen(resizeEdgeLocal(base, edgeId, finalPos));
+        } catch {
+          // Leave the previous draft in place.
+        }
 
+        // Backend clamps but does NOT snap, so send the snapped value.
         safeInvoke<WorkspaceResult>("resize_edge", {
           sessionId: sessionIdRef.current,
           workspaceId: workspaceIdRef.current,
@@ -256,7 +286,19 @@ export default function ScreenRenderer({
           .then((result) => {
             onScreenChangeRef.current(result.current_screen);
           })
-          .catch(() => {});
+          .catch(() => {
+            // Commit rejected: the screen prop won't change, so the [screen]
+            // reset effect won't fire. Drop the draft here so panels snap back
+            // to the authoritative geometry instead of lingering at the
+            // uncommitted draft position.
+            setDraftScreen(null);
+            dragBaseScreenRef.current = null;
+          });
+      } else {
+        // No movement (a plain click on the sash): nothing to commit, so the
+        // [screen] reset effect won't fire. Drop the seeded draft here.
+        setDraftScreen(null);
+        dragBaseScreenRef.current = null;
       }
     };
 
@@ -268,6 +310,9 @@ export default function ScreenRenderer({
         }
         sashDragRef.current = null;
         setSashDrag(null);
+        // Cancel: drop the draft, no commit.
+        setDraftScreen(null);
+        dragBaseScreenRef.current = null;
       }
     };
 
@@ -428,6 +473,10 @@ export default function ScreenRenderer({
     }
     setSashDrag(null);
     sashDragRef.current = null;
+    // Clear the draft only here: the committed screen prop has now replaced the
+    // draft, so the handoff from live drag to committed geometry is seamless.
+    setDraftScreen(null);
+    dragBaseScreenRef.current = null;
     setSplitDrag(null);
     splitDragRef.current = null;
     // Preserve join mode if its areas still exist in the new screen
@@ -458,18 +507,20 @@ export default function ScreenRenderer({
       if (!v1 || !v2) return;
 
       const isHorizontal = Math.abs(v1.y - v2.y) < EPSILON;
-      const position = isHorizontal ? v1.y : v1.x;
 
       const state: SashDragState = {
         edgeId: edge.id,
         isHorizontal,
-        position,
       };
       sashMovedRef.current = false;
       sashDragRef.current = state;
+      // Capture the base screen and seed the draft so the first frame already
+      // renders from the draft path (activeScreen = draftScreen ?? screen).
+      dragBaseScreenRef.current = screen;
+      setDraftScreen(screen);
       setSashDrag(state);
     },
-    [vertexMap],
+    [vertexMap, screen],
   );
 
   const handleSashDoubleClick = useCallback(
@@ -661,11 +712,11 @@ export default function ScreenRenderer({
 
   // Internal edges (non-border) for sash rendering
   const internalEdges = useMemo(
-    () => screen.edges.filter((e) => !e.border),
-    [screen.edges],
+    () => activeScreen.edges.filter((e) => !e.border),
+    [activeScreen.edges],
   );
 
-  const canClose = screen.areas.length > 1;
+  const canClose = activeScreen.areas.length > 1;
 
   return (
     <div
@@ -677,10 +728,14 @@ export default function ScreenRenderer({
         internalEdges.map((edge) => {
           const style = getSashStyle(edge);
           if (!style) return null;
+          const isSnappedSash =
+            sashDrag?.edgeId === edge.id && !!sashDrag.isSnapped;
           return (
             <div
               key={edge.id}
-              className="screen-sash"
+              className={
+                "screen-sash" + (isSnappedSash ? " screen-sash--snapped" : "")
+              }
               style={style}
               title="Drag to resize · double-click to join"
               onMouseDown={(e) => handleSashMouseDown(e, edge)}
@@ -688,31 +743,6 @@ export default function ScreenRenderer({
             />
           );
         })}
-
-      {/* Sash drag preview line */}
-      {sashDrag && (
-        <div
-          className={
-            "screen-sash-preview" +
-            (sashDrag.isSnapped ? " screen-sash-preview--snapped" : "")
-          }
-          style={
-            sashDrag.isHorizontal
-              ? {
-                  top: `${(1 - sashDrag.position) * 100}%`,
-                  left: 0,
-                  width: "100%",
-                  height: sashDrag.isSnapped ? 3 : 2,
-                }
-              : {
-                  left: `${sashDrag.position * 100}%`,
-                  top: 0,
-                  width: sashDrag.isSnapped ? 3 : 2,
-                  height: "100%",
-                }
-          }
-        />
-      )}
 
       {/* Render areas */}
       {areasToRender.map((area) => {
