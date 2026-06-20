@@ -853,7 +853,7 @@ export default function ScreenRenderer({
                           height: "100%",
                         }
                       : {
-                          top: `${Math.max(0, Math.min(100, ((splitDrag.areaRect.bottom - splitDrag.cursorY) / splitDrag.areaRect.height) * 100))}%`,
+                          top: `${Math.max(0, Math.min(100, ((splitDrag.cursorY - splitDrag.areaRect.top) / splitDrag.areaRect.height) * 100))}%`,
                           left: 0,
                           height: 2,
                           width: "100%",
