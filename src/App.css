@@ -12,6 +12,13 @@
   --dot-running: #4caf50;
   --dot-paused: #ff9800;
   --dot-missing: #f44336;
+  --canvas-bg: #121212;
+  --bg-panel: #232324;
+  --bg-panel-raised: #2c2c2e;
+  --gutter: 8px;
+  --radius-island: 8px;
+  --shadow-island: 0 1px 3px rgba(0,0,0,.4), 0 4px 12px rgba(0,0,0,.25);
+  --radius-control: 6px;
 }
 
 * {
@@ -40,6 +47,9 @@ body {
   display: flex;
   height: 100%;
   width: 100%;
+  padding: 8px;
+  gap: 8px;
+  position: relative;
 }
 
 .main-content {
