@@ -5,7 +5,8 @@ import { PanelContext } from "./PanelContext";
 import PanelTypeSelector from "./PanelTypeSelector";
 import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
-import { resizeEdgeLocal } from "./screenGeometry";
+import { resizeEdgeLocal, classifyCornerDrag } from "./screenGeometry";
+import type { Adjacency, CornerDragMode } from "./screenGeometry";
 import { areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse } from "./screenMotion";
 import type { AreaRect, SeamSide } from "./screenMotion";
 import "./ScreenRenderer.css";
@@ -13,6 +14,7 @@ import "./ScreenRenderer.css";
 const EPSILON = 0.0001;
 const SASH_SIZE = 4; // px
 const MIN_DRAG_DISTANCE = 24;
+const JOIN_MIN_DRAG_DISTANCE = 12;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,66 +48,9 @@ interface SplitDragState {
   cursorX: number;
   cursorY: number;
   dragDistance: number;
-}
-
-interface JoinModeState {
-  edge: Edge;
-  adjacentAreas: [Area, Area];
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Check if two collinear segments [a1, a2] and [b1, b2] overlap (interval length > 0). */
-function segmentsOverlap(a1: number, a2: number, b1: number, b2: number): boolean {
-  const [amin, amax] = a1 < a2 ? [a1, a2] : [a2, a1];
-  const [bmin, bmax] = b1 < b2 ? [b1, b2] : [b2, b1];
-  return Math.min(amax, bmax) - Math.max(amin, bmin) > EPSILON;
-}
-
-/** Find the areas whose boundary overlaps the edge segment. */
-function findAdjacentAreas(screen: Screen, edge: Edge): Area[] {
-  const v1 = screen.vertices.find((v) => v.id === edge.v1);
-  const v2 = screen.vertices.find((v) => v.id === edge.v2);
-  if (!v1 || !v2) return [];
-
-  const ex1 = v1.x, ey1 = v1.y;
-  const ex2 = v2.x, ey2 = v2.y;
-
-  return screen.areas.filter((a) => {
-    const av1 = screen.vertices.find((v) => v.id === a.v1);
-    const av2 = screen.vertices.find((v) => v.id === a.v2);
-    const av3 = screen.vertices.find((v) => v.id === a.v3);
-    const av4 = screen.vertices.find((v) => v.id === a.v4);
-    if (!av1 || !av2 || !av3 || !av4) return false;
-
-    // Area bounds: v1=BL, v2=TL, v3=TR, v4=BR
-    const left = av1.x, bottom = av1.y, right = av3.x, top = av3.y;
-
-    // Check if edge overlaps any of the area's 4 sides:
-    // Bottom: y=bottom, x in [left, right]
-    // Top: y=top, x in [left, right]
-    // Left: x=left, y in [bottom, top]
-    // Right: x=right, y in [bottom, top]
-
-    const isHorizontal = Math.abs(ey1 - ey2) < EPSILON;
-    const isVertical = Math.abs(ex1 - ex2) < EPSILON;
-
-    if (isHorizontal && Math.abs(ey1 - bottom) < EPSILON && segmentsOverlap(ex1, ex2, left, right)) {
-      return true; // overlaps bottom side
-    }
-    if (isHorizontal && Math.abs(ey1 - top) < EPSILON && segmentsOverlap(ex1, ex2, left, right)) {
-      return true; // overlaps top side
-    }
-    if (isVertical && Math.abs(ex1 - left) < EPSILON && segmentsOverlap(ey1, ey2, bottom, top)) {
-      return true; // overlaps left side
-    }
-    if (isVertical && Math.abs(ex1 - right) < EPSILON && segmentsOverlap(ey1, ey2, bottom, top)) {
-      return true; // overlaps right side
-    }
-    return false;
-  });
+  mode: CornerDragMode;
+  targetAreaId: string | null;
+  direction: Adjacency | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,10 +99,6 @@ export default function ScreenRenderer({
 
   const [splitDrag, setSplitDrag] = useState<SplitDragState | null>(null);
   const splitDragRef = useRef<SplitDragState | null>(null);
-
-  const [joinMode, setJoinMode] = useState<JoinModeState | null>(null);
-  const joinModeRef = useRef<JoinModeState | null>(null);
-  joinModeRef.current = joinMode;
 
   // ---------- Motion state (Bundle 1: exit ghosts) ----------
 
@@ -396,12 +337,44 @@ export default function ScreenRenderer({
       const absDy = Math.abs(e.clientY - (state.areaRect.top + state.areaRect.height / 2));
       const axis: Axis = absDx > absDy ? "vertical" : "horizontal";
 
+      // Classify the drag mode from cursor position (split / join / invalid)
+      const container = containerRef.current;
+      let mode: CornerDragMode = "split";
+      let targetAreaId: string | null = null;
+      let direction: Adjacency | null = null;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const nx = (e.clientX - rect.left) / rect.width;
+        const ny = 1 - (e.clientY - rect.top) / rect.height;
+        const classification = classifyCornerDrag(state.area, nx, ny, screen.areas, vertexMap);
+        mode = classification.mode;
+        targetAreaId = classification.targetAreaId;
+        direction = classification.direction;
+      }
+
+      // Update cursor based on mode
+      if (mode === "split") {
+        document.body.style.cursor = "crosshair";
+      } else if (mode === "join" && direction) {
+        switch (direction) {
+          case "north": document.body.style.cursor = "n-resize"; break;
+          case "south": document.body.style.cursor = "s-resize"; break;
+          case "east":  document.body.style.cursor = "e-resize"; break;
+          case "west":  document.body.style.cursor = "w-resize"; break;
+        }
+      } else {
+        document.body.style.cursor = "not-allowed";
+      }
+
       const updated: SplitDragState = {
         ...state,
         axis,
         cursorX: e.clientX,
         cursorY: e.clientY,
         dragDistance,
+        mode,
+        targetAreaId,
+        direction,
       };
       splitDragRef.current = updated;
       setSplitDrag(updated);
@@ -413,6 +386,28 @@ export default function ScreenRenderer({
       setSplitDrag(null);
 
       if (!state) return;
+
+      // Join branch: absorbed = dragged-into area (sourceAreaId), survivor = grabbed area (targetAreaId)
+      if (state.mode === "join" && state.targetAreaId) {
+        if (state.dragDistance < JOIN_MIN_DRAG_DISTANCE) return;
+        const absorbed = screen.areas.find((a) => a.id === state.targetAreaId);
+        if (!absorbed) return;
+        if (absorbed.terminal_id) {
+          disposeTerminal(absorbed.terminal_id);
+        }
+        safeInvoke<WorkspaceResult>("join_areas", {
+          sessionId: sessionIdRef.current,
+          workspaceId: workspaceIdRef.current,
+          sourceAreaId: state.targetAreaId,
+          targetAreaId: state.area.id,
+        }, onErrorRef.current)
+          .then((r) => onScreenChangeRef.current(r.current_screen))
+          .catch(() => {});
+        return;
+      }
+
+      // Split branch (only when mode is "split")
+      if (state.mode !== "split") return;
       if (state.dragDistance < MIN_DRAG_DISTANCE) return;
 
       // Compute factor relative to the area
@@ -473,37 +468,6 @@ export default function ScreenRenderer({
     };
   }, [splitDrag]);
 
-  // ------------------------------------------------------------------
-  // Join mode
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    if (!joinMode) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setJoinMode(null);
-      }
-    };
-
-    const handleClickOutside = (e: MouseEvent) => {
-      // Check if click is outside any area overlay
-      const target = e.target as HTMLElement;
-      if (!target.closest("[data-join-area]")) {
-        setJoinMode(null);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    // Use capture phase so we process before area focus click
-    document.addEventListener("mousedown", handleClickOutside, true);
-
-    return () => {
-      document.body.style.cursor = "";
-      document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("mousedown", handleClickOutside, true);
-    };
-  }, [joinMode]);
-
   // Reset interaction states when screen changes (command completed successfully)
   useEffect(() => {
     if (rafRef.current) {
@@ -518,17 +482,6 @@ export default function ScreenRenderer({
     dragBaseScreenRef.current = null;
     setSplitDrag(null);
     splitDragRef.current = null;
-    // Preserve join mode if its areas still exist in the new screen
-    if (
-      joinModeRef.current &&
-      joinModeRef.current.adjacentAreas.every((a) =>
-        screen.areas.some((sa) => sa.id === a.id),
-      )
-    ) {
-      // keep join mode active
-    } else {
-      setJoinMode(null);
-    }
 
     // ------------------------------------------------------------------
     // Motion diff — Bundle 1: exit ghosts
@@ -871,20 +824,6 @@ export default function ScreenRenderer({
     [vertexMap, screen],
   );
 
-  const handleSashDoubleClick = useCallback(
-    (e: React.MouseEvent, edge: Edge) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // Don't enter join mode during sash drag
-      if (sashDragRef.current) return;
-
-      const adjacent = findAdjacentAreas(screen, edge);
-      if (adjacent.length !== 2) return; // should not happen for internal edges
-      setJoinMode({ edge, adjacentAreas: adjacent as [Area, Area] });
-    },
-    [screen],
-  );
-
   const handleCornerMouseDown = useCallback(
     (e: React.MouseEvent, area: Area) => {
       if (sashDragRef.current) return;
@@ -911,43 +850,14 @@ export default function ScreenRenderer({
         cursorX: e.clientX,
         cursorY: e.clientY,
         dragDistance: 0,
+        mode: "split",
+        targetAreaId: null,
+        direction: null,
       };
       splitDragRef.current = state;
       setSplitDrag(state);
     },
     [vertexMap],
-  );
-
-  const handleJoinAreaClick = useCallback(
-    (areaId: string) => {
-      const mode = joinMode;
-      if (!mode) return;
-
-      const [areaA, areaB] = mode.adjacentAreas;
-      // Clicked area is the target (survivor); the other is source (absorbed)
-      const targetId = areaId;
-      const sourceId = areaA.id === areaId ? areaB.id : areaA.id;
-      const source = areaA.id === areaId ? areaB : areaA;
-
-      setJoinMode(null);
-
-      // Dispose source terminal if it has one
-      if (source.terminal_id) {
-        disposeTerminal(source.terminal_id);
-      }
-
-      safeInvoke<WorkspaceResult>("join_areas", {
-        sessionId: sessionIdRef.current,
-        workspaceId: workspaceIdRef.current,
-        sourceAreaId: sourceId,
-        targetAreaId: targetId,
-      }, onErrorRef.current)
-        .then((result) => {
-          onScreenChangeRef.current(result.current_screen);
-        })
-        .catch(() => {});
-    },
-    [joinMode],
   );
 
   const handleClose = useCallback(
@@ -1066,6 +976,27 @@ export default function ScreenRenderer({
 
   const canClose = activeScreen.areas.length > 1;
 
+  // Combined-rect for join drag visual feedback (Bundle C)
+  let joinCombinedRect: { left: number; top: number; width: number; height: number } | null = null;
+  if (
+    splitDrag?.mode === "join" &&
+    splitDrag.targetAreaId &&
+    splitDrag.dragDistance >= JOIN_MIN_DRAG_DISTANCE
+  ) {
+    const r1 = areaRect(splitDrag.area, vertexMap);
+    const absorbed = activeScreen.areas.find((a) => a.id === splitDrag.targetAreaId);
+    if (r1 && absorbed) {
+      const r2 = areaRect(absorbed, vertexMap);
+      if (r2) {
+        const left = Math.min(r1.left, r2.left);
+        const top = Math.min(r1.top, r2.top);
+        const right = Math.max(r1.left + r1.width, r2.left + r2.width);
+        const bottom = Math.max(r1.top + r1.height, r2.top + r2.height);
+        joinCombinedRect = { left, top, width: right - left, height: bottom - top };
+      }
+    }
+  }
+
   return (
     <div
       ref={containerRef}
@@ -1085,9 +1016,8 @@ export default function ScreenRenderer({
                 "screen-sash" + (isSnappedSash ? " screen-sash--snapped" : "")
               }
               style={style}
-              title="Drag to resize · double-click to join"
+              title="Drag to resize"
               onMouseDown={(e) => handleSashMouseDown(e, edge)}
-              onDoubleClick={(e) => handleSashDoubleClick(e, edge)}
             />
           );
         })}
@@ -1108,10 +1038,6 @@ export default function ScreenRenderer({
         const isFocused = focusedAreaId === area.id;
         const PanelComponent = getPanel(area.panel_type);
 
-        // Check if this area is in join mode
-        const isJoinArea =
-          joinMode?.adjacentAreas.some((a) => a.id === area.id) ?? false;
-
         // Split preview for this area
         const isSplitArea = splitDrag?.area.id === area.id;
 
@@ -1127,8 +1053,7 @@ export default function ScreenRenderer({
             }}
             className={
               "screen-area" +
-              (isFocused ? " screen-area--focused" : "") +
-              (isJoinArea ? " screen-area--join-mode" : "")
+              (isFocused ? " screen-area--focused" : "")
             }
             style={{
               position: "absolute",
@@ -1137,15 +1062,7 @@ export default function ScreenRenderer({
               width: `${width}%`,
               height: `${height}%`,
             }}
-            onClick={(e) => {
-              // If in join mode, clicking on one of the adjacent areas triggers the join
-              if (isJoinArea && joinMode) {
-                e.stopPropagation();
-                handleJoinAreaClick(area.id);
-                return;
-              }
-              onFocusedAreaChange?.(area.id);
-            }}
+            onClick={() => onFocusedAreaChange?.(area.id)}
             data-area-id={area.id}
           >
             {/* Corner handles for split (only when not zoomed and not dragging) */}
@@ -1223,22 +1140,8 @@ export default function ScreenRenderer({
               </>
             )}
 
-            {/* Join mode overlay */}
-            {isJoinArea && joinMode && (
-              <div
-                className="screen-join-overlay"
-                data-join-area={area.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleJoinAreaClick(area.id);
-                }}
-              >
-                <span className="screen-join-label">Click to keep</span>
-              </div>
-            )}
-
             {/* Split preview line */}
-            {isSplitArea && splitDrag && splitDrag.dragDistance >= MIN_DRAG_DISTANCE && (
+            {isSplitArea && splitDrag && splitDrag.mode === "split" && splitDrag.dragDistance >= MIN_DRAG_DISTANCE && (
               <div className="screen-split-preview-container">
                 <div
                   className="screen-split-preview"
@@ -1260,9 +1163,29 @@ export default function ScreenRenderer({
                 />
               </div>
             )}
+
+            {/* Join drag darken overlay (Bundle C) */}
+            {splitDrag?.mode === "join" &&
+             splitDrag.targetAreaId === area.id &&
+             splitDrag.dragDistance >= JOIN_MIN_DRAG_DISTANCE && (
+              <div className="screen-join-absorb" />
+            )}
           </div>
         );
       })}
+
+      {/* Combined-rect outline for join drag (Bundle C) */}
+      {joinCombinedRect && (
+        <div
+          className="screen-join-combined"
+          style={{
+            left: `${joinCombinedRect.left}%`,
+            top: `${joinCombinedRect.top}%`,
+            width: `${joinCombinedRect.width}%`,
+            height: `${joinCombinedRect.height}%`,
+          }}
+        />
+      )}
 
       {/* Exit ghosts — Bundle 1: render removed areas for their exit animation */}
       {/* Each ghost is a fixed-position div at the removed area's LAST-KNOWN */}

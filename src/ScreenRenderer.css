@@ -156,41 +156,6 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Join mode overlay                                                   */
-/* ------------------------------------------------------------------ */
-.screen-area--join-mode {
-  z-index: 6;
-}
-
-.screen-join-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(124, 58, 237, 0.15);
-  border: 2px dashed var(--accent-color, #7c3aed);
-  cursor: pointer;
-  transition: background 0.15s ease;
-  border-radius: 3px;
-}
-
-.screen-join-overlay:hover {
-  background: rgba(124, 58, 237, 0.3);
-}
-
-.screen-join-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent-color, #7c3aed);
-  background: rgba(0, 0, 0, 0.6);
-  padding: 4px 10px;
-  border-radius: 4px;
-  pointer-events: none;
-}
-
-/* ------------------------------------------------------------------ */
 /* Split preview line                                                  */
 /* ------------------------------------------------------------------ */
 .screen-split-preview-container {
@@ -229,4 +194,42 @@
 /* The directional collapse toward the absorber is computed per-ghost via */
 /* determineExitCollapse() and animated with the Web Animations API. The */
 /* CSS here only keeps static positioning/hit-test suppression. */
+
+/* ------------------------------------------------------------------ */
+/* Join drag visual feedback — Bundle C                                */
+/* ------------------------------------------------------------------ */
+
+/* Darken the to-be-absorbed area under the cursor during a join drag. */
+.screen-join-absorb {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 19;
+  border-radius: 3px;
+}
+
+/* Combined-rect outline spanning the grabbed + absorbed areas. */
+.screen-join-combined {
+  position: absolute;
+  pointer-events: none;
+  z-index: 16;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+/* Fade-in animation when motion is allowed (Blender-like ease-in). */
+@keyframes screen-join-feedback-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .screen-join-absorb,
+  .screen-join-combined {
+    animation: screen-join-feedback-in 0.15s ease-in;
+  }
+}
 
