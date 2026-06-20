@@ -62,7 +62,7 @@
 .screen-sash {
   position: absolute;
   z-index: 5;
-  background: var(--border-color, rgba(124, 58, 237, 0.15));
+  background: var(--border-color, rgba(0, 120, 212, 0.15));
   transition: background 0.15s ease;
 }
 
@@ -167,7 +167,7 @@
 
 .screen-split-preview {
   position: absolute;
-  background: var(--accent-color, #7c3aed);
+  background: var(--accent-color, #0078d4);
   opacity: 0.8;
 }
 
