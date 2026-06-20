@@ -56,8 +56,6 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
 
             let result = sessions_repo.get(&session_id)
                 .map_err(|e| CommandError::not_found_from_sql("session", &session_id, e))?;
-            let area_ids: Vec<&str> = result.workspaces.iter().flat_map(|w| w.current_screen.areas.iter().map(|a| a.id.as_str())).collect();
-            eprintln!("[sjdbg] SessionOpen session_id={} workspace_area_ids={:?}", session_id, area_ids);
             Ok(ExecutionOutcome::with_event(CommandResult::Session(result), DomainEvent::SessionsChanged))
         }
         Command::SessionClose { session_id } => {
@@ -204,8 +202,6 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let screen = ws.current_screen.clone();
-            let area_ids: Vec<&str> = screen.areas.iter().map(|a| a.id.as_str()).collect();
-            eprintln!("[sjdbg] WorkspaceSetActive session_id={} workspace_id={} area_ids={:?}", session_id, workspace_id, area_ids);
             let sessions_repo = state.db.sessions(&conn);
             sessions_repo.set_active_workspace(&session_id, &workspace_id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
@@ -232,16 +228,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let mut screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] SplitArea session_id={} workspace_id={} area_id={} loaded_screen_area_ids={:?}", session_id, workspace_id, area_id, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             graph::area_split(&mut screen, &area_id, axis, factor)
-                .map_err(|e| { eprintln!("[sjdbg] SplitArea FAILED: {}", &e); CommandError::invalid_input(&e) })?;
+                .map_err(|e| CommandError::invalid_input(&e))?;
             graph::validate_screen(&screen)
                 .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
             let screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] SplitArea SUCCESS final_area_ids={:?}", screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
         Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id } => {
@@ -249,16 +243,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let mut screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] JoinAreas session_id={} workspace_id={} source={} target={} loaded_screen_area_ids={:?}", session_id, workspace_id, source_area_id, target_area_id, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             graph::screen_area_join(&mut screen, &target_area_id, &source_area_id)
-                .map_err(|e| { eprintln!("[sjdbg] JoinAreas FAILED: {}", &e); CommandError::invalid_input(&e) })?;
+                .map_err(|e| CommandError::invalid_input(&e))?;
             graph::validate_screen(&screen)
                 .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
             let screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] JoinAreas SUCCESS final_area_ids={:?}", screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
         Command::CloseArea { session_id, workspace_id, area_id } => {
@@ -266,16 +258,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let mut screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] CloseArea session_id={} workspace_id={} area_id={} loaded_screen_area_ids={:?}", session_id, workspace_id, area_id, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             graph::screen_area_close(&mut screen, &area_id)
-                .map_err(|e| { eprintln!("[sjdbg] CloseArea FAILED: {}", &e); CommandError::invalid_input(&e) })?;
+                .map_err(|e| CommandError::invalid_input(&e))?;
             graph::validate_screen(&screen)
                 .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
             let screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] CloseArea SUCCESS final_area_ids={:?}", screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
         Command::ResizeEdge { session_id, workspace_id, edge_id, position } => {
@@ -283,16 +273,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let mut screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] ResizeEdge session_id={} workspace_id={} edge_id={} position={} loaded_screen_area_ids={:?} loaded_screen_edge_ids={:?}", session_id, workspace_id, edge_id, position, screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>(), screen.edges.iter().map(|e| &e.id).collect::<Vec<_>>());
             graph::resize_edge(&mut screen, &edge_id, position)
-                .map_err(|e| { eprintln!("[sjdbg] ResizeEdge FAILED: {}", &e); CommandError::invalid_input(&e) })?;
+                .map_err(|e| CommandError::invalid_input(&e))?;
             graph::validate_screen(&screen)
                 .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
             workspaces_repo.update_screen(&workspace_id, &screen)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let ws = workspaces_repo.get(&workspace_id)?;
             let screen = ws.current_screen.clone();
-            eprintln!("[sjdbg] ResizeEdge SUCCESS final_area_ids={:?}", screen.areas.iter().map(|a| &a.id).collect::<Vec<_>>());
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
         Command::ChangePanelType { session_id, workspace_id, area_id, panel_type } => {
