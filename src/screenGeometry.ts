@@ -1,4 +1,4 @@
-import type { Screen, Vertex } from "./types/screen";
+import type { Area, Screen, Vertex } from "./types/screen";
 
 // MUST match crates/core/src/domain/screen.rs:5-6
 export const EPSILON = 1e-6;
@@ -181,4 +181,135 @@ export function resizeEdgeLocal(
     edges: screen.edges.map((e) => ({ ...e })),
     areas: screen.areas.map((a) => ({ ...a })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Point-in-area hit testing + adjacency (Bundle A of corner-drag join)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror of Rust `area_bounds`; returns (left, bottom, right, top) from v1 and
+ * v3. Returns null when either vertex is missing from the map.
+ */
+function areaBounds(
+  area: Area,
+  vertexMap: Map<string, Vertex>,
+): { left: number; bottom: number; right: number; top: number } | null {
+  const v1 = vertexMap.get(area.v1);
+  const v3 = vertexMap.get(area.v3);
+  if (!v1 || !v3) return null;
+  return { left: v1.x, bottom: v1.y, right: v3.x, top: v3.y };
+}
+
+/**
+ * Cliente-side mirror of Blender's `BKE_screen_find_area_xy`: returns true if
+ * (nx, ny) falls within `area`'s bounding rectangle (inclusive with EPSILON
+ * tolerance). Returns false if the area has missing vertices.
+ */
+export function pointInArea(
+  nx: number,
+  ny: number,
+  area: Area,
+  vertexMap: Map<string, Vertex>,
+): boolean {
+  const bounds = areaBounds(area, vertexMap);
+  if (!bounds) return false;
+  return (
+    nx >= bounds.left - EPSILON &&
+    nx <= bounds.right + EPSILON &&
+    ny >= bounds.bottom - EPSILON &&
+    ny <= bounds.top + EPSILON
+  );
+}
+
+/** Returns the first area that contains (nx, ny), or null. */
+export function findAreaAtPoint(
+  areas: Area[],
+  nx: number,
+  ny: number,
+  vertexMap: Map<string, Vertex>,
+): Area | null {
+  for (const area of areas) {
+    if (pointInArea(nx, ny, area, vertexMap)) return area;
+  }
+  return null;
+}
+
+export type Adjacency = "north" | "south" | "east" | "west";
+
+/**
+ * Mirror of Rust `get_adjacency` (graph.rs:133-155). Returns the direction of
+ * areaB relative to areaA, or null if they are not adjacent or overlapping.
+ *
+ *   north  — B is above A  (top_a ≈ bottom_b, overlap_x ≥ MIN_AREA_SIZE)
+ *   south  — B is below A  (bottom_a ≈ top_b,  overlap_x ≥ MIN_AREA_SIZE)
+ *   east   — B is right of A (right_a ≈ left_b, overlap_y ≥ MIN_AREA_SIZE)
+ *   west   — B is left of A  (left_a ≈ right_b, overlap_y ≥ MIN_AREA_SIZE)
+ */
+export function getAdjacency(
+  areaA: Area,
+  areaB: Area,
+  vertexMap: Map<string, Vertex>,
+): Adjacency | null {
+  const a = areaBounds(areaA, vertexMap);
+  const b = areaBounds(areaB, vertexMap);
+  if (!a || !b) return null;
+
+  const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const overlapY = Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom);
+
+  if (Math.abs(a.top - b.bottom) < EPSILON && overlapX >= MIN_AREA_SIZE) {
+    return "north";
+  }
+  if (Math.abs(a.bottom - b.top) < EPSILON && overlapX >= MIN_AREA_SIZE) {
+    return "south";
+  }
+  if (Math.abs(a.right - b.left) < EPSILON && overlapY >= MIN_AREA_SIZE) {
+    return "east";
+  }
+  if (Math.abs(a.left - b.right) < EPSILON && overlapY >= MIN_AREA_SIZE) {
+    return "west";
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Corner-drag mode classification (Bundle B: split vs join vs invalid)
+// ---------------------------------------------------------------------------
+
+export type CornerDragMode = "split" | "join" | "invalid";
+
+export interface CornerDragClassification {
+  mode: CornerDragMode;
+  targetAreaId: string | null;
+  direction: Adjacency | null;
+}
+
+/**
+ * Classify a corner drag based on cursor position relative to the grabbed area.
+ *
+ * Cursor in the same area               → split
+ * Cursor in a DIFFERENT, adjacent area  → join (with that area as target)
+ * Cursor in a non-adjacent area         → invalid
+ * Cursor outside all areas              → invalid
+ */
+export function classifyCornerDrag(
+  grabbedArea: Area,
+  nx: number,
+  ny: number,
+  areas: Area[],
+  vertexMap: Map<string, Vertex>,
+): CornerDragClassification {
+  const cursorArea = findAreaAtPoint(areas, nx, ny, vertexMap);
+  if (cursorArea && cursorArea.id === grabbedArea.id) {
+    return { mode: "split", targetAreaId: null, direction: null };
+  }
+  if (cursorArea) {
+    const dir = getAdjacency(grabbedArea, cursorArea, vertexMap);
+    if (dir !== null) {
+      return { mode: "join", targetAreaId: cursorArea.id, direction: dir };
+    }
+    return { mode: "invalid", targetAreaId: null, direction: null };
+  }
+  return { mode: "invalid", targetAreaId: null, direction: null };
 }

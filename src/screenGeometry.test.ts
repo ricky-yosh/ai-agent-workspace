@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
-import type { Screen } from "./types/screen";
+import type { Area, Screen, Vertex } from "./types/screen";
 import {
   EPSILON,
   MIN_AREA_SIZE,
+  classifyCornerDrag,
+  findAreaAtPoint,
+  getAdjacency,
+  pointInArea,
   resizeEdgeLocal,
   selectConnectedVertices,
 } from "./screenGeometry";
@@ -301,5 +305,295 @@ describe("selectConnectedVertices", () => {
 
   it("returns an empty set for a missing edge", () => {
     expect(selectConnectedVertices(makeTwoAreaScreen(), "nope").size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Point-in-area hit testing
+// ---------------------------------------------------------------------------
+
+/** Build a vertex map from a screen. */
+function vmap(screen: Screen): Map<string, Vertex> {
+  return new Map(screen.vertices.map((v) => [v.id, v]));
+}
+
+describe("pointInArea", () => {
+  const screen = makeTwoAreaScreen();
+  const vm = vmap(screen);
+  const leftArea = screen.areas.find((a) => a.id === "a_left")!;
+
+  it("point clearly inside an area returns true", () => {
+    expect(pointInArea(0.25, 0.5, leftArea, vm)).toBe(true);
+  });
+
+  it("point outside an area returns false", () => {
+    expect(pointInArea(0.75, 0.5, leftArea, vm)).toBe(false);
+  });
+
+  it("point on a shared boundary returns true (inclusive with EPSILON)", () => {
+    // x=0.5 is the shared boundary between left and right areas.
+    expect(pointInArea(0.5, 0.5, leftArea, vm)).toBe(true);
+  });
+
+  it("area with a missing vertex returns false", () => {
+    const orphan: Area = {
+      id: "orphan",
+      v1: "exists", v2: "exists", v3: "missing", v4: "exists",
+      panel_type: "blank", terminal_id: null,
+    };
+    const partialMap = new Map<string, Vertex>([
+      ["exists", { id: "exists", x: 0, y: 0 }],
+    ]);
+    expect(pointInArea(0.5, 0.5, orphan, partialMap)).toBe(false);
+  });
+});
+
+describe("findAreaAtPoint", () => {
+  const screen = makeTwoAreaScreen();
+  const vm = vmap(screen);
+
+  it("point in left half returns left area", () => {
+    const found = findAreaAtPoint(screen.areas, 0.25, 0.5, vm);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe("a_left");
+  });
+
+  it("point in right half returns right area", () => {
+    const found = findAreaAtPoint(screen.areas, 0.75, 0.5, vm);
+    expect(found).not.toBeNull();
+    expect(found!.id).toBe("a_right");
+  });
+
+  it("point outside [0,1] returns null", () => {
+    expect(findAreaAtPoint(screen.areas, -0.1, 0.5, vm)).toBeNull();
+    expect(findAreaAtPoint(screen.areas, 0.5, 1.1, vm)).toBeNull();
+  });
+});
+
+describe("getAdjacency", () => {
+  // ------------------------------------------------------------------
+  // Vertical (left/right) split
+  // ------------------------------------------------------------------
+  it("left/right split: left.east(right) and right.west(left)", () => {
+    const screen = makeTwoAreaScreen();
+    const vm = vmap(screen);
+    const left = screen.areas.find((a) => a.id === "a_left")!;
+    const right = screen.areas.find((a) => a.id === "a_right")!;
+
+    expect(getAdjacency(left, right, vm)).toBe("east");
+    expect(getAdjacency(right, left, vm)).toBe("west");
+  });
+
+  // ------------------------------------------------------------------
+  // Horizontal (top/bottom) split
+  // ------------------------------------------------------------------
+  it("top/bottom split: bottom.north(top) and top.south(bottom)", () => {
+    const screen = makeTwoAreaScreenHorizontal();
+    const vm = vmap(screen);
+    const bottom = screen.areas.find((a) => a.id === "a_bottom")!;
+    const top = screen.areas.find((a) => a.id === "a_top")!;
+
+    // B is above A → north (bottom → top = north; top → bottom = south)
+    expect(getAdjacency(bottom, top, vm)).toBe("north");
+    expect(getAdjacency(top, bottom, vm)).toBe("south");
+  });
+
+  // ------------------------------------------------------------------
+  // Insufficient overlap
+  // ------------------------------------------------------------------
+  it("returns null when perpendicular overlap is below MIN_AREA_SIZE", () => {
+    // Two areas stacked vertically but each only 0.02 wide — overlap_x < 0.05.
+    const screen: Screen = {
+      vertices: [
+        { id: "bl_a", x: 0.49, y: 0.0 },
+        { id: "tl_a", x: 0.49, y: 0.5 },
+        { id: "br_a", x: 0.51, y: 0.0 },
+        { id: "tr_a", x: 0.51, y: 0.5 },
+        { id: "bl_b", x: 0.49, y: 0.5 },
+        { id: "tl_b", x: 0.49, y: 1.0 },
+        { id: "br_b", x: 0.51, y: 0.5 },
+        { id: "tr_b", x: 0.51, y: 1.0 },
+      ],
+      edges: [],
+      areas: [
+        {
+          id: "a_narrow_bot",
+          v1: "bl_a", v2: "tl_a", v3: "tr_a", v4: "br_a",
+          panel_type: "blank", terminal_id: null,
+        },
+        {
+          id: "a_narrow_top",
+          v1: "bl_b", v2: "tl_b", v3: "tr_b", v4: "br_b",
+          panel_type: "blank", terminal_id: null,
+        },
+      ],
+    };
+    const vm = vmap(screen);
+    const bottom = screen.areas[0];
+    const top = screen.areas[1];
+
+    // overlap_x = min(0.51,0.51) - max(0.49,0.49) = 0.02 < 0.05
+    expect(getAdjacency(bottom, top, vm)).toBeNull();
+    expect(getAdjacency(top, bottom, vm)).toBeNull();
+  });
+
+  // ------------------------------------------------------------------
+  // Non-adjacent / separated
+  // ------------------------------------------------------------------
+  it("returns null for non-adjacent (diagonal/separated) areas", () => {
+    // Two areas in opposite quadrants touching at a single point (corner).
+    const screen: Screen = {
+      vertices: [
+        { id: "bl1", x: 0.0, y: 0.0 },
+        { id: "tl1", x: 0.0, y: 0.4 },
+        { id: "tr1", x: 0.4, y: 0.4 },
+        { id: "br1", x: 0.4, y: 0.0 },
+        { id: "bl2", x: 0.6, y: 0.6 },
+        { id: "tl2", x: 0.6, y: 1.0 },
+        { id: "tr2", x: 1.0, y: 1.0 },
+        { id: "br2", x: 1.0, y: 0.6 },
+      ],
+      edges: [],
+      areas: [
+        {
+          id: "a_botleft",
+          v1: "bl1", v2: "tl1", v3: "tr1", v4: "br1",
+          panel_type: "blank", terminal_id: null,
+        },
+        {
+          id: "a_topright",
+          v1: "bl2", v2: "tl2", v3: "tr2", v4: "br2",
+          panel_type: "blank", terminal_id: null,
+        },
+      ],
+    };
+    const vm = vmap(screen);
+    expect(getAdjacency(screen.areas[0], screen.areas[1], vm)).toBeNull();
+    expect(getAdjacency(screen.areas[1], screen.areas[0], vm)).toBeNull();
+  });
+
+  // ------------------------------------------------------------------
+  // T-junction
+  // ------------------------------------------------------------------
+  it("T-junction: each adjacent pair resolves correctly", () => {
+    const screen = makeTJunctionScreen();
+    const vm = vmap(screen);
+
+    const a_a = screen.areas.find((a) => a.id === "a_a")!;
+    const a_b = screen.areas.find((a) => a.id === "a_b")!;
+    const a_c = screen.areas.find((a) => a.id === "a_c")!;
+
+    // a_a [0,0.5]×[0.5,1]  a_b [0.5,1]×[0.5,1]
+    // a_c [0,1]×[0,0.5]
+    //
+    // a_a east of a_c, a_b east of a_c, a_a east of a_b
+
+    // a_c → a_a (north: a_a is above a_c)
+    expect(getAdjacency(a_c, a_a, vm)).toBe("north");
+    // a_a → a_c (south: a_c is below a_a)
+    expect(getAdjacency(a_a, a_c, vm)).toBe("south");
+
+    // a_c → a_b (north: a_b is above a_c)
+    expect(getAdjacency(a_c, a_b, vm)).toBe("north");
+    // a_b → a_c (south: a_c is below a_b)
+    expect(getAdjacency(a_b, a_c, vm)).toBe("south");
+
+    // a_a → a_b (east: a_b is east of a_a)
+    expect(getAdjacency(a_a, a_b, vm)).toBe("east");
+    // a_b → a_a (west: a_a is west of a_b)
+    expect(getAdjacency(a_b, a_a, vm)).toBe("west");
+  });
+});
+
+describe("classifyCornerDrag", () => {
+  it("cursor in grabbed area returns split", () => {
+    const screen = makeTwoAreaScreen();
+    const vm = vmap(screen);
+    const leftArea = screen.areas.find((a) => a.id === "a_left")!;
+    const result = classifyCornerDrag(leftArea, 0.25, 0.5, screen.areas, vm);
+    expect(result.mode).toBe("split");
+    expect(result.targetAreaId).toBeNull();
+    expect(result.direction).toBeNull();
+  });
+
+  it("cursor in adjacent neighbour (right) returns join with east direction", () => {
+    const screen = makeTwoAreaScreen();
+    const vm = vmap(screen);
+    const leftArea = screen.areas.find((a) => a.id === "a_left")!;
+    const rightArea = screen.areas.find((a) => a.id === "a_right")!;
+    const result = classifyCornerDrag(leftArea, 0.75, 0.5, screen.areas, vm);
+    expect(result.mode).toBe("join");
+    expect(result.targetAreaId).toBe(rightArea.id);
+    expect(result.direction).toBe("east");
+  });
+
+  it("cursor in adjacent neighbour (left) returns join with west direction", () => {
+    const screen = makeTwoAreaScreen();
+    const vm = vmap(screen);
+    const rightArea = screen.areas.find((a) => a.id === "a_right")!;
+    const leftArea = screen.areas.find((a) => a.id === "a_left")!;
+    const result = classifyCornerDrag(rightArea, 0.25, 0.5, screen.areas, vm);
+    expect(result.mode).toBe("join");
+    expect(result.targetAreaId).toBe(leftArea.id);
+    expect(result.direction).toBe("west");
+  });
+
+  it("cursor in adjacent neighbour (top) returns join with north direction", () => {
+    const screen = makeTwoAreaScreenHorizontal();
+    const vm = vmap(screen);
+    const bottomArea = screen.areas.find((a) => a.id === "a_bottom")!;
+    const topArea = screen.areas.find((a) => a.id === "a_top")!;
+    const result = classifyCornerDrag(bottomArea, 0.5, 0.75, screen.areas, vm);
+    expect(result.mode).toBe("join");
+    expect(result.targetAreaId).toBe(topArea.id);
+    expect(result.direction).toBe("north");
+  });
+
+  it("cursor in adjacent neighbour (bottom) returns join with south direction", () => {
+    const screen = makeTwoAreaScreenHorizontal();
+    const vm = vmap(screen);
+    const topArea = screen.areas.find((a) => a.id === "a_top")!;
+    const bottomArea = screen.areas.find((a) => a.id === "a_bottom")!;
+    const result = classifyCornerDrag(topArea, 0.5, 0.25, screen.areas, vm);
+    expect(result.mode).toBe("join");
+    expect(result.targetAreaId).toBe(bottomArea.id);
+    expect(result.direction).toBe("south");
+  });
+
+  it("cursor in a non-adjacent area returns invalid", () => {
+    const screen: Screen = {
+      vertices: [
+        { id: "bl1", x: 0.0, y: 0.0 },
+        { id: "tl1", x: 0.0, y: 0.4 },
+        { id: "tr1", x: 0.4, y: 0.4 },
+        { id: "br1", x: 0.4, y: 0.0 },
+        { id: "bl2", x: 0.6, y: 0.6 },
+        { id: "tl2", x: 0.6, y: 1.0 },
+        { id: "tr2", x: 1.0, y: 1.0 },
+        { id: "br2", x: 1.0, y: 0.6 },
+      ],
+      edges: [],
+      areas: [
+        { id: "a_botleft", v1: "bl1", v2: "tl1", v3: "tr1", v4: "br1", panel_type: "blank", terminal_id: null },
+        { id: "a_topright", v1: "bl2", v2: "tl2", v3: "tr2", v4: "br2", panel_type: "blank", terminal_id: null },
+      ],
+    };
+    const vm = vmap(screen);
+    const botleft = screen.areas.find((a) => a.id === "a_botleft")!;
+    // Cursor in topright (diagonal, not adjacent)
+    const result = classifyCornerDrag(botleft, 0.8, 0.8, screen.areas, vm);
+    expect(result.mode).toBe("invalid");
+    expect(result.targetAreaId).toBeNull();
+    expect(result.direction).toBeNull();
+  });
+
+  it("cursor outside all areas returns invalid", () => {
+    const screen = makeTwoAreaScreen();
+    const vm = vmap(screen);
+    const leftArea = screen.areas.find((a) => a.id === "a_left")!;
+    const result = classifyCornerDrag(leftArea, -0.1, 0.5, screen.areas, vm);
+    expect(result.mode).toBe("invalid");
+    expect(result.targetAreaId).toBeNull();
+    expect(result.direction).toBeNull();
   });
 });
