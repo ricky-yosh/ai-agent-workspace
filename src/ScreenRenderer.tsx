@@ -51,6 +51,10 @@ interface SplitDragState {
   mode: CornerDragMode;
   targetAreaId: string | null;
   direction: Adjacency | null;
+  splitFactor: number;
+  isSnapped: boolean;
+  startX: number;
+  startY: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +190,69 @@ export default function ScreenRenderer({
     }
 
     return snapped;
+  }
+
+  function computeSplitFactor(
+    cursorX: number,
+    cursorY: number,
+    areaRect: DOMRect,
+    axis: Axis,
+    containerRect: DOMRect,
+    ctrlKey: boolean,
+    currentScreen: Screen,
+  ): { factor: number; isSnapped: boolean } {
+    let rawFactor: number;
+    if (axis === "vertical") {
+      rawFactor = (cursorX - areaRect.left) / areaRect.width;
+    } else {
+      rawFactor = (areaRect.bottom - cursorY) / areaRect.height;
+    }
+    rawFactor = Math.max(0.05, Math.min(0.95, rawFactor));
+
+    if (!ctrlKey) return { factor: rawFactor, isSnapped: false };
+
+    // Convert factor to screen space for snapping
+    let screenPos: number;
+    if (axis === "vertical") {
+      const clientX = areaRect.left + rawFactor * areaRect.width;
+      screenPos = (clientX - containerRect.left) / containerRect.width;
+    } else {
+      const clientY = areaRect.bottom - rawFactor * areaRect.height;
+      screenPos = 1 - (clientY - containerRect.top) / containerRect.height;
+    }
+
+    let snapped = screenPos;
+
+    // Grid snap (match existing sash-resize snapping logic)
+    const gridSnapped = Math.round(screenPos / SNAP_GRID) * SNAP_GRID;
+    if (Math.abs(gridSnapped - screenPos) < SNAP_THRESHOLD) {
+      snapped = gridSnapped;
+    }
+
+    // Vertex alignment snap
+    const axisCoord: "x" | "y" = axis === "horizontal" ? "y" : "x";
+    for (const v of currentScreen.vertices) {
+      const vertexPos = axisCoord === "x" ? v.x : v.y;
+      if (Math.abs(vertexPos - snapped) < SNAP_THRESHOLD) {
+        snapped = vertexPos;
+        break;
+      }
+    }
+
+    if (snapped === screenPos) return { factor: rawFactor, isSnapped: false };
+
+    // Convert snapped screen position back to factor
+    let snappedFactor: number;
+    if (axis === "vertical") {
+      const snappedClientX = containerRect.left + snapped * containerRect.width;
+      snappedFactor = (snappedClientX - areaRect.left) / areaRect.width;
+    } else {
+      const snappedClientY = containerRect.bottom - snapped * containerRect.height;
+      snappedFactor = (areaRect.bottom - snappedClientY) / areaRect.height;
+    }
+    snappedFactor = Math.max(0.05, Math.min(0.95, snappedFactor));
+
+    return { factor: snappedFactor, isSnapped: true };
   }
 
   // ------------------------------------------------------------------
@@ -328,24 +395,23 @@ export default function ScreenRenderer({
       const state = splitDragRef.current;
       if (!state) return;
 
-      const dx = e.clientX - (state.areaRect.left + state.areaRect.width / 2);
-      const dy = e.clientY - (state.areaRect.top + state.areaRect.height / 2);
+      const dx = e.clientX - state.startX;
+      const dy = e.clientY - state.startY;
       const dragDistance = Math.sqrt(dx * dx + dy * dy);
 
-      // Determine axis from drag direction
-      const absDx = Math.abs(e.clientX - (state.areaRect.left + state.areaRect.width / 2));
-      const absDy = Math.abs(e.clientY - (state.areaRect.top + state.areaRect.height / 2));
-      const axis: Axis = absDx > absDy ? "vertical" : "horizontal";
+      // Axis follows the dominant drag direction from the grab origin
+      const currentAxis: Axis = Math.abs(dx) > Math.abs(dy) ? "vertical" : "horizontal";
 
       // Classify the drag mode from cursor position (split / join / invalid)
       const container = containerRef.current;
       let mode: CornerDragMode = "split";
       let targetAreaId: string | null = null;
       let direction: Adjacency | null = null;
+      let containerRect: DOMRect | null = null;
       if (container) {
-        const rect = container.getBoundingClientRect();
-        const nx = (e.clientX - rect.left) / rect.width;
-        const ny = 1 - (e.clientY - rect.top) / rect.height;
+        containerRect = container.getBoundingClientRect();
+        const nx = (e.clientX - containerRect.left) / containerRect.width;
+        const ny = 1 - (e.clientY - containerRect.top) / containerRect.height;
         const classification = classifyCornerDrag(state.area, nx, ny, screen.areas, vertexMap);
         mode = classification.mode;
         targetAreaId = classification.targetAreaId;
@@ -366,21 +432,38 @@ export default function ScreenRenderer({
         document.body.style.cursor = "not-allowed";
       }
 
+      // Compute split factor (with Ctrl-snap when held)
+      let splitFactor = state.splitFactor;
+      let isSnapped = state.isSnapped;
+      if (mode === "split" && containerRect) {
+        const result = computeSplitFactor(
+          e.clientX, e.clientY,
+          state.areaRect, currentAxis,
+          containerRect,
+          e.ctrlKey,
+          screen,
+        );
+        splitFactor = result.factor;
+        isSnapped = result.isSnapped;
+      }
+
       const updated: SplitDragState = {
         ...state,
-        axis,
         cursorX: e.clientX,
         cursorY: e.clientY,
+        axis: currentAxis,
         dragDistance,
         mode,
         targetAreaId,
         direction,
+        splitFactor,
+        isSnapped,
       };
       splitDragRef.current = updated;
       setSplitDrag(updated);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = (_e: MouseEvent) => {
       const state = splitDragRef.current;
       splitDragRef.current = null;
       setSplitDrag(null);
@@ -410,25 +493,12 @@ export default function ScreenRenderer({
       if (state.mode !== "split") return;
       if (state.dragDistance < MIN_DRAG_DISTANCE) return;
 
-      // Compute factor relative to the area
-      let factor: number;
-      if (state.axis === "vertical") {
-        // vertical split → left/right, factor = 0 at left, 1 at right
-        factor =
-          (e.clientX - state.areaRect.left) / state.areaRect.width;
-      } else {
-        // horizontal split → top/bottom, factor = 0 at bottom, 1 at top
-        factor =
-          (state.areaRect.bottom - e.clientY) / state.areaRect.height;
-      }
-      factor = Math.max(0.05, Math.min(0.95, factor));
-
       safeInvoke<WorkspaceResult>("split_area", {
         sessionId: sessionIdRef.current,
         workspaceId: workspaceIdRef.current,
         areaId: state.area.id,
         axis: state.axis,
-        factor,
+        factor: state.splitFactor,
       }, onErrorRef.current)
         .then((result) => {
           onScreenChangeRef.current(result.current_screen);
@@ -855,6 +925,10 @@ export default function ScreenRenderer({
         mode: "split",
         targetAreaId: null,
         direction: null,
+        splitFactor: 0.5,
+        isSnapped: false,
+        startX: e.clientX,
+        startY: e.clientY,
       };
       splitDragRef.current = state;
       setSplitDrag(state);
@@ -1091,17 +1165,17 @@ export default function ScreenRenderer({
             {isSplitArea && splitDrag && splitDrag.mode === "split" && splitDrag.dragDistance >= MIN_DRAG_DISTANCE && (
               <div className="screen-split-preview-container">
                 <div
-                  className="screen-split-preview"
+                  className={"screen-split-preview" + (splitDrag.isSnapped ? " screen-split-preview--snapped" : "")}
                   style={
                     splitDrag.axis === "vertical"
                       ? {
-                          left: `${Math.max(0, Math.min(100, ((splitDrag.cursorX - splitDrag.areaRect.left) / splitDrag.areaRect.width) * 100))}%`,
+                          left: `${splitDrag.splitFactor * 100}%`,
                           top: 0,
                           width: 2,
                           height: "100%",
                         }
                       : {
-                          top: `${Math.max(0, Math.min(100, ((splitDrag.cursorY - splitDrag.areaRect.top) / splitDrag.areaRect.height) * 100))}%`,
+                          top: `${(1 - splitDrag.splitFactor) * 100}%`,
                           left: 0,
                           height: 2,
                           width: "100%",

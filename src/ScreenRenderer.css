@@ -189,6 +189,11 @@
   opacity: 0.8;
 }
 
+.screen-split-preview--snapped {
+  background: #fff;
+  opacity: 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Exit ghosts — Bundle 1: fading-out wrapper for removed panels       */
 /* ------------------------------------------------------------------ */
