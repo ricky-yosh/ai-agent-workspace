@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import type { Screen, Vertex, Edge, Area, Axis } from "./types/screen";
 import { getPanel } from "./panelRegistry";
 import { PanelContext } from "./PanelContext";
@@ -6,6 +6,8 @@ import PanelTypeSelector from "./PanelTypeSelector";
 import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
 import { resizeEdgeLocal } from "./screenGeometry";
+import { areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse } from "./screenMotion";
+import type { AreaRect, SeamSide } from "./screenMotion";
 import "./ScreenRenderer.css";
 
 const EPSILON = 0.0001;
@@ -128,6 +130,11 @@ export default function ScreenRenderer({
   workspaceIdRef.current = workspaceId;
   const onScreenChangeRef = useRef(onScreenChange);
   onScreenChangeRef.current = onScreenChange;
+
+  // Ref map of area DOM nodes keyed by area.id. Populated by the ref
+  // callback on each area <div>; consumed by the enter FLIP (Bundle 2)
+  // to find the DOM node for a newly-added area.
+  const areaNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
@@ -151,6 +158,38 @@ export default function ScreenRenderer({
   const [joinMode, setJoinMode] = useState<JoinModeState | null>(null);
   const joinModeRef = useRef<JoinModeState | null>(null);
   joinModeRef.current = joinMode;
+
+  // ---------- Motion state (Bundle 1: exit ghosts) ----------
+
+  // The LAST committed `screen` prop (not the draft). Used to diff area sets
+  // when a new committed screen arrives so we can animate removals/entrances.
+  const prevCommittedScreenRef = useRef<Screen | null>(null);
+
+  // Exiting ghost entries: one per area that was removed in the latest commit.
+  // Each entry captures the area's full Area object + its last-known rect
+  // (computed from the OLD screen's vertices) + the collapse direction toward
+  // the absorbing survivor (computed at ghost-creation time from the new screen).
+  interface ExitingGhost {
+    area: Area;
+    rect: AreaRect;
+    /** Directional collapse info or null for a plain fade fallback. */
+    collapse: SeamSide | null;
+  }
+  const [exitingAreas, setExitingAreas] = useState<ExitingGhost[]>([]);
+
+  // Per-id map of setTimeout handles that remove individual ghosts after the
+  // exit animation. Keyed by area.id so two removals within 220ms do not
+  // prematurely clear each other's ghost (fixes the timer-race bug).
+  const exitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Ref map of ghost DOM nodes keyed by area.id. Used by the WAAPI exit
+  // layout effect to find nodes for directional-collapse animation.
+  const exitNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Tracks which ghost ids have already been animated by the WAAPI layout
+  // effect so that state changes (e.g. a second ghost added) do not re-fire
+  // the animation on an already-animating ghost.
+  const animatedExitIdsRef = useRef<Set<string>>(new Set());
 
   // During a sash drag we render every panel from the ephemeral draft screen.
   // Only geometry/layout reads switch to `activeScreen`; non-geometry reads of
@@ -490,7 +529,316 @@ export default function ScreenRenderer({
     } else {
       setJoinMode(null);
     }
+
+    // ------------------------------------------------------------------
+    // Motion diff — Bundle 1: exit ghosts
+    // ------------------------------------------------------------------
+    const diff = diffAreas(prevCommittedScreenRef.current, screen);
+
+    // CRITICAL GATING: a pure geometry commit (sash-resize settle) produces
+    // an empty diff — no areas added or removed. When this is the case we
+    // do NOTHING motion-related, preventing a double-animation where the
+    // existing .screen-area geometry transition fights a ghost/enter FLIP
+    // on the same nodes.
+    if (diff.addedIds.size === 0 && diff.removed.length === 0) {
+      // No set change — skip all motion work. The geometry transition on
+      // .screen-area handles the resize animation.
+      prevCommittedScreenRef.current = screen;
+      return;
+    }
+
+    // --- Exit ghosts for removed areas ---
+    if (diff.removed.length > 0) {
+      if (prefersReducedMotion()) {
+        // Reduced motion: remove instantly, no ghost.
+        setExitingAreas([]);
+      } else {
+        // Build a vertex map from the OLD (prev) screen where the dying
+        // areas' vertices still exist. This gives ghosts a fixed final rect.
+        const prev = prevCommittedScreenRef.current!;
+        const oldVertexMap = new Map<string, Vertex>();
+        for (const v of prev.vertices) {
+          oldVertexMap.set(v.id, v);
+        }
+
+        // Build a vertex map for the NEW (committed) screen to pass to
+        // determineExitCollapse, so the function can find the absorber's
+        // new bounds.
+        const newVertexMap = new Map<string, Vertex>();
+        for (const v of screen.vertices) {
+          newVertexMap.set(v.id, v);
+        }
+
+        const ghosts: ExitingGhost[] = [];
+        for (const area of diff.removed) {
+          const rect = areaRect(area, oldVertexMap);
+          if (rect) {
+            // Compute the directional collapse toward the absorbing survivor.
+            const collapse = determineExitCollapse(
+              area,
+              oldVertexMap,
+              screen,
+              newVertexMap,
+            );
+            ghosts.push({ area, rect, collapse });
+          }
+        }
+
+        if (ghosts.length > 0) {
+          // Merge with any existing ghosts (preserves ghosts from a prior
+          // commit whose timer hasn't fired yet). Overwrites by id — safe
+          // because area IDs are unique over the app lifetime.
+          setExitingAreas((prev) => {
+            const merged = new Map<string, ExitingGhost>();
+            for (const g of prev) merged.set(g.area.id, g);
+            for (const g of ghosts) merged.set(g.area.id, g);
+            return Array.from(merged.values());
+          });
+
+          // Per-ghost removal timer. Each ghost is independently removed
+          // via its own timeout, preventing the race where two quick
+          // commits within 220ms would wipe each other's ghosts.
+          for (const g of ghosts) {
+            // If a timer for this id already exists (shouldn't happen,
+            // but guard defensively), cancel it first.
+            const existing = exitTimersRef.current.get(g.area.id);
+            if (existing) clearTimeout(existing);
+
+            const id = g.area.id;
+            const timer = setTimeout(() => {
+              setExitingAreas((prev) =>
+                prev.filter((entry) => entry.area.id !== id),
+              );
+              exitTimersRef.current.delete(id);
+              // Allow the animated set to be re-populated if the same
+              // id ever re-appears (defensive).
+              animatedExitIdsRef.current.delete(id);
+            }, 220);
+            exitTimersRef.current.set(id, timer);
+          }
+        }
+      }
+    }
+
+    // Record this screen as the previous for the next commit.
+    prevCommittedScreenRef.current = screen;
   }, [screen]);
+
+  // Cleanup exit-animation timers on unmount so stale setState calls don't
+  // hit a removed component.
+  useEffect(() => {
+    return () => {
+      for (const t of exitTimersRef.current.values()) {
+        clearTimeout(t);
+      }
+      exitTimersRef.current.clear();
+    };
+  }, []);
+
+  // ------------------------------------------------------------------
+  // Enter FLIP (Bundle 2): animate new panels growing from split seam
+  // ------------------------------------------------------------------
+  //
+  // Runs BEFORE the browser paint (useLayoutEffect) so the animation
+  // starts on the very first frame — no flash of the new panel at
+  // full size before the scale begins.
+  //
+  // CRITICAL — no conflict with the existing geometry transition:
+  //   The .screen-area CSS transitions left/top/width/height for
+  //   surviving panels. This enter FLIP animates ONLY `transform`
+  //   (scaleX / scaleY), which is an independent rendering channel.
+  //   The two animations coexist without fighting — there is never a
+  //   case where the same CSS property is animated by both.
+  //
+  // Reduced-motion gating happens here (prefersReducedMotion → skip).
+  // The .screen-area CSS transition is also gated by
+  //   `@media (prefers-reduced-motion: no-preference)`,
+  // so geometry reflow is already instant when reduced motion is on.
+  //
+  // We compute `diffAreas` fresh here from `prevCommittedScreenRef.current`
+  // (which still holds the old screen at this point of the commit cycle
+  // because the [screen] useEffect hasn't updated it yet — it runs after
+  // this layout effect).  The enter path does NOT read any intermediate
+  // state set by the [screen] effect, so it stays independent.
+  //
+  // After this layout effect returns, the [screen] useEffect runs,
+  // computes the same diff, handles exit ghosts, and updates
+  // prevCommittedScreenRef. The double-diff is cheap (two Set ops).
+  useLayoutEffect(() => {
+    const prev = prevCommittedScreenRef.current;
+    const diff = diffAreas(prev, screen);
+    if (diff.addedIds.size === 0) return;
+
+    // Reduced motion: the panels are already mounted at their final
+    // rect by the render — no animation needed.
+    if (prefersReducedMotion()) return;
+
+    // Build a vertex map from the CURRENT screen (post-commit) so
+    // determineEnterSeam can resolve the entering area's neighbours.
+    const vmap = new Map(screen.vertices.map((v) => [v.id, v]));
+
+    for (const id of diff.addedIds) {
+      const node = areaNodeRefs.current.get(id);
+      if (!node) continue;
+
+      const area = screen.areas.find((a) => a.id === id);
+      if (!area) continue;
+
+      // Attempt to find the seam (shared divider edge) with the
+      // surviving sibling.
+      const seam = determineEnterSeam(area, screen, vmap);
+
+      if (!seam) {
+        // No unambiguous seam found — use a gentle center-scale +
+        // opacity entrance so the panel never blinks in. This
+        // fallback can trigger when vertices are missing or when
+        // the new area has no adjacent sibling (shouldn't happen
+        // for a normal split, but we guard against it).
+        const fallbackAnim = node.animate(
+          [
+            { transform: "scale(0.6)", opacity: 0, transformOrigin: "center" },
+            { transform: "scale(1)", opacity: 1, transformOrigin: "center" },
+          ],
+          {
+            duration: 240,
+            easing: "cubic-bezier(0, 0, 0.2, 1)",
+            fill: "both",
+          },
+        );
+        fallbackAnim.onfinish = () => fallbackAnim.cancel();
+        continue;
+      }
+
+      // Transform-only enter FLIP.
+      //
+      // We animate ONLY the transform property (scaleX/scaleY) so
+      // this animation does NOT fight the existing CSS geometry
+      // transition (left/top/width/height) that the .screen-area
+      // class provides for surviving panels. Transform is a
+      // composited rendering channel — the browser applies it
+      // after layout, so there is never a double-animation conflict.
+      //
+      // The `transformOrigin` keyframe locks the seam edge in place
+      // while the scale expands outward from it, producing the
+      // "grows from the divider" visual.
+      const startTransform = `${seam.scaleAxis}(0)`;
+      const endTransform = `${seam.scaleAxis}(1)`;
+
+      const animation = node.animate(
+        [
+          {
+            transform: startTransform,
+            transformOrigin: seam.transformOrigin,
+          },
+          {
+            transform: endTransform,
+            transformOrigin: seam.transformOrigin,
+          },
+        ],
+        {
+          duration: 240,
+          easing: "cubic-bezier(0, 0, 0.2, 1)",
+          fill: "both",
+        },
+      );
+
+      // Release fill="both" after the animation completes so the
+      // element's computed style does not permanently carry the
+      // transform. Letting the fill hold past end would interfere
+      // with subsequent layout reads (the element's untransformed
+      // rect is what matters for geometry).
+      animation.onfinish = () => animation.cancel();
+    }
+  }, [screen]);
+
+  // ------------------------------------------------------------------
+  // Exit FLIP — WAAPI directional collapse (Bundle 3)
+  // ------------------------------------------------------------------
+  //
+  // Runs BEFORE the browser paint (useLayoutEffect) so the collapse
+  // animation starts on the very first frame the ghost appears — no
+  // flash of the ghost at full opacity before the scale begins.
+  //
+  // Each ghost entry stores its pre-computed `collapse` direction
+  // (computed in the [screen] useEffect above). When `collapse` is
+  // non-null we animate the matching axis scale(1→0) toward the
+  // absorber; when it is null (no overlapping survivor) we fall back
+  // to a gentle center-scale + opacity fade.
+  //
+  // CRITICAL — no conflict with geometry transitions:
+  //   This effect animates ONLY `transform` and `opacity` on the
+  //   ghost div. The existing .screen-area CSS transition animates
+  //   left/top/width/height on surviving areas. The ghost is a
+  //   completely separate DOM subtree, so there is never a case
+  //   where the same CSS property is animated on the same element
+  //   by both.
+  //
+  // Reduced-motion gating is inherited from the [screen] effect:
+  //   When prefersReducedMotion() is true, the [screen] effect
+  //   clears exitingAreas to [], so this effect finds no ghosts
+  //   and no-ops.
+  useLayoutEffect(() => {
+    if (exitingAreas.length === 0) return;
+
+    for (const ghost of exitingAreas) {
+      const node = exitNodeRefs.current.get(ghost.area.id);
+      if (!node) continue;
+
+      // Skip already-animated ghosts — prevents double-animation when
+      // a new ghost is added while an older one is still in state.
+      if (animatedExitIdsRef.current.has(ghost.area.id)) continue;
+      animatedExitIdsRef.current.add(ghost.area.id);
+
+      if (ghost.collapse) {
+        // Directional collapse — scale the dominant axis to 0 toward
+        // the absorber.  The transform-origin pins the seam edge so the
+        // ghost shrinks INTO the survivor.
+        const { transformOrigin, scaleAxis: axis } = ghost.collapse;
+        node.animate(
+          [
+            {
+              transform: "none",
+              opacity: 1,
+              transformOrigin,
+            },
+            {
+              transform: `${axis}(0)`,
+              opacity: 0,
+              transformOrigin,
+            },
+          ],
+          {
+            duration: 200,
+            // Accelerate: start slow, end fast — mimics "sucked into"
+            // the absorber rather than a gentle fade.
+            easing: "cubic-bezier(0.4, 0, 1, 1)",
+            fill: "both",
+          },
+        );
+      } else {
+        // Fallback fade — no clear absorber; shrink slightly + fade out.
+        node.animate(
+          [
+            {
+              transform: "scale(1)",
+              opacity: 1,
+              transformOrigin: "center",
+            },
+            {
+              transform: "scale(0.9)",
+              opacity: 0,
+              transformOrigin: "center",
+            },
+          ],
+          {
+            duration: 200,
+            easing: "cubic-bezier(0.4, 0, 1, 1)",
+            fill: "both",
+          },
+        );
+      }
+    }
+  }, [exitingAreas]);
 
   // ------------------------------------------------------------------
   // Handlers
@@ -770,6 +1118,13 @@ export default function ScreenRenderer({
         return (
           <div
             key={area.id}
+            ref={(el) => {
+              if (el) {
+                areaNodeRefs.current.set(area.id, el);
+              } else {
+                areaNodeRefs.current.delete(area.id);
+              }
+            }}
             className={
               "screen-area" +
               (isFocused ? " screen-area--focused" : "") +
@@ -905,6 +1260,40 @@ export default function ScreenRenderer({
                 />
               </div>
             )}
+          </div>
+        );
+      })}
+
+      {/* Exit ghosts — Bundle 1: render removed areas for their exit animation */}
+      {/* Each ghost is a fixed-position div at the removed area's LAST-KNOWN */}
+      {/* rect (computed from the old screen's vertices). It renders only a */}
+      {/* static filler — NO PanelComponent, NO terminal, NO corner handles, */}
+      {/* NO close button — to guarantee zero effect re-runs and zero backend */}
+      {/* resource usage (terminals are already disposed before close/join). */}
+      {exitingAreas.map((ghost) => {
+        const { area, rect } = ghost;
+        return (
+          <div
+            key={`exit-${area.id}`}
+            ref={(el) => {
+              if (el) {
+                exitNodeRefs.current.set(area.id, el);
+              } else {
+                exitNodeRefs.current.delete(area.id);
+              }
+            }}
+            className="screen-area screen-area--exiting"
+            style={{
+              position: "absolute",
+              left: `${rect.left}%`,
+              top: `${rect.top}%`,
+              width: `${rect.width}%`,
+              height: `${rect.height}%`,
+            }}
+            data-exiting-area-id={area.id}
+            aria-hidden="true"
+          >
+            <div className="screen-area-content screen-area--exiting-fill" />
           </div>
         );
       })}

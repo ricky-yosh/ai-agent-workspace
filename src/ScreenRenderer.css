@@ -219,3 +219,27 @@
   opacity: 0.8;
 }
 
+/* ------------------------------------------------------------------ */
+/* Exit ghosts — Bundle 1: fading-out wrapper for removed panels       */
+/* ------------------------------------------------------------------ */
+
+/* Ghosts must NOT capture pointer events — they overlay where the live */
+/* area used to be, but the survivor(s) underneath need clicks/sashes.  */
+.screen-area--exiting {
+  pointer-events: none;
+  z-index: 4; /* below focused close button (z-index: 12) but above sashes */
+}
+
+/* Static filler inside a ghost — no terminal, no panel content, just a */
+/* visual placeholder that shrinks/fades out with its parent.            */
+.screen-area--exiting-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary, #1a1a2e);
+}
+
+/* Exit collapse (Bundle 3) is now driven by WAAPI in ScreenRenderer.tsx. */
+/* The directional collapse toward the absorber is computed per-ghost via */
+/* determineExitCollapse() and animated with the Web Animations API. The */
+/* CSS here only keeps static positioning/hit-test suppression. */
+
