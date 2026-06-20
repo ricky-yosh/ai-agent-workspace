@@ -288,7 +288,10 @@ export default function ScreenRenderer({
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [sashDrag]);
+    // Run once per drag (stable while a drag is active), not per frame.
+    // The handlers close over `screen`, which does not change mid-drag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sashDrag?.edgeId, sashDrag?.isHorizontal]);
 
   // ------------------------------------------------------------------
   // Split drag
@@ -370,6 +373,7 @@ export default function ScreenRenderer({
     };
 
     document.body.style.userSelect = "none";
+    document.body.style.cursor = "crosshair";
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
     document.addEventListener("keydown", handleKeyDown);
@@ -377,6 +381,7 @@ export default function ScreenRenderer({
 
     return () => {
       document.body.style.userSelect = "";
+      document.body.style.cursor = "";
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
       document.removeEventListener("keydown", handleKeyDown);
@@ -663,7 +668,10 @@ export default function ScreenRenderer({
   const canClose = screen.areas.length > 1;
 
   return (
-    <div ref={containerRef} className="screen-container">
+    <div
+      ref={containerRef}
+      className={"screen-container" + (sashDrag ? " screen-container--resizing" : "")}
+    >
       {/* Render sashes for internal edges */}
       {!zoomedAreaId &&
         internalEdges.map((edge) => {
@@ -674,6 +682,7 @@ export default function ScreenRenderer({
               key={edge.id}
               className="screen-sash"
               style={style}
+              title="Drag to resize · double-click to join"
               onMouseDown={(e) => handleSashMouseDown(e, edge)}
               onDoubleClick={(e) => handleSashDoubleClick(e, edge)}
             />
@@ -693,12 +702,12 @@ export default function ScreenRenderer({
                   top: `${(1 - sashDrag.position) * 100}%`,
                   left: 0,
                   width: "100%",
-                  height: 2,
+                  height: sashDrag.isSnapped ? 3 : 2,
                 }
               : {
                   left: `${sashDrag.position * 100}%`,
                   top: 0,
-                  width: 2,
+                  width: sashDrag.isSnapped ? 3 : 2,
                   height: "100%",
                 }
           }
@@ -759,18 +768,22 @@ export default function ScreenRenderer({
               <>
                 <div
                   className="screen-corner-handle screen-corner-handle--tl"
+                  title="Drag to split"
                   onMouseDown={(e) => handleCornerMouseDown(e, area)}
                 />
                 <div
                   className="screen-corner-handle screen-corner-handle--tr"
+                  title="Drag to split"
                   onMouseDown={(e) => handleCornerMouseDown(e, area)}
                 />
                 <div
                   className="screen-corner-handle screen-corner-handle--bl"
+                  title="Drag to split"
                   onMouseDown={(e) => handleCornerMouseDown(e, area)}
                 />
                 <div
                   className="screen-corner-handle screen-corner-handle--br"
+                  title="Drag to split"
                   onMouseDown={(e) => handleCornerMouseDown(e, area)}
                 />
               </>

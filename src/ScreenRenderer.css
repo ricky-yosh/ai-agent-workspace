@@ -10,12 +10,25 @@
   overflow: hidden;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .screen-area {
+    transition: left 0.12s ease, top 0.12s ease, width 0.12s ease,
+      height 0.12s ease;
+  }
+}
+
+/* Disable geometry animation while a sash is actively dragged (per contract) */
+.screen-container--resizing .screen-area {
+  transition: none;
+}
+
 .screen-area--focused {
   box-shadow: inset 0 0 0 2px var(--accent-color, #7c3aed);
-  outline: 2px solid var(--accent-color, #7c3aed);
-  outline-offset: -2px;
   border-radius: 2px;
-  z-index: 1;
+  /* No z-index: a stacking context here would trap the corner split-handles
+     (z-index 8) below the root-level sashes (z-index 5), letting the sash steal
+     corner clicks. The focus ring is an inset box-shadow within the area's own
+     non-overlapping bounds, so it needs no z-index lift. */
 }
 
 .screen-area-content {
@@ -58,8 +71,15 @@
 .screen-sash {
   position: absolute;
   z-index: 5;
-  background: transparent;
+  background: var(--border-color, rgba(124, 58, 237, 0.15));
   transition: background 0.15s ease;
+}
+
+/* Widen the pointer hit area without moving the thin visual line */
+.screen-sash::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
 .screen-sash:hover {
@@ -76,9 +96,10 @@
   height: 10px;
   z-index: 8;
   cursor: crosshair;
-  opacity: 0;
+  opacity: 0.22;
   transition: opacity 0.15s ease;
   border-radius: 50%;
+  background: var(--accent-color, #7c3aed);
 }
 
 .screen-corner-handle--tl {
@@ -205,4 +226,5 @@
 .screen-sash-preview--snapped {
   opacity: 1;
   background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
 }
