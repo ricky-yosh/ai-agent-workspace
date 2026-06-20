@@ -1,7 +1,9 @@
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9,12 +11,13 @@
 }
 
 .dialog {
-  background: #252526;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 24px;
   min-width: 360px;
   max-width: 440px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
 .dialog-title {
@@ -43,7 +46,7 @@
   padding: 8px 10px;
   background: #3c3c3c;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
@@ -157,7 +160,7 @@
 .dialog-btn {
   padding: 6px 16px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   font-size: 13px;
   cursor: pointer;
   background: #3c3c3c;
