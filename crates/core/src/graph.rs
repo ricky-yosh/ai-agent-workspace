@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 use uuid::Uuid;
 use crate::domain::screen::{Screen, Vertex, Edge, Area, EPSILON, MIN_AREA_SIZE};
-use crate::domain::{Direction, LayoutNode, LayoutTree};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -1045,58 +1044,10 @@ pub fn change_panel_type(screen: &mut Screen, area_id: &str, new_panel_type: &st
     Ok(())
 }
 
-pub fn convert_tree_to_screen(tree: &LayoutTree) -> Result<Screen, String> {
-    let mut screen = Screen::new();
-    let initial_area_id = screen.areas[0].id.clone();
-    convert_node(&mut screen, &initial_area_id, &tree.tree)?;
-    Ok(screen)
-}
-
-fn convert_node(screen: &mut Screen, area_id: &str, node: &LayoutNode) -> Result<(), String> {
-    match node {
-        LayoutNode::Panel { panel_type, terminal_id } => {
-            if let Some(area) = screen.get_area_mut(area_id) {
-                area.panel_type = panel_type.clone();
-                area.terminal_id = terminal_id.clone();
-            }
-            Ok(())
-        }
-        LayoutNode::Split { direction, ratio, children } => {
-            let axis = match direction {
-                Direction::Vertical => Axis::Vertical,
-                Direction::Horizontal => Axis::Horizontal,
-            };
-
-            let new_area_id = area_split(screen, area_id, axis, *ratio)?;
-
-            match (direction, *ratio > 0.5) {
-                (Direction::Vertical, true) => {
-                    convert_node(screen, area_id, &children[0])?;
-                    convert_node(screen, &new_area_id, &children[1])?;
-                }
-                (Direction::Vertical, false) => {
-                    convert_node(screen, &new_area_id, &children[0])?;
-                    convert_node(screen, area_id, &children[1])?;
-                }
-                (Direction::Horizontal, true) => {
-                    convert_node(screen, &new_area_id, &children[0])?;
-                    convert_node(screen, area_id, &children[1])?;
-                }
-                (Direction::Horizontal, false) => {
-                    convert_node(screen, area_id, &children[0])?;
-                    convert_node(screen, &new_area_id, &children[1])?;
-                }
-            }
-            Ok(())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::screen::{Screen, Vertex, Edge, Area, EPSILON, MIN_AREA_SIZE};
-    use crate::domain::{Direction, LayoutNode, LayoutTree};
 
     fn make_two_area_screen() -> Screen {
         Screen {
@@ -2288,197 +2239,7 @@ mod tests {
         assert_eq!(screen.areas[0].terminal_id, None);
     }
 
-    // ----- Migration tests -----
 
-    #[test]
-    fn test_convert_tree_single_panel() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Panel {
-                panel_type: "terminal".into(),
-                terminal_id: Some("term-1".into()),
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 1);
-        assert_eq!(screen.areas[0].panel_type, "terminal");
-        assert_eq!(screen.areas[0].terminal_id, Some("term-1".to_string()));
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_vertical_split() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Vertical,
-                ratio: 0.3,
-                children: vec![
-                    LayoutNode::Panel { panel_type: "editor".into(), terminal_id: None },
-                    LayoutNode::Panel { panel_type: "terminal".into(), terminal_id: None },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 2);
-        // Find areas by panel type
-        let left = screen.areas.iter().find(|a| a.panel_type == "editor").unwrap();
-        let right = screen.areas.iter().find(|a| a.panel_type == "terminal").unwrap();
-        let (ll, _, lr, _) = area_bounds(&screen, left).unwrap();
-        let (rl, _, rr, _) = area_bounds(&screen, right).unwrap();
-        assert!((ll - 0.0).abs() < EPSILON);
-        assert!((lr - 0.3).abs() < EPSILON);
-        assert!((rl - 0.3).abs() < EPSILON);
-        assert!((rr - 1.0).abs() < EPSILON);
-        assert_eq!(left.panel_type, "editor");
-        assert_eq!(right.panel_type, "terminal");
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_horizontal_split() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Horizontal,
-                ratio: 0.7,
-                children: vec![
-                    LayoutNode::Panel { panel_type: "terminal".into(), terminal_id: None },
-                    LayoutNode::Panel { panel_type: "editor".into(), terminal_id: None },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 2);
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_nested() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Horizontal,
-                ratio: 0.5,
-                children: vec![
-                    LayoutNode::Split {
-                        direction: Direction::Vertical,
-                        ratio: 0.5,
-                        children: vec![
-                            LayoutNode::Panel { panel_type: "editor".into(), terminal_id: None },
-                            LayoutNode::Panel { panel_type: "terminal".into(), terminal_id: None },
-                        ],
-                    },
-                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 3);
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_deep() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Vertical,
-                ratio: 0.5,
-                children: vec![
-                    LayoutNode::Split {
-                        direction: Direction::Horizontal,
-                        ratio: 0.5,
-                        children: vec![
-                            LayoutNode::Split {
-                                direction: Direction::Vertical,
-                                ratio: 0.5,
-                                children: vec![
-                                    LayoutNode::Panel { panel_type: "a".into(), terminal_id: None },
-                                    LayoutNode::Panel { panel_type: "b".into(), terminal_id: None },
-                                ],
-                            },
-                            LayoutNode::Panel { panel_type: "c".into(), terminal_id: None },
-                        ],
-                    },
-                    LayoutNode::Panel { panel_type: "d".into(), terminal_id: None },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 4);
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_preserves_terminal_ids() {
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Vertical,
-                ratio: 0.5,
-                children: vec![
-                    LayoutNode::Panel { panel_type: "terminal".into(), terminal_id: Some("term-a".into()) },
-                    LayoutNode::Panel { panel_type: "terminal".into(), terminal_id: Some("term-b".into()) },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 2);
-        let ids_with_terms: Vec<_> = screen.areas.iter()
-            .filter(|a| a.terminal_id.is_some())
-            .map(|a| a.terminal_id.as_deref().unwrap().to_string())
-            .collect();
-        assert!(ids_with_terms.contains(&"term-a".to_string()));
-        assert!(ids_with_terms.contains(&"term-b".to_string()));
-        assert!(validate_screen(&screen).is_ok());
-    }
-
-    #[test]
-    fn test_convert_tree_complex() {
-        // Layout:
-        // +-------+-------+
-        // |   A   |   B   |
-        // +-------+-------+
-        // |       C       |
-        // +---------------+
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Horizontal,
-                ratio: 0.5,
-                children: vec![
-                    LayoutNode::Split {
-                        direction: Direction::Vertical,
-                        ratio: 0.5,
-                        children: vec![
-                            LayoutNode::Panel { panel_type: "A".into(), terminal_id: None },
-                            LayoutNode::Panel { panel_type: "B".into(), terminal_id: None },
-                        ],
-                    },
-                    LayoutNode::Panel { panel_type: "C".into(), terminal_id: None },
-                ],
-            },
-        };
-        let screen = convert_tree_to_screen(&tree).unwrap();
-        assert_eq!(screen.areas.len(), 3);
-        assert!(validate_screen(&screen).is_ok());
-        // Verify positions: there should be a T-junction-like layout
-        // Top-left (A): left=0, bottom=0.5, right=0.5, top=1.0
-        // Top-right (B): left=0.5, bottom=0.5, right=1.0, top=1.0
-        // Bottom (C): left=0.0, bottom=0.0, right=1.0, top=0.5
-        let a = screen.areas.iter().find(|a| a.panel_type == "A").unwrap();
-        let b = screen.areas.iter().find(|a| a.panel_type == "B").unwrap();
-        let c = screen.areas.iter().find(|a| a.panel_type == "C").unwrap();
-        let (al, ab, ar, at) = area_bounds(&screen, a).unwrap();
-        let (bl, bb, br, bt) = area_bounds(&screen, b).unwrap();
-        let (cl, cb, cr, ct) = area_bounds(&screen, c).unwrap();
-        assert!((al - 0.0).abs() < EPSILON);
-        assert!((ab - 0.5).abs() < EPSILON);
-        assert!((ar - 0.5).abs() < EPSILON);
-        assert!((at - 1.0).abs() < EPSILON);
-        assert!((bl - 0.5).abs() < EPSILON);
-        assert!((bb - 0.5).abs() < EPSILON);
-        assert!((br - 1.0).abs() < EPSILON);
-        assert!((bt - 1.0).abs() < EPSILON);
-        assert!((cl - 0.0).abs() < EPSILON);
-        assert!((cb - 0.0).abs() < EPSILON);
-        assert!((cr - 1.0).abs() < EPSILON);
-        assert!((ct - 0.5).abs() < EPSILON);
-    }
 
     // ----- Bug fix regression tests -----
 
@@ -2553,39 +2314,7 @@ mod tests {
         assert!(v.x >= -EPSILON, "Edge moved past left boundary: {}", v.x);
     }
 
-    #[test]
-    fn test_convert_tree_to_screen_returns_error() {
-        // Bug 3: convert_tree_to_screen should propagate errors, not panic
-        // Create a tree that would require splitting a tiny area
-        let tree = LayoutTree {
-            tree: LayoutNode::Split {
-                direction: Direction::Vertical,
-                ratio: 0.5,
-                children: vec![
-                    LayoutNode::Split {
-                        direction: Direction::Vertical,
-                        ratio: 0.5,
-                        children: vec![
-                            LayoutNode::Split {
-                                direction: Direction::Vertical,
-                                ratio: 0.5,
-                                children: vec![
-                                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
-                                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
-                                ],
-                            },
-                            LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
-                        ],
-                    },
-                    LayoutNode::Panel { panel_type: "blank".into(), terminal_id: None },
-                ],
-            },
-        };
-        // Each split halves the area, so 3 splits = 1/8 width = 0.125 which is still > 2*MIN_AREA_SIZE (0.1)
-        // This should succeed
-        let result = convert_tree_to_screen(&tree);
-        assert!(result.is_ok());
-    }
+
 
     #[test]
     fn test_validate_screen_extra_edge_allowed() {
