@@ -283,33 +283,78 @@ struct BinaryStatus {
 
 #[tauri::command]
 fn check_mcp_binary(app: tauri::AppHandle) -> Result<BinaryStatus, String> {
-    let resource_path = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to resolve resource directory: {}", e))?
-        .join(CLI_NAME);
+    // Probe the production bundle location first, then fall back to the dev
+    // build outputs. In `tauri dev` there is no `.app` bundle, so the binary
+    // declared in tauri.conf.json (`target/release/aiaw-mcp-server`) is never
+    // copied next to the running debug binary; we have to look it up directly
+    // in the workspace `target/` tree instead.
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
-    let path_str = resource_path.to_string_lossy().to_string();
-    let (present, executable) = if resource_path.exists() {
-        match std::fs::metadata(&resource_path) {
+    match app.path().resource_dir() {
+        Ok(dir) => candidates.push(dir.join(CLI_NAME)),
+        Err(e) => eprintln!("[mcp-check] resource_dir unavailable: {}", e),
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            // Same profile dir as the running app, e.g. target/debug/aiaw-mcp-server.
+            candidates.push(exe_dir.join(CLI_NAME));
+
+            // Workspace target root: scan both profiles.
+            if let Some(target_dir) = exe_dir.parent() {
+                candidates.push(target_dir.join("release").join(CLI_NAME));
+                candidates.push(target_dir.join("debug").join(CLI_NAME));
+            }
+        }
+    }
+
+    for candidate in &candidates {
+        println!("[mcp-check] probing {}", candidate.display());
+        if !candidate.exists() {
+            continue;
+        }
+        match std::fs::metadata(candidate) {
             Ok(meta) => {
                 let non_empty = meta.len() > 0;
                 let is_exec = {
                     use std::os::unix::fs::PermissionsExt;
                     meta.permissions().mode() & 0o111 != 0
                 };
-                (non_empty, non_empty && is_exec)
+                if non_empty {
+                    println!(
+                        "[mcp-check] found {} (executable={})",
+                        candidate.display(),
+                        is_exec
+                    );
+                    return Ok(BinaryStatus {
+                        present: true,
+                        executable: is_exec,
+                        path: candidate.to_string_lossy().to_string(),
+                    });
+                }
             }
-            Err(_) => (false, false),
+            Err(e) => eprintln!(
+                "[mcp-check] metadata failed for {}: {}",
+                candidate.display(),
+                e
+            ),
         }
-    } else {
-        (false, false)
-    };
+    }
+
+    let reported = candidates
+        .first()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| CLI_NAME.to_string());
+
+    eprintln!(
+        "[mcp-check] {} not found in any candidate path (build it with `cargo build -p {} --release`)",
+        CLI_NAME, CLI_NAME
+    );
 
     Ok(BinaryStatus {
-        present,
-        executable,
-        path: path_str,
+        present: false,
+        executable: false,
+        path: reported,
     })
 }
 

@@ -14,10 +14,15 @@ export default function StatusBoard() {
     setLoading(true);
     setError(null);
     setData(null);
+    console.log("[StatusBoard] checking MCP binary…");
     safeInvoke<BinaryStatus>("check_mcp_binary", undefined, (msg) => {
+      console.error("[StatusBoard] MCP binary check failed:", msg);
       setError(msg);
     })
-      .then(setData)
+      .then((status) => {
+        console.log("[StatusBoard] MCP binary status:", status);
+        setData(status);
+      })
       .catch(() => {
         /* onError callback already handled in safeInvoke */
       })
