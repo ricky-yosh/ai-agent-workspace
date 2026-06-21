@@ -87,18 +87,34 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  position: relative;
   padding: 0;
   border: none;
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+}
+
+.status-card-action::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 .status-card-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .status-card-action.is-loading svg {
+    animation: spin 0.8s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Resolved path hint ── */
@@ -132,6 +148,7 @@
   margin-bottom: 12px;
   line-height: 1.4;
   user-select: none;
+  text-wrap: pretty;
 }
 
 /* ── Agent selector (segmented control) ── */
@@ -220,7 +237,38 @@
   background: var(--bg-panel);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+
+.snippet-copy-btn::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+
+.snippet-copy-icon-wrap {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.snippet-copy-icon {
+  position: absolute;
+}
+
+.snippet-copy-icon-hidden {
+  opacity: 0;
+  transform: scale(0.25);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.snippet-copy-icon-visible {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0px);
 }
 
 .snippet-copy-btn:hover:not(:disabled) {
@@ -264,7 +312,6 @@
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: opacity 0.15s;
   user-select: none;
 }
 
@@ -275,4 +322,34 @@
 .status-cta-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .status-card-action {
+    transition: background 0.12s, color 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .status-card-action:active {
+    transform: scale(0.96);
+  }
+
+  .snippet-copy-btn {
+    transition: background 0.12s, color 0.12s, opacity 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .snippet-copy-btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .snippet-copy-icon {
+    transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .status-cta-button {
+    transition: opacity 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .status-cta-button:active:not(:disabled) {
+    transform: scale(0.96);
+  }
 }

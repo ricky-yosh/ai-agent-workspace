@@ -39,7 +39,9 @@ export default function LayoutTabs({
   onOpenTemplateManager,
 }: LayoutTabsProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wsId: string } | null>(null);
+  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -109,6 +111,26 @@ export default function LayoutTabs({
     ro.observe(bar);
     return () => ro.disconnect();
   }, [measurePill]);
+
+  useEffect(() => {
+    if (ctxMenu) {
+      setCtxMenuOpen(false);
+      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setCtxMenuOpen(false);
+    }
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    if (dropdownOpen) {
+      setDropdownVisible(false);
+      const raf = requestAnimationFrame(() => setDropdownVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setDropdownVisible(false);
+    }
+  }, [dropdownOpen]);
 
   const closeDropdown = useCallback(() => setDropdownOpen(false), []);
   useClickOutside(dropdownRef, closeDropdown);
@@ -223,8 +245,8 @@ export default function LayoutTabs({
           </button>
           {dropdownOpen && dropdownRef.current && (
             <>
-              <div className="context-menu-overlay" onClick={() => setDropdownOpen(false)} />
-              <div className="context-menu layout-tabs-dropdown" ref={dropdownMenuRef}>
+              <div className={`context-menu-overlay${dropdownVisible ? " open" : ""}`} onClick={() => setDropdownOpen(false)} />
+              <div className={`context-menu layout-tabs-dropdown${dropdownVisible ? " open" : ""}`} ref={dropdownMenuRef}>
                 {templates.map((t) => (
                   <div
                     key={t.id}
@@ -239,7 +261,7 @@ export default function LayoutTabs({
                     No templates
                   </div>
                 )}
-                <div className="context-menu-separator" />
+                <div className="context-menu-divider" />
                 <div className="context-menu-item" onClick={() => { setDropdownOpen(false); onOpenTemplateManager(); }}>
                   Manage Templates…
                 </div>
@@ -250,8 +272,8 @@ export default function LayoutTabs({
       </div>
       {ctxMenu && (
         <>
-          <div className="context-menu-overlay" onClick={() => setCtxMenu(null)} />
-          <div className="context-menu" ref={ctxMenuRef}>
+          <div className={`context-menu-overlay${ctxMenuOpen ? " open" : ""}`} onClick={() => setCtxMenu(null)} />
+          <div className={`context-menu${ctxMenuOpen ? " open" : ""}`} ref={ctxMenuRef}>
             <div className="context-menu-item" onClick={handleClose}>
               Close
             </div>

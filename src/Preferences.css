@@ -9,6 +9,8 @@ body {
   background: var(--bg-primary, #1e1e1e);
   color: var(--text-primary, #cccccc);
   padding: 24px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .preferences-header {
@@ -16,6 +18,7 @@ body {
   font-weight: 600;
   margin-bottom: 20px;
   color: #ffffff;
+  text-wrap: balance;
 }
 
 .tool-row {
@@ -163,12 +166,12 @@ body {
 
 .confirm-dialog {
   background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border-color, #3c3c3c);
   border-radius: 8px;
   padding: 24px;
   width: 360px;
   max-width: 90vw;
   text-align: center;
+  box-shadow: 0 0 0 1px var(--border-color, #3c3c3c), 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .confirm-icon {
@@ -181,6 +184,7 @@ body {
   font-weight: 600;
   color: #ffffff;
   margin-bottom: 8px;
+  text-wrap: balance;
 }
 
 .confirm-message {
@@ -188,6 +192,7 @@ body {
   color: var(--text-muted, #6e6e6e);
   line-height: 1.5;
   margin-bottom: 20px;
+  text-wrap: pretty;
 }
 
 .confirm-actions {
@@ -227,4 +232,26 @@ body {
 .confirm-delete-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tab {
+    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .tab:active {
+    transform: scale(0.96);
+  }
+
+  .danger-btn,
+  .confirm-cancel-btn,
+  .confirm-delete-btn {
+    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .danger-btn:active:not(:disabled),
+  .confirm-cancel-btn:active,
+  .confirm-delete-btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
 }

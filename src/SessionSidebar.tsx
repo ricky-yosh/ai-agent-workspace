@@ -250,12 +250,23 @@ export default function SessionSidebar() {
   const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
 
   const { addToast } = useToast();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(contextMenuRef, () => setContextMenu(null));
+
+  useEffect(() => {
+    if (contextMenu) {
+      setCtxMenuOpen(false);
+      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setCtxMenuOpen(false);
+    }
+  }, [contextMenu]);
 
   const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
 
@@ -632,7 +643,7 @@ export default function SessionSidebar() {
       />
 
       {contextMenu && (
-        <div ref={contextMenuRef} className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+        <div ref={contextMenuRef} className={`context-menu${ctxMenuOpen ? " open" : ""}`} style={{ left: contextMenu.x, top: contextMenu.y }}>
           <div className="context-menu-item" onClick={handleOpenInFinder}>
             Open in Finder
           </div>

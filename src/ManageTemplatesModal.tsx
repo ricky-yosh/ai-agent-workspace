@@ -13,6 +13,7 @@ import type { Layout } from "./types/screen";
 import "./ManageTemplatesModal.css";
 
 interface ManageTemplatesModalProps {
+  open: boolean;
   templates: Layout[];
   onRenameTemplate: (id: string, newName: string) => void;
   onDeleteTemplate: (id: string) => void;
@@ -341,6 +342,7 @@ function TemplateRow({
 }
 
 export default function ManageTemplatesModal({
+  open,
   templates,
   onRenameTemplate,
   onDeleteTemplate,
@@ -348,6 +350,21 @@ export default function ManageTemplatesModal({
   onDuplicateTemplate,
   workspaceCounts,
 }: ManageTemplatesModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else if (mounted) {
+      setVisible(false);
+      const timer = setTimeout(() => setMounted(false), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -509,15 +526,20 @@ export default function ManageTemplatesModal({
     }
   }
 
+  if (!mounted) return null;
+
+  const overlayClass = `dialog-overlay${visible ? " open" : " closing"}`;
+  const dialogClass = `dialog template-manager-dialog${visible ? " open" : " closing"}`;
+
   return (
     <div
-      className="dialog-overlay"
+      className={overlayClass}
       ref={overlayRef}
       onClick={handleOverlayClick}
       role="presentation"
     >
       <div
-        className="dialog template-manager-dialog"
+        className={dialogClass}
         ref={dialogRef}
         role="dialog"
         aria-modal="true"

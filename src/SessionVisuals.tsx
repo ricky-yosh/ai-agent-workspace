@@ -199,6 +199,7 @@ export function SessionIcon({
         backgroundColor: color,
         color: "#fff",
         flexShrink: 0,
+        boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.1)",
       }}
       title={projectType !== "generic" ? projectType : undefined}
     >
