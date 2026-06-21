@@ -290,6 +290,45 @@ fn is_git_repo(path: String) -> bool {
     std::path::Path::new(&path).join(".git").exists()
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct BinaryStatus {
+    present: bool,
+    executable: bool,
+    path: String,
+}
+
+#[tauri::command]
+fn check_mcp_binary(app: tauri::AppHandle) -> Result<BinaryStatus, String> {
+    let resource_path = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("Failed to resolve resource directory: {}", e))?
+        .join(CLI_NAME);
+
+    let path_str = resource_path.to_string_lossy().to_string();
+    let (present, executable) = if resource_path.exists() {
+        match std::fs::metadata(&resource_path) {
+            Ok(meta) => {
+                let non_empty = meta.len() > 0;
+                let is_exec = {
+                    use std::os::unix::fs::PermissionsExt;
+                    meta.permissions().mode() & 0o111 != 0
+                };
+                (non_empty, non_empty && is_exec)
+            }
+            Err(_) => (false, false),
+        }
+    } else {
+        (false, false)
+    };
+
+    Ok(BinaryStatus {
+        present,
+        executable,
+        path: path_str,
+    })
+}
+
 #[tauri::command]
 fn pty_spawn(
     state: tauri::State<PtyStore>,
@@ -489,6 +528,7 @@ pub fn run() {
             open_preferences,
             open_in_app,
             is_git_repo,
+            check_mcp_binary,
             pty_spawn,
             pty_write,
             pty_ack,

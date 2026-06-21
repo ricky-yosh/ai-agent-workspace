@@ -9,6 +9,7 @@ import type { Layout, Screen } from "./types/screen";
 import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider, useToast } from "./ToastContext";
 import { ToastContainer } from "./Toast";
+import StatusBoard from "./StatusBoard";
 import { useEventListener } from "./hooks/useEventListener";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { Dialog } from "./components/Dialog";
@@ -481,7 +482,7 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   if (!activeSessionId) {
     return (
       <main className="main-content">
-        <div className="empty-state">Open a Session to begin</div>
+        <StatusBoard />
       </main>
     );
   }

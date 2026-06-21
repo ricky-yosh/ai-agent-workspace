@@ -1,0 +1,276 @@
+.status-board {
+  padding: 32px;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+
+.status-board-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+  user-select: none;
+}
+
+/* ── Island card ── */
+
+.status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-island);
+  box-shadow: var(--shadow-island);
+}
+
+.status-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ── Status dot (reuses :root colour tokens) ── */
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot-running {
+  background: var(--dot-running);
+}
+
+.status-dot-missing {
+  background: var(--dot-missing);
+}
+
+/* ── Info column inside the card ── */
+
+.status-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.status-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.status-card-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Right side (action button) ── */
+
+.status-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.status-card-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Resolved path hint ── */
+
+.status-path {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+  user-select: text;
+  word-break: break-all;
+}
+
+/* ── Connect your agent section ── */
+
+.status-section {
+  margin-top: 24px;
+}
+
+.status-section-heading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.status-section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+/* ── Agent selector (segmented control) ── */
+
+.agent-selector {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-primary);
+  padding: 2px;
+  border-radius: var(--radius-control);
+  margin-bottom: 12px;
+}
+
+.agent-selector-btn {
+  flex: 1;
+  padding: 5px 10px;
+  border: none;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.agent-selector-btn:hover {
+  color: var(--text-primary);
+}
+
+.agent-selector-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Snippet card ── */
+
+.agent-snippet {
+  background: var(--bg-panel);
+  border-radius: var(--radius-island);
+  padding: 16px;
+  box-shadow: var(--shadow-island);
+}
+
+.agent-method-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  user-select: none;
+}
+
+.agent-snippet-code {
+  margin: 0;
+  padding: 12px 44px 12px 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-control);
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
+  user-select: text;
+}
+
+.agent-snippet-codewrap {
+  position: relative;
+}
+
+.snippet-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+
+.snippet-copy-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.snippet-copy-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.snippet-copy-btn.copied {
+  background: rgba(39, 174, 96, 0.15);
+  color: #27ae60;
+}
+
+.snippet-copy-btn.failed {
+  background: rgba(211, 47, 47, 0.15);
+  color: var(--danger-color);
+}
+
+/* ── "Open a folder" CTA ── */
+
+.status-cta-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.status-cta-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: var(--accent-color);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+
+.status-cta-button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.status-cta-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
