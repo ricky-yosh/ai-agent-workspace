@@ -10,4 +10,4 @@ echo "==> Building Tauri app (release)..."
 cargo tauri build
 
 echo ""
-echo "Done. DMG and .app are in src-tauri/target/release/bundle/"
+echo "Done. DMG and .app are in target/release/bundle/"
