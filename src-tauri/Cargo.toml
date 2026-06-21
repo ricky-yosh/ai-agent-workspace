@@ -1,8 +1,8 @@
 [package]
 name = "ai-agent-workspace"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "A collaborative AI-native development environment where humans and agents share a visual workspace"
+authors = ["Ricky Yoshioka"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
