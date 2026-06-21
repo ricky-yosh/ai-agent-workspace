@@ -229,6 +229,7 @@ function TemplateRow({
   editingInputRef,
 }: TemplateRowProps) {
   const showActions = !isEditing;
+  const isBuiltIn = template.built_in;
 
   return (
     <div
@@ -246,7 +247,9 @@ function TemplateRow({
           onSelect(index);
           e.currentTarget.focus();
         }}
-        onDoubleClick={() => onEditStart(template.id, template.name)}
+        onDoubleClick={() => {
+          if (!isBuiltIn) onEditStart(template.id, template.name);
+        }}
         onFocus={() => onSelect(index)}
       >
         {isEditing ? (
@@ -308,20 +311,23 @@ function TemplateRow({
               </button>
             )}
             <button
-              className="template-item-btn"
+              className={`template-item-btn${isBuiltIn ? " template-item-btn-disabled" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isBuiltIn) return;
                 onEditStart(template.id, template.name);
               }}
               aria-label={`Rename ${template.name}`}
-              title="Rename"
+              aria-disabled={isBuiltIn}
+              title={isBuiltIn ? "Built-in layouts can't be renamed" : "Rename"}
             >
               <Pencil size={13} />
             </button>
             <button
-              className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}`}
+              className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}${isBuiltIn ? " template-item-btn-disabled" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isBuiltIn) return;
                 if (isConfirmingDelete) {
                   onDeleteConfirm(template.id);
                 } else {
@@ -330,7 +336,8 @@ function TemplateRow({
               }}
               onBlur={onDeleteCancel}
               aria-label={isConfirmingDelete ? `Confirm delete ${template.name}` : `Delete ${template.name}`}
-              title={isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
+              aria-disabled={isBuiltIn}
+              title={isBuiltIn ? "Built-in layouts can't be deleted" : isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
             >
               {isConfirmingDelete ? <Check size={13} strokeWidth={3} /> : <Trash2 size={13} />}
             </button>
@@ -481,13 +488,14 @@ export default function ManageTemplatesModal({
     confirmingDeleteId,
     setConfirmingDeleteId,
     () => {
-      if (activeTemplate) startRename(activeTemplate.id, activeTemplate.name);
+      if (activeTemplate && !activeTemplate.built_in)
+        startRename(activeTemplate.id, activeTemplate.name);
     },
     () => {
-      if (activeTemplate) startDelete(activeTemplate.id);
+      if (activeTemplate && !activeTemplate.built_in) startDelete(activeTemplate.id);
     },
     () => {
-      if (activeTemplate) {
+      if (activeTemplate && !activeTemplate.built_in) {
         onDeleteTemplate(activeTemplate.id);
         setConfirmingDeleteId(null);
       }

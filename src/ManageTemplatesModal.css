@@ -280,6 +280,19 @@
   outline-offset: -2px;
 }
 
+.template-item-btn-disabled,
+.template-item-btn-disabled:hover,
+.template-item-btn-delete.template-item-btn-disabled:hover {
+  opacity: 0.3;
+  cursor: not-allowed;
+  background: none;
+  color: var(--text-dim);
+}
+
+.template-item-row:hover .template-item-btn-disabled {
+  opacity: 0.3;
+}
+
 @keyframes template-confirm-pulse {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.5);
