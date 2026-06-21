@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
 import type { Layout, Screen } from "./types/screen";
-import { useClickOutside } from "./hooks/useClickOutside";
 import { useAnchoredPosition } from "./hooks/useAnchoredPosition";
 import "./LayoutTabs.css";
 import "./ContextMenu.css";
@@ -132,9 +132,6 @@ export default function LayoutTabs({
     }
   }, [dropdownOpen]);
 
-  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
-  useClickOutside(dropdownRef, closeDropdown);
-
   useAnchoredPosition(ctxMenuRef, {
     anchorX: ctxMenu?.x ?? 0,
     anchorY: ctxMenu?.y ?? 0,
@@ -243,7 +240,7 @@ export default function LayoutTabs({
           >
             <Plus size={14} />
           </button>
-          {dropdownOpen && dropdownRef.current && (
+          {dropdownOpen && dropdownRef.current && createPortal(
             <>
               <div className={`context-menu-overlay${dropdownVisible ? " open" : ""}`} onClick={() => setDropdownOpen(false)} />
               <div className={`context-menu layout-tabs-dropdown${dropdownVisible ? " open" : ""}`} ref={dropdownMenuRef}>
@@ -266,7 +263,8 @@ export default function LayoutTabs({
                   Manage Templates…
                 </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
       </div>
