@@ -97,17 +97,6 @@ macro_rules! unit_return {
     };
 }
 
-#[allow(unused_macros)]
-macro_rules! sessions_return {
-    ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
-     $($param:ident: $pty:ty),* $(,)?) => {
-        command_handler!($fn_name, $cmd_variant { $($field),* }, Sessions, Vec<SessionSummary>, $($param: $pty),*);
-    };
-    ($fn_name:ident, $cmd_variant:ident) => {
-        command_handler!($fn_name, $cmd_variant, Sessions, Vec<SessionSummary>);
-    };
-}
-
 macro_rules! list_return {
     ($fn_name:ident, $cmd_variant:ident { $($field:ident),* $(,)? },
      $($param:ident: $pty:ty),* $(,)?) => {
@@ -226,11 +215,6 @@ workspace_return!(resize_edge, ResizeEdge { session_id, workspace_id, edge_id, p
 workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id, area_id, panel_type }, session_id: String, workspace_id: String, area_id: String, panel_type: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! The IPC bridge works.", name)
-}
 
 #[tauri::command]
 fn persist_workspace_screen(
@@ -499,7 +483,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             create_session,
             list_sessions,
             rename_session,
