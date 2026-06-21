@@ -12,21 +12,17 @@ A macOS desktop app where humans and AI agents share a visual workspace. The app
 ## Installation
 
 1. Download the `.app` and drag it to `/Applications`.
-2. Run the installer script to install the bundled `aiaw-mcp-server` binary into your `PATH`:
-
-```sh
-bash scripts/install.sh
-```
+2. Open the app — the zero state walks you through registering the MCP server with your AI tool.
 
 ## MCP Setup
 
 Register the MCP server with Claude Code:
 
 ```sh
-claude mcp add aiaws -- aiaw-mcp-server
+claude mcp add aiaws -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
 ```
 
-This makes the `aiaws` MCP server available in every Claude Code session. The binary is the same one bundled inside the `.app`; a standalone version is also installed by `scripts/install.sh` for use outside the GUI.
+The app's zero state can do this for you, or you can run it manually. The binary lives inside the `.app` bundle — no separate installation needed.
 
 ## Sessions
 
@@ -47,8 +43,4 @@ The automatic injection means that if you launch Claude Code from the app's buil
 
 ## Building from Source
 
-```sh
-bash scripts/build-release.sh
-```
-
-This produces a signed `.app` bundle and the standalone `aiaw-mcp-server` binary. The app identifier is `com.rickyyoshioka.ai-agent-workspace`.
+See [`docs/commands.md`](docs/commands.md) for build, release, and MCP commands.
