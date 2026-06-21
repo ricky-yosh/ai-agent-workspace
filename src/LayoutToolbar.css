@@ -46,14 +46,12 @@
   border-color: var(--text-muted);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .layout-toolbar button {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .layout-toolbar button {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .layout-toolbar button:active:not(:disabled) {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .layout-toolbar button:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .layout-toolbar button:disabled {

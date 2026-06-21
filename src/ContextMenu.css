@@ -8,12 +8,10 @@
   opacity: 0;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .context-menu-overlay {
-    transition-property: opacity;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-  }
+:root[data-motion="full"] .context-menu-overlay {
+  transition-property: opacity;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .context-menu-overlay.open {

@@ -349,36 +349,34 @@
   color: var(--text-dim);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .dialog-close-btn {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .dialog-close-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .dialog-close-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .dialog-close-btn:active {
+  transform: scale(0.96);
+}
 
-  .template-sort-btn {
-    transition: color 0.15s, background 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .template-sort-btn {
+  transition: color 0.15s, background 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .template-sort-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .template-sort-btn:active {
+  transform: scale(0.96);
+}
 
-  .template-rename-confirm {
-    transition: background 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .template-rename-confirm {
+  transition: background 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .template-rename-confirm:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .template-rename-confirm:active {
+  transform: scale(0.96);
+}
 
-  .template-item-btn {
-    transition: opacity 0.12s, color 0.12s, background 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .template-item-btn {
+  transition: opacity 0.12s, color 0.12s, background 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .template-item-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .template-item-btn:active {
+  transform: scale(0.96);
 }

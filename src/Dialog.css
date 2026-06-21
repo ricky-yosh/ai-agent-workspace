@@ -239,33 +239,31 @@
   text-wrap: pretty;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .dialog-overlay {
-    transition-property: opacity;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .dialog-overlay {
+  transition-property: opacity;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .dialog {
-    transition-property: opacity, transform;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .dialog {
+  transition-property: opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .dialog-btn,
-  .dialog-btn-create,
-  .dialog-btn-delete,
-  .dialog-btn-primary {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .dialog-btn,
+:root[data-motion="full"] .dialog-btn-create,
+:root[data-motion="full"] .dialog-btn-delete,
+:root[data-motion="full"] .dialog-btn-primary {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .dialog-btn:active,
-  .dialog-btn-delete:active,
-  .dialog-btn-primary:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .dialog-btn:active,
+:root[data-motion="full"] .dialog-btn-delete:active,
+:root[data-motion="full"] .dialog-btn-primary:active {
+  transform: scale(0.96);
+}
 
-  .dialog-btn-create:active:not(:disabled) {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .dialog-btn-create:active:not(:disabled) {
+  transform: scale(0.96);
 }

@@ -34,6 +34,11 @@ import type { Screen, Area, Vertex } from "./types/screen";
  * (SSR / jsdom) and return `false` so animations degrade gracefully to instant.
  */
 export function prefersReducedMotion(): boolean {
+  if (typeof document !== "undefined") {
+    const m = document.documentElement.dataset.motion;
+    if (m === "reduced") return true;
+    if (m === "full") return false;
+  }
   if (typeof window === "undefined" || !window.matchMedia) return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

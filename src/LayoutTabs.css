@@ -39,10 +39,8 @@
   /* Transitions enabled only after first measurement (data-ready attr) */
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .layout-tab-indicator[data-ready="true"] {
-    transition: left 180ms ease-out, width 180ms ease-out;
-  }
+:root[data-motion="full"] .layout-tab-indicator[data-ready="true"] {
+  transition: left 180ms ease-out, width 180ms ease-out;
 }
 
 .layout-tab {
@@ -175,32 +173,30 @@
   background: none;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .layout-tab {
-    transition: color 0.1s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .layout-tab {
+  transition: color 0.1s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .layout-tab:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .layout-tab:active {
+  transform: scale(0.96);
+}
 
-  .layout-tab-active:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .layout-tab-active:active {
+  transform: scale(0.96);
+}
 
-  .layout-tabs-add {
-    transition: background 0.1s, color 0.1s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .layout-tabs-add {
+  transition: background 0.1s, color 0.1s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .layout-tabs-add:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .layout-tabs-add:active {
+  transform: scale(0.96);
+}
 
-  .layout-tabs-add svg {
-    transition: transform 0.15s ease;
-  }
+:root[data-motion="full"] .layout-tabs-add svg {
+  transition: transform 0.15s ease;
+}
 
-  .layout-tabs-add:hover svg {
-    transform: rotate(90deg);
-  }
+:root[data-motion="full"] .layout-tabs-add:hover svg {
+  transform: rotate(90deg);
 }

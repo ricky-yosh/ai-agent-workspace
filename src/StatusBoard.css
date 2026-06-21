@@ -107,10 +107,8 @@
   color: var(--text-primary);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .status-card-action.is-loading svg {
-    animation: spin 0.8s linear infinite;
-  }
+:root[data-motion="full"] .status-card-action.is-loading svg {
+  animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
@@ -324,32 +322,30 @@
   cursor: default;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .status-card-action {
-    transition: background 0.12s, color 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .status-card-action {
+  transition: background 0.12s, color 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .status-card-action:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .status-card-action:active {
+  transform: scale(0.96);
+}
 
-  .snippet-copy-btn {
-    transition: background 0.12s, color 0.12s, opacity 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .snippet-copy-btn {
+  transition: background 0.12s, color 0.12s, opacity 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .snippet-copy-btn:active:not(:disabled) {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .snippet-copy-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
 
-  .snippet-copy-icon {
-    transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .snippet-copy-icon {
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .status-cta-button {
-    transition: opacity 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .status-cta-button {
+  transition: opacity 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .status-cta-button:active:not(:disabled) {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .status-cta-button:active:not(:disabled) {
+  transform: scale(0.96);
 }

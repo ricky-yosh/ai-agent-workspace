@@ -27,13 +27,11 @@
   transform: translateY(10px);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .toast {
-    transition-property: opacity, transform;
-    transition-duration: 200ms;
-    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-    transition-delay: var(--stagger-delay, 0ms);
-  }
+:root[data-motion="full"] .toast {
+  transition-property: opacity, transform;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: var(--stagger-delay, 0ms);
 }
 
 .toast--entered {

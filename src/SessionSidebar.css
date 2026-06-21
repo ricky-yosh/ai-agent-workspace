@@ -443,28 +443,26 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .sidebar-toggle-btn {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .sidebar-toggle-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .sidebar-toggle-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .sidebar-toggle-btn:active {
+  transform: scale(0.96);
+}
 
-  .new-session-btn {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .new-session-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .new-session-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .new-session-btn:active {
+  transform: scale(0.96);
+}
 
-  .session-action-btn {
-    transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-  }
+:root[data-motion="full"] .session-action-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
 
-  .session-action-btn:active {
-    transform: scale(0.96);
-  }
+:root[data-motion="full"] .session-action-btn:active {
+  transform: scale(0.96);
 }
