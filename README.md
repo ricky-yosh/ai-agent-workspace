@@ -12,11 +12,12 @@ A macOS desktop app where humans and AI agents share a visual workspace. The app
 ## Installation
 
 1. Download the `.dmg` from the [latest release](../../releases/latest) and open it.
-2. Before dragging to `/Applications`, run this in Terminal to clear the macOS quarantine flag (the app is not yet notarized):
+2. Drag the app to `/Applications`.
+3. Clear the macOS quarantine flag (the app is not yet notarized) by running this in Terminal:
    ```sh
-   xattr -cr "/Volumes/AI Agent Workspace/AI Agent Workspace.app"
+   xattr -cr "/Applications/AI Agent Workspace.app"
    ```
-3. Drag the app to `/Applications` and open it — the zero state walks you through registering the MCP server with your AI tool.
+4. Open the app — the zero state walks you through registering the MCP server with your AI tool.
 
 ## MCP Setup
 
