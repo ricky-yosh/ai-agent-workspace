@@ -480,10 +480,13 @@ export default function SessionSidebar() {
               <button
                 className="sidebar-title sidebar-title-back"
                 onClick={() => {
-                  safeInvoke("close_session", { sessionId: activeSessionId }, (msg) => addToast({ type: "error", message: msg })).then(() => {
-                    setActiveSessionId(null);
-                    refreshSessions();
-                  }).catch(console.error);
+                  const sid = activeSessionId;
+                  setActiveSessionId(null);
+                  if (sid) {
+                    safeInvoke("close_session", { sessionId: sid }, (msg) => addToast({ type: "error", message: msg })).then(() => {
+                      refreshSessions();
+                    }).catch(console.error);
+                  }
                 }}
                 title="Back to all sessions"
                 aria-label="Close session and return to all sessions"

@@ -41,10 +41,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         console.error("[SessionContext] Failed to list sessions:", msg);
       });
       setSessions(list);
+      setActiveSessionId(prev => prev && list.some(s => s.id === prev) ? prev : null);
     } catch (e) {
       console.error("[SessionContext] Failed to list sessions", e);
     }
-  }, []);
+  }, [setActiveSessionId]);
 
   useEffect(() => {
     setLoading(true);
