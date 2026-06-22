@@ -2,6 +2,7 @@
 name = "aiaw-mcp-server"
 version = "0.1.1"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 ai-agent-workspace-mcp = { path = "../mcp", default-features = false }

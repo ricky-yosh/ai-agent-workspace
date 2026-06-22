@@ -48,3 +48,7 @@ The automatic injection means that if you launch Claude Code from the app's buil
 ## Building from Source
 
 See [`docs/commands.md`](docs/commands.md) for build, release, and MCP commands.
+
+## License
+
+Released under the [MIT License](LICENSE). You are free to use, modify, and distribute this app.
