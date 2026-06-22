@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
 import type { Layout, Screen } from "./types/screen";
-import { useClickOutside } from "./hooks/useClickOutside";
 import { useAnchoredPosition } from "./hooks/useAnchoredPosition";
 import "./LayoutTabs.css";
 import "./ContextMenu.css";
@@ -39,7 +39,9 @@ export default function LayoutTabs({
   onOpenTemplateManager,
 }: LayoutTabsProps) {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wsId: string } | null>(null);
+  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -110,8 +112,25 @@ export default function LayoutTabs({
     return () => ro.disconnect();
   }, [measurePill]);
 
-  const closeDropdown = useCallback(() => setDropdownOpen(false), []);
-  useClickOutside(dropdownRef, closeDropdown);
+  useEffect(() => {
+    if (ctxMenu) {
+      setCtxMenuOpen(false);
+      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setCtxMenuOpen(false);
+    }
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    if (dropdownOpen) {
+      setDropdownVisible(false);
+      const raf = requestAnimationFrame(() => setDropdownVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setDropdownVisible(false);
+    }
+  }, [dropdownOpen]);
 
   useAnchoredPosition(ctxMenuRef, {
     anchorX: ctxMenu?.x ?? 0,
@@ -221,10 +240,10 @@ export default function LayoutTabs({
           >
             <Plus size={14} />
           </button>
-          {dropdownOpen && dropdownRef.current && (
+          {dropdownOpen && dropdownRef.current && createPortal(
             <>
-              <div className="context-menu-overlay" onClick={() => setDropdownOpen(false)} />
-              <div className="context-menu layout-tabs-dropdown" ref={dropdownMenuRef}>
+              <div className={`context-menu-overlay${dropdownVisible ? " open" : ""}`} onClick={() => setDropdownOpen(false)} />
+              <div className={`context-menu layout-tabs-dropdown${dropdownVisible ? " open" : ""}`} ref={dropdownMenuRef}>
                 {templates.map((t) => (
                   <div
                     key={t.id}
@@ -239,19 +258,20 @@ export default function LayoutTabs({
                     No templates
                   </div>
                 )}
-                <div className="context-menu-separator" />
+                <div className="context-menu-divider" />
                 <div className="context-menu-item" onClick={() => { setDropdownOpen(false); onOpenTemplateManager(); }}>
                   Manage Templates…
                 </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
       </div>
       {ctxMenu && (
         <>
-          <div className="context-menu-overlay" onClick={() => setCtxMenu(null)} />
-          <div className="context-menu" ref={ctxMenuRef}>
+          <div className={`context-menu-overlay${ctxMenuOpen ? " open" : ""}`} onClick={() => setCtxMenu(null)} />
+          <div className={`context-menu${ctxMenuOpen ? " open" : ""}`} ref={ctxMenuRef}>
             <div className="context-menu-item" onClick={handleClose}>
               Close
             </div>

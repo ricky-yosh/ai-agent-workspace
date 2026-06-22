@@ -31,9 +31,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../target/release/aiaw-mcp-server"
-    ],
+    "resources": {
+      "../target/release/aiaw-mcp-server": "aiaw-mcp-server"
+    },
     "macOS": {
       "dmg": {
         "background": "icons/dmg-background.png",

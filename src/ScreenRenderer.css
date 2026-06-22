@@ -18,11 +18,9 @@
   filter: brightness(0.7);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .screen-area {
-    transition: left 0.12s ease, top 0.12s ease, width 0.12s ease,
-      height 0.12s ease, filter 120ms ease;
-  }
+:root[data-motion="full"] .screen-area {
+  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease,
+    height 0.12s ease, filter 120ms ease;
 }
 
 /* Disable geometry animation while a sash is actively dragged (per contract) */
@@ -249,10 +247,8 @@
   to { opacity: 1; }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .screen-join-absorb,
-  .screen-join-combined {
-    animation: screen-join-feedback-in 0.15s ease-in;
-  }
+:root[data-motion="full"] .screen-join-absorb,
+:root[data-motion="full"] .screen-join-combined {
+  animation: screen-join-feedback-in 0.15s ease-in;
 }
 

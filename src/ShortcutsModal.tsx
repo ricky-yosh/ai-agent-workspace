@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import "./ShortcutsModal.css";
 
 interface ShortcutEntry {
@@ -51,8 +51,24 @@ const groups: ShortcutGroup[] = [
   },
 ];
 
-export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
+export default function ShortcutsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+
   useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else if (mounted) {
+      setVisible(false);
+      const timer = setTimeout(() => setMounted(false), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!mounted) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -61,16 +77,18 @@ export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [mounted, onClose]);
+
+  if (!mounted) return null;
 
   return (
     <div
-      className="dialog-overlay"
+      className={`dialog-overlay${visible ? " open" : " closing"}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="dialog shortcuts-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className={`dialog shortcuts-dialog${visible ? " open" : " closing"}`} onClick={(e) => e.stopPropagation()}>
         <div className="dialog-title">Keyboard Shortcuts</div>
         <div className="shortcuts-body">
           {groups.map((g) => (

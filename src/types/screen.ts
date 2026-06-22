@@ -34,4 +34,5 @@ export interface Layout {
   id: string;
   name: string;
   screen: Screen;
+  built_in: boolean;
 }

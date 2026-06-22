@@ -23,6 +23,26 @@
   color: var(--text-primary, #cccccc);
   font-size: 13px;
   pointer-events: auto;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+:root[data-motion="full"] .toast {
+  transition-property: opacity, transform;
+  transition-duration: 200ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  transition-delay: var(--stagger-delay, 0ms);
+}
+
+.toast--entered {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast--exiting {
+  opacity: 0;
+  transform: translateY(8px);
+  transition-delay: 0ms;
 }
 
 .toast--error {
@@ -31,6 +51,7 @@
 
 .toast-message {
   flex: 1;
+  text-wrap: pretty;
 }
 
 .toast-action {
@@ -53,6 +74,12 @@
 }
 
 .toast-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
   padding: 0;
   border: none;
   background: none;
@@ -60,8 +87,19 @@
   font-size: 16px;
   cursor: pointer;
   line-height: 1;
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.toast-close::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .toast-close:hover {
   color: var(--text-primary, #cccccc);
+}
+
+.toast-close:active {
+  transform: scale(0.96);
 }

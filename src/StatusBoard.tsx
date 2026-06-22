@@ -149,11 +149,9 @@ export default function StatusBoard() {
           </div>
         </div>
         <div className="status-card-right">
-          {!loading && (
-            <button className="status-card-action" onClick={check} title="Re-check">
-              <RefreshCw size={14} />
-            </button>
-          )}
+          <button className={`status-card-action${loading ? " is-loading" : ""}`} onClick={check} title="Re-check">
+            <RefreshCw size={14} />
+          </button>
         </div>
       </div>
 
@@ -201,13 +199,17 @@ export default function StatusBoard() {
               title={copyLabel}
               aria-label={copyLabel}
             >
-              {copyState === "copied" ? (
-                <Check size={14} />
-              ) : copyState === "failed" ? (
-                <X size={14} />
-              ) : (
-                <Copy size={14} />
-              )}
+              <span className="snippet-copy-icon-wrap">
+                <span className={`snippet-copy-icon${copyState === "idle" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
+                  <Copy size={14} />
+                </span>
+                <span className={`snippet-copy-icon${copyState === "copied" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
+                  <Check size={14} />
+                </span>
+                <span className={`snippet-copy-icon${copyState === "failed" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
+                  <X size={14} />
+                </span>
+              </span>
             </button>
           </div>
         </div>

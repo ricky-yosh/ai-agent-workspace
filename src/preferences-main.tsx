@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { initMotion, type MotionPreference, resolveMotion, applyMotion, osPrefersReduced } from "./motionPreference";
 import "./Preferences.css";
 import "./Dialog.css";
 
@@ -57,6 +58,7 @@ function usePreferences() {
     external_diff_tool: "",
     external_terminal: "",
     pty_command: "$SHELL",
+    motion: "system",
   });
   const [loading, setLoading] = useState(true);
 
@@ -68,17 +70,19 @@ function usePreferences() {
           autoSave: 300,
         });
         setStore(s);
-        const [editor, diffTool, terminal, ptyCommand] = await Promise.all([
+        const [editor, diffTool, terminal, ptyCommand, motion] = await Promise.all([
           s.get<string>("external_editor"),
           s.get<string>("external_diff_tool"),
           s.get<string>("external_terminal"),
           s.get<string>("pty_command"),
+          s.get<string>("motion"),
         ]);
         setPrefs({
           external_editor: editor ?? "",
           external_diff_tool: diffTool ?? "",
           external_terminal: terminal ?? "",
           pty_command: ptyCommand ?? "$SHELL",
+          motion: motion ?? "system",
         });
       } catch (err) {
         console.error("Failed to load preferences:", err);
@@ -193,6 +197,31 @@ function ExternalToolsForm({ toolPrefs, setToolPrefs }: {
   );
 }
 
+function AppearanceSection({ motionPref, setMotionPref }: {
+  motionPref: string;
+  setMotionPref: (key: string, value: string) => Promise<void>;
+}) {
+  const handleMotionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setMotionPref("motion", value);
+    applyMotion(resolveMotion(value as MotionPreference, osPrefersReduced()));
+  };
+
+  return (
+    <div>
+      <div className="tool-row">
+        <span className="tool-label">Animations</span>
+        <select className="tool-select" value={motionPref} onChange={handleMotionChange}>
+          <option value="system">Follow system</option>
+          <option value="full">Always on</option>
+          <option value="reduced">Reduced</option>
+        </select>
+      </div>
+      <div className="danger-desc">Follow system uses your OS Reduce Motion setting.</div>
+    </div>
+  );
+}
+
 function DangerZoneSection() {
   const [deletingSessions, setDeletingSessions] = useState(false);
   const [deletingTemplates, setDeletingTemplates] = useState(false);
@@ -285,7 +314,7 @@ function DangerZoneSection() {
 function PreferencesForm() {
   const { prefs, updatePref, loading } = usePreferences();
 
-  type Tab = "external-tools" | "danger-zone";
+  type Tab = "external-tools" | "appearance" | "danger-zone";
   const [activeTab, setActiveTab] = useState<Tab>("external-tools");
 
   if (loading) {
@@ -309,6 +338,12 @@ function PreferencesForm() {
           External Tools
         </button>
         <button
+          className={`tab ${activeTab === "appearance" ? "tab-active" : ""}`}
+          onClick={() => setActiveTab("appearance")}
+        >
+          Appearance
+        </button>
+        <button
           className={`tab ${activeTab === "danger-zone" ? "tab-active" : ""}`}
           onClick={() => setActiveTab("danger-zone")}
         >
@@ -320,10 +355,16 @@ function PreferencesForm() {
         <ExternalToolsForm toolPrefs={toolPrefs} setToolPrefs={updatePref} />
       )}
 
+      {activeTab === "appearance" && (
+        <AppearanceSection motionPref={prefs.motion} setMotionPref={updatePref} />
+      )}
+
       {activeTab === "danger-zone" && <DangerZoneSection />}
     </>
   );
 }
+
+initMotion();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

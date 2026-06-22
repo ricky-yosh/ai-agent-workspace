@@ -41,6 +41,8 @@ body {
   font-size: 13px;
   color: var(--text-primary);
   background: #121212;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .app-layout {

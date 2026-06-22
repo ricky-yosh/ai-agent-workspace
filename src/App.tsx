@@ -501,14 +501,13 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
         onSaveAsTemplate={handleSaveAsTemplate}
         onOpenTemplateManager={() => setTemplateManagerOpen(true)}
       />
-      {templateManagerOpen && (
-        <ManageTemplatesModal
-          templates={templates}
-          onRenameTemplate={handleRenameTemplate}
-          onDeleteTemplate={handleDeleteTemplate}
-          onClose={() => setTemplateManagerOpen(false)}
-        />
-      )}
+      <ManageTemplatesModal
+        open={templateManagerOpen}
+        templates={templates}
+        onRenameTemplate={handleRenameTemplate}
+        onDeleteTemplate={handleDeleteTemplate}
+        onClose={() => setTemplateManagerOpen(false)}
+      />
       <SaveAsTemplateDialog
         open={saveAsTarget !== null}
         onClose={() => setSaveAsTarget(null)}
@@ -607,7 +606,7 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
     { code: "Backslash", meta: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), ignoreInputs: true },
   ]);
 
-  return showShortcuts ? <ShortcutsModal onClose={() => setShowShortcuts(false)} /> : null;
+  return <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />;
 }
 
 function App() {

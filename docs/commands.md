@@ -13,8 +13,8 @@ Start the app in dev mode with hot reload. Note: the app menu bar will show `ai-
 bash scripts/build-release.sh
 ```
 Builds the standalone `aiaw-mcp-server` binary and the Tauri app. Output:
-- DMG: `src-tauri/target/release/bundle/dmg/`
-- .app: `src-tauri/target/release/bundle/macos/`
+- DMG: `target/release/bundle/dmg/`
+- .app: `target/release/bundle/macos/`
 
 ```sh
 cargo clean
@@ -40,7 +40,7 @@ bash scripts/build-release.sh
 gh release create v0.1.0 \
   --title "v0.1.0" \
   --notes "Initial release." \
-  "src-tauri/target/release/bundle/dmg/AI Agent Workspace_0.1.0_x64.dmg"
+  "target/release/bundle/dmg/AI Agent Workspace_0.1.0_x64.dmg"
 ```
 This creates the git tag, pushes it, creates the GitHub release, and attaches the DMG in one command. Bump the version number in `package.json`, `src-tauri/tauri.conf.json`, and all `crates/*/Cargo.toml` before each release.
 

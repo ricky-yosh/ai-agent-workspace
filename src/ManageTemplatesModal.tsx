@@ -13,6 +13,7 @@ import type { Layout } from "./types/screen";
 import "./ManageTemplatesModal.css";
 
 interface ManageTemplatesModalProps {
+  open: boolean;
   templates: Layout[];
   onRenameTemplate: (id: string, newName: string) => void;
   onDeleteTemplate: (id: string) => void;
@@ -228,6 +229,7 @@ function TemplateRow({
   editingInputRef,
 }: TemplateRowProps) {
   const showActions = !isEditing;
+  const isBuiltIn = template.built_in;
 
   return (
     <div
@@ -245,7 +247,9 @@ function TemplateRow({
           onSelect(index);
           e.currentTarget.focus();
         }}
-        onDoubleClick={() => onEditStart(template.id, template.name)}
+        onDoubleClick={() => {
+          if (!isBuiltIn) onEditStart(template.id, template.name);
+        }}
         onFocus={() => onSelect(index)}
       >
         {isEditing ? (
@@ -307,20 +311,23 @@ function TemplateRow({
               </button>
             )}
             <button
-              className="template-item-btn"
+              className={`template-item-btn${isBuiltIn ? " template-item-btn-disabled" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isBuiltIn) return;
                 onEditStart(template.id, template.name);
               }}
               aria-label={`Rename ${template.name}`}
-              title="Rename"
+              aria-disabled={isBuiltIn}
+              title={isBuiltIn ? "Built-in layouts can't be renamed" : "Rename"}
             >
               <Pencil size={13} />
             </button>
             <button
-              className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}`}
+              className={`template-item-btn template-item-btn-delete${isConfirmingDelete ? " template-item-btn-delete-confirm" : ""}${isBuiltIn ? " template-item-btn-disabled" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isBuiltIn) return;
                 if (isConfirmingDelete) {
                   onDeleteConfirm(template.id);
                 } else {
@@ -329,7 +336,8 @@ function TemplateRow({
               }}
               onBlur={onDeleteCancel}
               aria-label={isConfirmingDelete ? `Confirm delete ${template.name}` : `Delete ${template.name}`}
-              title={isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
+              aria-disabled={isBuiltIn}
+              title={isBuiltIn ? "Built-in layouts can't be deleted" : isConfirmingDelete ? "Click again to confirm delete" : "Delete"}
             >
               {isConfirmingDelete ? <Check size={13} strokeWidth={3} /> : <Trash2 size={13} />}
             </button>
@@ -341,6 +349,7 @@ function TemplateRow({
 }
 
 export default function ManageTemplatesModal({
+  open,
   templates,
   onRenameTemplate,
   onDeleteTemplate,
@@ -348,6 +357,21 @@ export default function ManageTemplatesModal({
   onDuplicateTemplate,
   workspaceCounts,
 }: ManageTemplatesModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const raf = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(raf);
+    } else if (mounted) {
+      setVisible(false);
+      const timer = setTimeout(() => setMounted(false), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [open]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -464,13 +488,14 @@ export default function ManageTemplatesModal({
     confirmingDeleteId,
     setConfirmingDeleteId,
     () => {
-      if (activeTemplate) startRename(activeTemplate.id, activeTemplate.name);
+      if (activeTemplate && !activeTemplate.built_in)
+        startRename(activeTemplate.id, activeTemplate.name);
     },
     () => {
-      if (activeTemplate) startDelete(activeTemplate.id);
+      if (activeTemplate && !activeTemplate.built_in) startDelete(activeTemplate.id);
     },
     () => {
-      if (activeTemplate) {
+      if (activeTemplate && !activeTemplate.built_in) {
         onDeleteTemplate(activeTemplate.id);
         setConfirmingDeleteId(null);
       }
@@ -509,15 +534,20 @@ export default function ManageTemplatesModal({
     }
   }
 
+  if (!mounted) return null;
+
+  const overlayClass = `dialog-overlay${visible ? " open" : " closing"}`;
+  const dialogClass = `dialog template-manager-dialog${visible ? " open" : " closing"}`;
+
   return (
     <div
-      className="dialog-overlay"
+      className={overlayClass}
       ref={overlayRef}
       onClick={handleOverlayClick}
       role="presentation"
     >
       <div
-        className="dialog template-manager-dialog"
+        className={dialogClass}
         ref={dialogRef}
         role="dialog"
         aria-modal="true"

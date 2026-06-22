@@ -20,7 +20,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: none;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
@@ -35,6 +36,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   background: none;
   border: none;
   border-radius: 4px;
@@ -42,6 +44,12 @@
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
+}
+
+.sidebar-toggle-btn::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
 }
 
 .sidebar-header-content {
@@ -116,7 +124,8 @@
   justify-content: center;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
@@ -233,6 +242,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   background: none;
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -241,6 +251,12 @@
   cursor: pointer;
   line-height: 1;
   padding: 0;
+}
+
+.new-session-btn::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
 }
 
 .new-session-btn:hover {
@@ -290,6 +306,10 @@
   background: var(--bg-hover);
 }
 
+.session-row:active {
+  background: var(--bg-active);
+}
+
 .session-row.active {
   background: var(--bg-panel-raised);
   box-shadow: 0 1px 2px rgba(0,0,0,.35);
@@ -325,16 +345,23 @@
 
 .session-actions {
   display: flex;
-  gap: 2px;
+  gap: 0px;
   flex-shrink: 0;
-  margin-left: 8px;
+  width: 0;
+  overflow: hidden;
   opacity: 0;
-  transition: opacity 0.12s;
+  pointer-events: none;
+  transition: width 0.15s cubic-bezier(0.2, 0, 0, 1),
+              opacity 0.15s cubic-bezier(0.2, 0, 0, 1),
+              gap 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .session-row:hover .session-actions,
 .session-row:focus-within .session-actions {
+  width: 52px;
+  gap: 2px;
   opacity: 1;
+  pointer-events: auto;
 }
 
 .session-row:focus-visible,
@@ -348,11 +375,12 @@
 }
 
 .session-action-btn {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   background: none;
   border: none;
   border-radius: 3px;
@@ -361,6 +389,12 @@
   cursor: pointer;
   padding: 0;
   line-height: 1;
+}
+
+.session-action-btn::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .session-action-btn:hover {
@@ -416,217 +450,26 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
-
-
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+:root[data-motion="full"] .sidebar-toggle-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.dialog {
-  background: #252526;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 24px;
-  min-width: 360px;
-  max-width: 440px;
+:root[data-motion="full"] .sidebar-toggle-btn:active {
+  transform: scale(0.96);
 }
 
-.dialog-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 16px;
+:root[data-motion="full"] .new-session-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.dialog-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+:root[data-motion="full"] .new-session-btn:active {
+  transform: scale(0.96);
 }
 
-.dialog-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--text-dim);
+:root[data-motion="full"] .session-action-btn {
+  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.dialog-input {
-  padding: 8px 10px;
-  background: #3c3c3c;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-  font-family: inherit;
-}
-
-.dialog-input:focus {
-  border-color: var(--accent-color);
-}
-
-.dialog-input::placeholder {
-  color: var(--text-muted);
-}
-
-.dialog-dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 140px;
-  padding: 20px 16px;
-  background: var(--bg-primary);
-  border: 1.5px dashed var(--border-color);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-family: inherit;
-  text-align: center;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
-}
-
-.dialog-dropzone:hover {
-  border-color: var(--text-muted);
-  color: var(--text-primary);
-}
-
-.dialog-dropzone:focus-visible {
-  outline: none;
-  border-color: var(--accent-color);
-}
-
-.dialog-dropzone.drag-over {
-  border-style: solid;
-  border-color: var(--accent-color);
-  background: rgba(45, 140, 255, 0.08);
-  color: var(--text-primary);
-}
-
-.dialog-dropzone.has-value {
-  border-style: solid;
-  background: #3c3c3c;
-  color: var(--text-primary);
-}
-
-.dialog-dropzone.has-value:hover {
-  background: #4a4a4a;
-  border-color: var(--text-muted);
-}
-
-.dialog-dropzone-icon {
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-.dialog-dropzone.drag-over .dialog-dropzone-icon,
-.dialog-dropzone.has-value .dialog-dropzone-icon {
-  color: var(--accent-color);
-}
-
-.dialog-dropzone-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.dialog-dropzone-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dialog-dropzone-path {
-  font-size: 11px;
-  color: var(--text-muted);
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dialog-dropzone-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.dialog-btn {
-  padding: 6px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  background: #3c3c3c;
-  color: var(--text-primary);
-  font-family: inherit;
-}
-
-.dialog-btn:hover {
-  background: #4a4a4a;
-}
-
-.dialog-btn-create {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
-  color: white;
-}
-
-.dialog-btn-create:hover {
-  background: #1a8cff;
-}
-
-.dialog-btn-create:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.dialog-btn-delete {
-  color: var(--danger-color);
-  border-color: var(--danger-color);
-}
-
-.dialog-btn-delete:hover {
-  background: var(--danger-color);
-  color: white;
-}
-
-.dialog-btn-primary {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
-  color: white;
-}
-
-.dialog-btn-primary:hover {
-  background: #1a8cff;
-}
-
-.dialog-confirm-text {
-  font-size: 13px;
-  color: var(--text-primary);
-  margin-bottom: 16px;
-  line-height: 1.4;
+:root[data-motion="full"] .session-action-btn:active {
+  transform: scale(0.96);
 }

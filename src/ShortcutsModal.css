@@ -25,6 +25,7 @@
   color: var(--text-muted);
   padding: 8px 16px 4px;
   user-select: none;
+  text-wrap: balance;
 }
 
 .shortcuts-row {
