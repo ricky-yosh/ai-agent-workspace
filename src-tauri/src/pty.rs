@@ -128,11 +128,28 @@ fn lock_handles(
     }
 }
 
+fn shell_login_args(shell: &str) -> &'static [&'static str] {
+    let name = std::path::Path::new(shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match name.as_str() {
+        "zsh" | "bash" | "fish" => &["-l", "-i"],
+        _ => &[],
+    }
+}
+
 fn create_pty_pair(config: &SpawnConfig, size: PtySize) -> Result<(Box<dyn MasterPty + Send>, Box<dyn portable_pty::Child + Send>, Box<dyn Read + Send>, Box<dyn Write + Send>), String> {
     let pty_system = native_pty_system();
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
     let mut cmd = CommandBuilder::new(&config.shell);
+    for arg in shell_login_args(&config.shell) {
+        cmd.arg(arg);
+    }
     cmd.env("AIAW_SESSION_ID", &config.session_id);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
     cmd.cwd(PathBuf::from(&config.working_directory));
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;

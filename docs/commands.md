@@ -37,12 +37,15 @@ bash scripts/build-release.sh
 
 **2. Create the GitHub release and upload the DMG:**
 ```sh
-gh release create v0.1.0 \
-  --title "v0.1.0" \
-  --notes "Initial release." \
-  "target/release/bundle/dmg/AI Agent Workspace_0.1.0_x64.dmg"
+./scripts/gh-release.sh v0.1.0 "Release notes here."
 ```
-This creates the git tag, pushes it, creates the GitHub release, and attaches the DMG in one command. Bump the version number in `package.json`, `src-tauri/tauri.conf.json`, and all `crates/*/Cargo.toml` before each release.
+This creates the git tag, pushes it, creates the GitHub release, and attaches all installer artifacts found in `target/release/bundle/`. Bump the version number in `package.json`, `src-tauri/tauri.conf.json`, and all `crates/*/Cargo.toml` before each release.
+
+> **Note:** The app is not yet notarized, so macOS will block it with a "damaged" warning after download. Users must run:
+> ```sh
+> xattr -cr "/Volumes/AI Agent Workspace/AI Agent Workspace.app"
+> ```
+> before dragging to `/Applications`.
 
 ## MCP
 
