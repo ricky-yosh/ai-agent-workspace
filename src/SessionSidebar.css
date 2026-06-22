@@ -345,16 +345,23 @@
 
 .session-actions {
   display: flex;
-  gap: 2px;
+  gap: 0px;
   flex-shrink: 0;
-  margin-left: 8px;
+  width: 0;
+  overflow: hidden;
   opacity: 0;
-  transition: opacity 0.12s;
+  pointer-events: none;
+  transition: width 0.15s cubic-bezier(0.2, 0, 0, 1),
+              opacity 0.15s cubic-bezier(0.2, 0, 0, 1),
+              gap 0.15s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .session-row:hover .session-actions,
 .session-row:focus-within .session-actions {
+  width: 52px;
+  gap: 2px;
   opacity: 1;
+  pointer-events: auto;
 }
 
 .session-row:focus-visible,
@@ -387,7 +394,7 @@
 .session-action-btn::after {
   content: "";
   position: absolute;
-  inset: -6px;
+  inset: -8px;
 }
 
 .session-action-btn:hover {
