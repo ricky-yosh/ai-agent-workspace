@@ -151,9 +151,10 @@ export default function ScreenRenderer({
   }, [activeScreen.vertices]);
 
   // ---------- Areas to render ----------
-  const areasToRender = zoomedAreaId
-    ? activeScreen.areas.filter((a) => a.id === zoomedAreaId)
-    : activeScreen.areas;
+  // Always render ALL areas so React never unmounts TerminalPanel components.
+  // Non-zoomed areas are hidden via CSS `display: none` in the render loop below,
+  // preserving Tauri Channel objects, PTY exit callbacks, and backpressure.
+  const areasToRender = activeScreen.areas;
 
   // ------------------------------------------------------------------
   // Resize snapping helpers
@@ -1122,6 +1123,7 @@ export default function ScreenRenderer({
               top: `${top}%`,
               width: `${width}%`,
               height: `${height}%`,
+              ...(zoomedAreaId && !isZoomed ? { display: "none" } : {}),
             }}
             onClick={() => onFocusedAreaChange?.(area.id)}
             data-area-id={area.id}
