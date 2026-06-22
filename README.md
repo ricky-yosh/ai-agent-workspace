@@ -2,7 +2,7 @@
 
 A macOS desktop app where humans and AI agents share a visual workspace. The app bundles an MCP server that AI tools (Claude Code, Cursor, etc.) use to read and manipulate the workspace — panels, terminal sessions, whiteboard, and more — without leaving their own interface.
 
-**Version:** 0.1.0
+**Version:** 0.1.1
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 [package]
 name = "ai-agent-workspace"
-version = "0.1.0"
+version = "0.1.1"
 description = "A collaborative AI-native development environment where humans and agents share a visual workspace"
 authors = ["Ricky Yoshioka"]
 edition = "2021"
