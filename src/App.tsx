@@ -19,8 +19,11 @@ import "./TerminalPanel";
 import "./App.css";
 import "./Toast.css";
 import "./Dialog.css";
+import { disposeTerminal } from "./TerminalPanel";
+import { getAdjacency } from "./screenGeometry";
+import type { Adjacency } from "./screenGeometry";
 
-interface WorkspaceInstance {
+export interface WorkspaceInstance {
   id: string;
   name: string;
   template_id: string;
@@ -39,6 +42,12 @@ export interface ShortcutSpec {
 interface Shortcut extends ShortcutSpec {
   handler: () => void;
   ignoreInputs?: boolean;
+}
+
+interface PanelActions {
+  navigateFocus: (direction: 'up' | 'down' | 'left' | 'right') => void;
+  splitFocused: (axis: 'horizontal' | 'vertical') => void;
+  closePanel: () => void;
 }
 
 export function matchesShortcut(e: KeyboardEvent, spec: ShortcutSpec): boolean {
@@ -60,9 +69,13 @@ export const TERMINAL_PASSTHROUGH_SHORTCUTS: ShortcutSpec[] = [
   { code: "BracketLeft", meta: true, shift: true },
   { key: "ArrowDown", meta: true, alt: true },
   { key: "ArrowUp", meta: true, alt: true },
+  { key: "ArrowLeft", meta: true, alt: true },
+  { key: "ArrowRight", meta: true, alt: true },
   { key: "Enter", meta: true, shift: true },
   { key: "n", meta: true },
   { key: "w", meta: true },
+  { key: "v", meta: true, alt: true },
+  { key: "h", meta: true, alt: true },
   { code: "Backslash", meta: true },
   { key: "Tab", ctrl: true },
   { key: "Tab", ctrl: true, shift: true },
@@ -390,7 +403,7 @@ function SaveAsTemplateDialog({
   );
 }
 
-function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
+function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null> }) {
   const { activeSessionId, sessions } = useSessions();
   const { addToast } = useToast();
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
@@ -426,6 +439,84 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   useEffect(() => {
     toggleZoomRef.current = toggleZoom;
   }, [toggleZoom, toggleZoomRef]);
+
+  const panelContextRef = useRef<{
+    screen: Screen | null;
+    workspaceId: string;
+    sessionId: string;
+  }>({ screen: null, workspaceId: '', sessionId: '' });
+
+  useEffect(() => {
+    panelContextRef.current = {
+      screen: activeWorkspace?.current_screen ?? null,
+      workspaceId: activeWorkspace?.id ?? '',
+      sessionId: activeSessionId ?? '',
+    };
+  }, [activeWorkspace, activeSessionId]);
+
+  const navigateFocus = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
+    const focusedId = focusedAreaIdRef.current;
+    const ctx = panelContextRef.current;
+    if (!focusedId || !ctx.screen) return;
+
+    const focusedArea = ctx.screen.areas.find(a => a.id === focusedId);
+    if (!focusedArea) return;
+
+    const vertexMap = new Map(ctx.screen.vertices.map(v => [v.id, v]));
+
+    const dirMap: Record<string, Adjacency> = {
+      up: 'north', down: 'south', left: 'west', right: 'east'
+    };
+
+    const target = ctx.screen.areas.find(a =>
+      a.id !== focusedId && getAdjacency(focusedArea, a, vertexMap) === dirMap[direction]
+    );
+
+    if (target) setFocusedAreaId(target.id);
+  }, []);
+
+  const splitFocused = useCallback((axis: 'horizontal' | 'vertical') => {
+    const focusedId = focusedAreaIdRef.current;
+    const ctx = panelContextRef.current;
+    if (!focusedId || !ctx.workspaceId || !ctx.sessionId) return;
+
+    safeInvoke<WorkspaceInstance>("split_area", {
+      sessionId: ctx.sessionId,
+      workspaceId: ctx.workspaceId,
+      areaId: focusedId,
+      axis,
+      factor: 0.5,
+    }, onError)
+      .then(r => handleScreenChange(ctx.workspaceId, r.current_screen))
+      .catch(() => {});
+  }, [onError, handleScreenChange]);
+
+  const closePanel = useCallback(() => {
+    const focusedId = focusedAreaIdRef.current;
+    const ctx = panelContextRef.current;
+    if (!focusedId || !ctx.screen || !ctx.workspaceId || !ctx.sessionId) return;
+    if (ctx.screen.areas.length <= 1) return;
+
+    const area = ctx.screen.areas.find(a => a.id === focusedId);
+    if (area?.terminal_id) {
+      disposeTerminal(area.terminal_id);
+    }
+
+    safeInvoke<WorkspaceInstance>("close_area", {
+      sessionId: ctx.sessionId,
+      workspaceId: ctx.workspaceId,
+      areaId: focusedId,
+    }, onError)
+      .then(r => {
+        handleScreenChange(ctx.workspaceId, r.current_screen);
+        setFocusedAreaId(null);
+      })
+      .catch(() => {});
+  }, [onError, handleScreenChange]);
+
+  useEffect(() => {
+    panelActionsRef.current = { navigateFocus, splitFocused, closePanel };
+  }, [navigateFocus, splitFocused, closePanel, panelActionsRef]);
 
   useEffect(() => {
     setZoomedAreaId(null);
@@ -562,9 +653,9 @@ function MainArea({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => voi
   );
 }
 
-function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefObject<(() => void) | null> }) {
+function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null> }) {
   const {
-    sessions, activeSessionId, setActiveSessionId, refreshSessions,
+    sessions, activeSessionId, setActiveSessionId,
     setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
   const { addToast } = useToast();
@@ -584,25 +675,19 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
       .catch(console.error);
   }, [sessions, activeSessionId, setActiveSessionId, addToast]);
 
-  const handleCloseSession = useCallback(() => {
-    if (!activeSessionId) return;
-    safeInvoke("close_session", { sessionId: activeSessionId }, (msg) => addToast({ type: "error", message: msg }))
-      .then(() => {
-        setActiveSessionId(null);
-        refreshSessions();
-      })
-      .catch(console.error);
-  }, [activeSessionId, setActiveSessionId, refreshSessions, addToast]);
-
   useKeyboardShortcuts([
     { key: "?", shift: true, handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
     { code: "BracketRight", meta: true, shift: true, handler: () => handleCycle(1) },
     { code: "BracketLeft", meta: true, shift: true, handler: () => handleCycle(-1) },
-    { key: "ArrowDown", meta: true, alt: true, handler: () => handleCycle(1), ignoreInputs: true },
-    { key: "ArrowUp", meta: true, alt: true, handler: () => handleCycle(-1), ignoreInputs: true },
+    { key: "ArrowDown", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('down'), ignoreInputs: true },
+    { key: "ArrowUp", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('up'), ignoreInputs: true },
+    { key: "ArrowLeft", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('left'), ignoreInputs: true },
+    { key: "ArrowRight", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('right'), ignoreInputs: true },
+    { key: "v", meta: true, alt: true, handler: () => panelActionsRef.current?.splitFocused('vertical'), ignoreInputs: true },
+    { key: "h", meta: true, alt: true, handler: () => panelActionsRef.current?.splitFocused('horizontal'), ignoreInputs: true },
+    { key: "w", meta: true, handler: () => panelActionsRef.current?.closePanel(), ignoreInputs: true },
     { key: "Enter", meta: true, shift: true, handler: () => toggleZoomRef.current?.() },
     { key: "n", meta: true, handler: () => setShowNewSessionDialog(true), ignoreInputs: true },
-    { key: "w", meta: true, handler: handleCloseSession, ignoreInputs: true },
     { code: "Backslash", meta: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), ignoreInputs: true },
   ]);
 
@@ -611,6 +696,7 @@ function KeyboardShortcutsHandler({ toggleZoomRef }: { toggleZoomRef: React.RefO
 
 function App() {
   const toggleZoomRef = useRef<(() => void) | null>(null);
+  const panelActionsRef = useRef<PanelActions | null>(null);
 
   return (
     <ToastProvider>
@@ -620,10 +706,10 @@ function App() {
             <SessionSidebar />
           </ErrorBoundary>
           <ErrorBoundary name="Workspace">
-            <MainArea toggleZoomRef={toggleZoomRef} />
+            <MainArea toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} />
           </ErrorBoundary>
         </div>
-        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} />
+        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} />
       </SessionProvider>
       <ToastContainer />
     </ToastProvider>

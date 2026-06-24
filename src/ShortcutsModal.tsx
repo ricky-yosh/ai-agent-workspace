@@ -15,11 +15,8 @@ const groups: ShortcutGroup[] = [
   {
     group: "Session Navigation",
     shortcuts: [
-      { keys: "⌘⌥ ↑", action: "Next Session" },
-      { keys: "⌘⌥ ↓", action: "Previous Session" },
       { keys: "⌘⇧ ]", action: "Next Session" },
       { keys: "⌘⇧ [", action: "Previous Session" },
-      { keys: "⌘W", action: "Close Session" },
     ],
   },
   {
@@ -27,6 +24,24 @@ const groups: ShortcutGroup[] = [
     shortcuts: [
       { keys: "^ Tab", action: "Next Tab" },
       { keys: "^ ⇧ Tab", action: "Previous Tab" },
+    ],
+  },
+  {
+    group: "Panel Navigation",
+    shortcuts: [
+      { keys: "⌘⌥ ↑", action: "Focus panel above" },
+      { keys: "⌘⌥ ↓", action: "Focus panel below" },
+      { keys: "⌘⌥ ←", action: "Focus panel left" },
+      { keys: "⌘⌥ →", action: "Focus panel right" },
+    ],
+  },
+  {
+    group: "Panel Actions",
+    shortcuts: [
+      { keys: "⌘W", action: "Close focused panel" },
+      { keys: "⌘⌥ V", action: "Split panel vertically" },
+      { keys: "⌘⌥ H", action: "Split panel horizontally" },
+      { keys: "⌘⇧↵", action: "Zoom focused panel" },
     ],
   },
   {
@@ -41,12 +56,6 @@ const groups: ShortcutGroup[] = [
     shortcuts: [
       { keys: "?", action: "Show keyboard shortcuts" },
       { keys: "Esc", action: "Close dialog / Cancel" },
-    ],
-  },
-  {
-    group: "Panels",
-    shortcuts: [
-      { keys: "⌘⇧↵", action: "Zoom focused panel" },
     ],
   },
 ];
