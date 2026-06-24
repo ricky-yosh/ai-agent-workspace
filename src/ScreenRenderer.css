@@ -15,7 +15,7 @@
 }
 
 .screen-area:not(.screen-area--focused):not(.screen-area--exiting) {
-  filter: brightness(0.7);
+  filter: brightness(0.85);
 }
 
 :root[data-motion="full"] .screen-area {
@@ -41,6 +41,11 @@
 
 .screen-area--focused .screen-area-content {
   background: var(--bg-panel-raised);
+}
+
+.screen-area-content--terminal,
+.screen-area--focused .screen-area-content--terminal {
+  background: var(--bg-primary);
 }
 
 .screen-area-unknown {

@@ -1139,7 +1139,7 @@ export default function ScreenRenderer({
                   focusedAreaId,
                 }}
               >
-                <div className="screen-area-content">
+                <div className={"screen-area-content" + (area.panel_type === "terminal" ? " screen-area-content--terminal" : "")}>
                   <PanelTypeSelector
                     currentType={area.panel_type}
                     onTypeSelect={(newType) =>
