@@ -12,6 +12,7 @@ import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
 import { matchesAnyShortcut, TERMINAL_PASSTHROUGH_SHORTCUTS } from "./App";
+import type { Screen } from "./types/screen";
 import { safeInvoke } from "./safeInvoke";
 import { requestWebgl, releaseWebgl, disposeWebgl } from "./webglPool";
 
@@ -309,6 +310,8 @@ function usePty(
   sessionId: string,
   workspaceId: string,
   areaId: string,
+  onFocusedAreaChange: (areaId: string) => void,
+  onScreenChange: (screen: Screen) => void,
 ): { isSpawning: boolean; isExited: boolean; restartTerminal: () => void } {
   const [isSpawning, setIsSpawning] = useState(true);
   const [isExited, setIsExited] = useState(false);
@@ -357,13 +360,19 @@ function usePty(
       c.ptyId = null;
       if (!isMounted.current) return;
 
-      safeInvoke("close_area", {
+      safeInvoke<{ current_screen: Screen }>("close_area", {
         sessionId,
         workspaceId,
         areaId,
       })
-        .then(() => {
+        .then((r) => {
           disposeTerminal(terminalId);
+          onScreenChange(r.current_screen);
+          const areas = r.current_screen.areas;
+          if (areas.length > 0) {
+            const firstTerminal = areas.find(a => a.panel_type === "terminal");
+            onFocusedAreaChange(firstTerminal?.id ?? areas[0].id);
+          }
         })
         .catch(() => {
           setIsExited(true);
@@ -375,7 +384,7 @@ function usePty(
       isMounted.current = false;
       ptyExitCallbacks.delete(terminalId);
     };
-  }, [cacheKey, sessionId, workspaceId, areaId, terminalId]);
+  }, [cacheKey, sessionId, workspaceId, areaId, terminalId, onFocusedAreaChange, onScreenChange]);
 
   return { isSpawning, isExited, restartTerminal };
 }
@@ -463,7 +472,12 @@ function useTerminalResize(
 function useTerminalReveal(
   containerRef: RefObject<HTMLDivElement | null>,
   cacheKey: string,
+  areaId: string,
+  focusedAreaId: string | null,
 ): void {
+  const focusedAreaIdRef = useRef(focusedAreaId);
+  focusedAreaIdRef.current = focusedAreaId;
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -482,10 +496,12 @@ function useTerminalReveal(
           const revealed = terminalCache.get(cacheKey);
           if (revealed) requestWebgl(cacheKey, revealed.terminal);
           // After the pane has laid out post-reveal, fit the terminal to the
-          // settled container size and focus it. Without this, a terminal first
-          // revealed during the display:none->block transition gets fit against
-          // a not-yet-laid-out container and stays stuck at ~80x24 in the corner.
+          // settled container size and focus it. Only focus if this panel is
+          // currently the focused one — otherwise a layout reflow (e.g. after
+          // closing a panel) triggers this observer on every surviving panel
+          // and steals DOM focus from the panel that was just focused.
           setTimeout(() => {
+            if (focusedAreaIdRef.current !== areaId) return;
             const c = terminalCache.get(cacheKey);
             if (!c) return;
             c.fitAddon.fit();
@@ -506,21 +522,21 @@ function useTerminalReveal(
     return () => {
       observer.disconnect();
     };
-  }, [cacheKey]);
+  }, [cacheKey, areaId]);
 }
 
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId, focusedAreaId } = usePanelContext();
+  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId, focusedAreaId, onFocusedAreaChange, onScreenChange } = usePanelContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalIdRef = useRef(contextTerminalId ?? crypto.randomUUID());
   const terminalId = terminalIdRef.current;
   const cacheKey = terminalId;
 
   useXtermTerminal(containerRef, cacheKey);
-  const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId, _workspaceId, _areaId);
+  const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId, _workspaceId, _areaId, onFocusedAreaChange, onScreenChange);
   useTerminalDragDrop(cacheKey);
   useTerminalResize(containerRef, cacheKey);
-  useTerminalReveal(containerRef, cacheKey);
+  useTerminalReveal(containerRef, cacheKey, _areaId, focusedAreaId);
 
   useEffect(() => {
     if (focusedAreaId === _areaId) {

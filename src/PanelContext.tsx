@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { Screen } from "./types/screen";
 
 export interface PanelContextType {
   workspaceId: string;
@@ -6,6 +7,8 @@ export interface PanelContextType {
   areaId: string;
   terminalId: string | null;
   focusedAreaId: string | null;
+  onFocusedAreaChange: (areaId: string) => void;
+  onScreenChange: (screen: Screen) => void;
 }
 
 export const PanelContext = createContext<PanelContextType | null>(null);

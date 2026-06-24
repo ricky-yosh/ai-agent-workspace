@@ -71,6 +71,10 @@ export default function ScreenRenderer({
   onScreenChange,
   onError,
 }: ScreenRendererProps) {
+  const handleFocusChange = useCallback((areaId: string) => {
+    onFocusedAreaChange?.(areaId);
+  }, [onFocusedAreaChange]);
+
   // ---------- Refs for stable closures ----------
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef(sessionId);
@@ -1137,6 +1141,8 @@ export default function ScreenRenderer({
                   areaId: area.id,
                   terminalId: area.terminal_id,
                   focusedAreaId,
+                  onFocusedAreaChange: handleFocusChange,
+                  onScreenChange,
                 }}
               >
                 <div className={"screen-area-content" + (area.panel_type === "terminal" ? " screen-area-content--terminal" : "")}>
