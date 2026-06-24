@@ -6,6 +6,21 @@ interface ShortcutEntry {
   action: string;
 }
 
+function splitKeys(keys: string): string[] {
+  const parts: string[] = [];
+  for (const segment of keys.split(" ")) {
+    let i = 0;
+    while (i < segment.length && "⌘⌥⇧^".includes(segment[i])) {
+      parts.push(segment[i]);
+      i++;
+    }
+    if (i < segment.length) {
+      parts.push(segment.slice(i));
+    }
+  }
+  return parts;
+}
+
 interface ShortcutGroup {
   group: string;
   shortcuts: ShortcutEntry[];
@@ -29,18 +44,18 @@ const groups: ShortcutGroup[] = [
   {
     group: "Panel Navigation",
     shortcuts: [
-      { keys: "⌘⌥ ↑", action: "Focus panel above" },
-      { keys: "⌘⌥ ↓", action: "Focus panel below" },
-      { keys: "⌘⌥ ←", action: "Focus panel left" },
-      { keys: "⌘⌥ →", action: "Focus panel right" },
+      { keys: "⌘⇧ ↑", action: "Focus panel above" },
+      { keys: "⌘⇧ ↓", action: "Focus panel below" },
+      { keys: "⌘⇧ ←", action: "Focus panel left" },
+      { keys: "⌘⇧ →", action: "Focus panel right" },
     ],
   },
   {
     group: "Panel Actions",
     shortcuts: [
       { keys: "⌘W", action: "Close focused panel" },
-      { keys: "⌘⌥ V", action: "Split panel vertically" },
-      { keys: "⌘⌥ H", action: "Split panel horizontally" },
+      { keys: "⌘D", action: "Split panel vertically" },
+      { keys: "⌘⇧ D", action: "Split panel horizontally" },
       { keys: "⌘⇧↵", action: "Zoom focused panel" },
     ],
   },
@@ -105,7 +120,11 @@ export default function ShortcutsModal({ open, onClose }: { open: boolean; onClo
               <div className="shortcuts-group-title">{g.group}</div>
               {g.shortcuts.map((s) => (
                 <div key={s.keys + s.action} className="shortcuts-row">
-                  <kbd className="shortcuts-keys">{s.keys}</kbd>
+                  <span className="shortcuts-keys">
+                    {splitKeys(s.keys).map((k, i) => (
+                      <kbd key={i}>{k}</kbd>
+                    ))}
+                  </span>
                   <span className="shortcuts-action">{s.action}</span>
                 </div>
               ))}

@@ -12,6 +12,7 @@ import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
 import { matchesAnyShortcut, TERMINAL_PASSTHROUGH_SHORTCUTS } from "./App";
+import { safeInvoke } from "./safeInvoke";
 import { requestWebgl, releaseWebgl, disposeWebgl } from "./webglPool";
 
 interface CachedTerminal {
@@ -306,6 +307,8 @@ function usePty(
   cacheKey: string,
   terminalId: string,
   sessionId: string,
+  workspaceId: string,
+  areaId: string,
 ): { isSpawning: boolean; isExited: boolean; restartTerminal: () => void } {
   const [isSpawning, setIsSpawning] = useState(true);
   const [isExited, setIsExited] = useState(false);
@@ -352,17 +355,27 @@ function usePty(
       const c = terminalCache.get(cacheKey);
       if (!c) return;
       c.ptyId = null;
-      if (isMounted.current) {
-        setIsExited(true);
-        setIsSpawning(false);
-      }
+      if (!isMounted.current) return;
+
+      safeInvoke("close_area", {
+        sessionId,
+        workspaceId,
+        areaId,
+      })
+        .then(() => {
+          disposeTerminal(terminalId);
+        })
+        .catch(() => {
+          setIsExited(true);
+          setIsSpawning(false);
+        });
     });
 
     return () => {
       isMounted.current = false;
       ptyExitCallbacks.delete(terminalId);
     };
-  }, [cacheKey, sessionId]);
+  }, [cacheKey, sessionId, workspaceId, areaId, terminalId]);
 
   return { isSpawning, isExited, restartTerminal };
 }
@@ -497,17 +510,26 @@ function useTerminalReveal(
 }
 
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId } = usePanelContext();
+  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId, focusedAreaId } = usePanelContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalIdRef = useRef(contextTerminalId ?? crypto.randomUUID());
   const terminalId = terminalIdRef.current;
   const cacheKey = terminalId;
 
   useXtermTerminal(containerRef, cacheKey);
-  const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId);
+  const { isSpawning, isExited, restartTerminal } = usePty(cacheKey, terminalId, sessionId, _workspaceId, _areaId);
   useTerminalDragDrop(cacheKey);
   useTerminalResize(containerRef, cacheKey);
   useTerminalReveal(containerRef, cacheKey);
+
+  useEffect(() => {
+    if (focusedAreaId === _areaId) {
+      const c = terminalCache.get(cacheKey);
+      if (c?.terminal) {
+        c.terminal.focus();
+      }
+    }
+  }, [focusedAreaId, _areaId, cacheKey]);
 
   return (
     <div style={{ position: "relative", width: "100%", flex: 1, minHeight: 0 }}>

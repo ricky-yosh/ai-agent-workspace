@@ -67,15 +67,15 @@ export function matchesAnyShortcut(e: KeyboardEvent, specs: ShortcutSpec[]): boo
 export const TERMINAL_PASSTHROUGH_SHORTCUTS: ShortcutSpec[] = [
   { code: "BracketRight", meta: true, shift: true },
   { code: "BracketLeft", meta: true, shift: true },
-  { key: "ArrowDown", meta: true, alt: true },
-  { key: "ArrowUp", meta: true, alt: true },
-  { key: "ArrowLeft", meta: true, alt: true },
-  { key: "ArrowRight", meta: true, alt: true },
+  { key: "ArrowDown", meta: true, shift: true },
+  { key: "ArrowUp", meta: true, shift: true },
+  { key: "ArrowLeft", meta: true, shift: true },
+  { key: "ArrowRight", meta: true, shift: true },
   { key: "Enter", meta: true, shift: true },
   { key: "n", meta: true },
   { key: "w", meta: true },
-  { key: "v", meta: true, alt: true },
-  { key: "h", meta: true, alt: true },
+  { key: "d", meta: true },
+  { key: "d", meta: true, shift: true },
   { code: "Backslash", meta: true },
   { key: "Tab", ctrl: true },
   { key: "Tab", ctrl: true, shift: true },
@@ -457,10 +457,21 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
   const navigateFocus = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
     const focusedId = focusedAreaIdRef.current;
     const ctx = panelContextRef.current;
-    if (!focusedId || !ctx.screen) return;
+    if (!ctx.screen) return;
+
+    const terminals = ctx.screen.areas.filter(a => a.panel_type === "terminal");
+    const candidates = terminals.length > 0 ? terminals : ctx.screen.areas;
+
+    if (!focusedId) {
+      setFocusedAreaId(candidates[0]?.id ?? null);
+      return;
+    }
 
     const focusedArea = ctx.screen.areas.find(a => a.id === focusedId);
-    if (!focusedArea) return;
+    if (!focusedArea) {
+      setFocusedAreaId(candidates[0]?.id ?? null);
+      return;
+    }
 
     const vertexMap = new Map(ctx.screen.vertices.map(v => [v.id, v]));
 
@@ -468,7 +479,7 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
       up: 'north', down: 'south', left: 'west', right: 'east'
     };
 
-    const target = ctx.screen.areas.find(a =>
+    const target = candidates.find(a =>
       a.id !== focusedId && getAdjacency(focusedArea, a, vertexMap) === dirMap[direction]
     );
 
@@ -480,6 +491,8 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
     const ctx = panelContextRef.current;
     if (!focusedId || !ctx.workspaceId || !ctx.sessionId) return;
 
+    const oldAreaIds = new Set(ctx.screen?.areas.map(a => a.id) ?? []);
+
     safeInvoke<WorkspaceInstance>("split_area", {
       sessionId: ctx.sessionId,
       workspaceId: ctx.workspaceId,
@@ -487,7 +500,11 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
       axis,
       factor: 0.5,
     }, onError)
-      .then(r => handleScreenChange(ctx.workspaceId, r.current_screen))
+      .then(r => {
+        handleScreenChange(ctx.workspaceId, r.current_screen);
+        const newArea = r.current_screen.areas.find(a => !oldAreaIds.has(a.id));
+        if (newArea) setFocusedAreaId(newArea.id);
+      })
       .catch(() => {});
   }, [onError, handleScreenChange]);
 
@@ -509,7 +526,13 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
     }, onError)
       .then(r => {
         handleScreenChange(ctx.workspaceId, r.current_screen);
-        setFocusedAreaId(null);
+        const areas = r.current_screen.areas;
+        if (areas.length > 0) {
+          const firstTerminal = areas.find(a => a.panel_type === "terminal");
+          setFocusedAreaId(firstTerminal?.id ?? areas[0].id);
+        } else {
+          setFocusedAreaId(null);
+        }
       })
       .catch(() => {});
   }, [onError, handleScreenChange]);
@@ -520,7 +543,13 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
 
   useEffect(() => {
     setZoomedAreaId(null);
-    setFocusedAreaId(null);
+    const screen = activeWorkspace?.current_screen;
+    if (screen && screen.areas.length > 0) {
+      const firstTerminal = screen.areas.find(a => a.panel_type === "terminal");
+      setFocusedAreaId(firstTerminal?.id ?? screen.areas[0].id);
+    } else {
+      setFocusedAreaId(null);
+    }
   }, [activeWorkspace?.id]);
 
   const refreshTemplates = useCallback(() => {
@@ -679,12 +708,12 @@ function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef }: { toggleZo
     { key: "?", shift: true, handler: () => setShowShortcuts((v) => !v), ignoreInputs: true },
     { code: "BracketRight", meta: true, shift: true, handler: () => handleCycle(1) },
     { code: "BracketLeft", meta: true, shift: true, handler: () => handleCycle(-1) },
-    { key: "ArrowDown", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('down'), ignoreInputs: true },
-    { key: "ArrowUp", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('up'), ignoreInputs: true },
-    { key: "ArrowLeft", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('left'), ignoreInputs: true },
-    { key: "ArrowRight", meta: true, alt: true, handler: () => panelActionsRef.current?.navigateFocus('right'), ignoreInputs: true },
-    { key: "v", meta: true, alt: true, handler: () => panelActionsRef.current?.splitFocused('vertical'), ignoreInputs: true },
-    { key: "h", meta: true, alt: true, handler: () => panelActionsRef.current?.splitFocused('horizontal'), ignoreInputs: true },
+    { key: "ArrowDown", meta: true, shift: true, handler: () => panelActionsRef.current?.navigateFocus('down'), ignoreInputs: true },
+    { key: "ArrowUp", meta: true, shift: true, handler: () => panelActionsRef.current?.navigateFocus('up'), ignoreInputs: true },
+    { key: "ArrowLeft", meta: true, shift: true, handler: () => panelActionsRef.current?.navigateFocus('left'), ignoreInputs: true },
+    { key: "ArrowRight", meta: true, shift: true, handler: () => panelActionsRef.current?.navigateFocus('right'), ignoreInputs: true },
+    { key: "d", meta: true, handler: () => panelActionsRef.current?.splitFocused('vertical'), ignoreInputs: true },
+    { key: "d", meta: true, shift: true, handler: () => panelActionsRef.current?.splitFocused('horizontal'), ignoreInputs: true },
     { key: "w", meta: true, handler: () => panelActionsRef.current?.closePanel(), ignoreInputs: true },
     { key: "Enter", meta: true, shift: true, handler: () => toggleZoomRef.current?.() },
     { key: "n", meta: true, handler: () => setShowNewSessionDialog(true), ignoreInputs: true },
