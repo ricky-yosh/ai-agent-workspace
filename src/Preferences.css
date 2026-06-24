@@ -226,7 +226,7 @@ body {
 }
 
 .confirm-delete-btn:hover:not(:disabled) {
-  background: #b71c1c;
+  background: var(--danger-color-dark);
 }
 
 .confirm-delete-btn:disabled {

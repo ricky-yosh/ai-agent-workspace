@@ -405,7 +405,7 @@
 .rename-input {
   font-size: 13px;
   padding: 2px 4px;
-  background: #3c3c3c;
+  background: var(--bg-input);
   border: 1px solid var(--accent-color);
   border-radius: 3px;
   color: var(--text-primary);

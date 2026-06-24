@@ -68,7 +68,7 @@
 
 .dialog-input {
   padding: 8px 10px;
-  background: #3c3c3c;
+  background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-control);
   color: var(--text-primary);
@@ -125,12 +125,12 @@
 
 .dialog-dropzone.has-value {
   border-style: solid;
-  background: #3c3c3c;
+  background: var(--bg-input);
   color: var(--text-primary);
 }
 
 .dialog-dropzone.has-value:hover {
-  background: #4a4a4a;
+  background: var(--bg-input-hover);
   border-color: var(--text-muted);
 }
 
@@ -187,13 +187,13 @@
   border-radius: var(--radius-control);
   font-size: 13px;
   cursor: pointer;
-  background: #3c3c3c;
+  background: var(--bg-input);
   color: var(--text-primary);
   font-family: inherit;
 }
 
 .dialog-btn:hover {
-  background: #4a4a4a;
+  background: var(--bg-input-hover);
 }
 
 .dialog-btn-create {
@@ -203,7 +203,7 @@
 }
 
 .dialog-btn-create:hover {
-  background: #1a8cff;
+  background: var(--accent-color-hover);
 }
 
 .dialog-btn-create:disabled {
@@ -228,7 +228,7 @@
 }
 
 .dialog-btn-primary:hover {
-  background: #1a8cff;
+  background: var(--accent-color-hover);
 }
 
 .dialog-confirm-text {

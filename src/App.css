@@ -8,7 +8,11 @@
   --text-dim: #888888;
   --border-color: #3c3c3c;
   --accent-color: #0078d4;
+  --accent-color-hover: #1a8cff;
   --danger-color: #d32f2f;
+  --danger-color-dark: #b71c1c;
+  --bg-input: #3c3c3c;
+  --bg-input-hover: #4a4a4a;
   --dot-running: #4caf50;
   --dot-paused: #ff9800;
   --dot-missing: #f44336;
@@ -40,7 +44,7 @@ body {
     Helvetica, Arial, sans-serif;
   font-size: 13px;
   color: var(--text-primary);
-  background: #121212;
+  background: var(--canvas-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -58,7 +62,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #121212;
+  background: var(--canvas-bg);
   overflow: hidden;
 }
 

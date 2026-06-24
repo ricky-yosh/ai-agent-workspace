@@ -210,7 +210,7 @@
 }
 
 .template-rename-confirm:hover {
-  background: #1a8cff;
+  background: var(--accent-color-hover);
 }
 
 .template-in-use-badge {
