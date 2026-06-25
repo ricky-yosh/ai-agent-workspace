@@ -498,7 +498,7 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
       workspaceId: ctx.workspaceId,
       areaId: focusedId,
       axis,
-      factor: 0.5,
+      factor: axis === "vertical" ? 0.6 : 0.4,
     }, onError)
       .then(r => {
         handleScreenChange(ctx.workspaceId, r.current_screen);
