@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, type RefObject } from "react";
-import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput, Pencil, X } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
 import { safeInvoke } from "./safeInvoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -243,16 +243,10 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
     showNewSessionDialog, setShowNewSessionDialog,
     sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
-    null,
-  );
-  const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sessionActionsId, setSessionActionsId] = useState<string | null>(null);
 
   const { addToast } = useToast();
-  const renameInputRef = useRef<HTMLInputElement>(null);
-
   const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
 
   useEffect(() => {
@@ -299,24 +293,6 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
     }).catch(console.error);
   }
 
-  function handleStartRename(session: SessionSummary) {
-    setRenamingSessionId(session.id);
-    setRenameValue(session.name);
-    setTimeout(() => renameInputRef.current?.focus(), 0);
-  }
-
-  function handleSaveRename(sessionId: string) {
-    if (renameValue.trim()) {
-      safeInvoke("rename_session", {
-        sessionId,
-        newName: renameValue.trim(),
-      }, (msg) => addToast({ type: "error", message: msg })).then(() => {
-        refreshSessions();
-      }).catch(console.error);
-    }
-    setRenamingSessionId(null);
-  }
-
   function handleDelete(sessionId: string) {
     safeInvoke("delete_session", { sessionId }, (msg) => addToast({ type: "error", message: msg })).then(() => {
       setDeleteConfirmId(null);
@@ -333,10 +309,8 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
       setDeleteConfirmId(null);
     } else if (showNewSessionDialog) {
       setShowNewSessionDialog(false);
-    } else if (renamingSessionId) {
-      setRenamingSessionId(null);
     }
-  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, sessionActionsId]);
+  }, [showNewSessionDialog, deleteConfirmId, sessionActionsId]);
 
   const contextSession = sessionActionsId
     ? sessions.find((s) => s.id === sessionActionsId)
@@ -529,9 +503,6 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
                         } else if (e.key === " ") {
                           e.preventDefault();
                           setSessionActionsId(s.id);
-                        } else if (e.key === "Delete" || e.key === "Backspace") {
-                          e.preventDefault();
-                          setDeleteConfirmId(s.id);
                         }
                       }}
                       role="button"
@@ -550,47 +521,8 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
                         aria-hidden="true"
                         title={s.state}
                       />
-                      {renamingSessionId === s.id ? (
-                          <input
-                            ref={renameInputRef}
-                            className="rename-input"
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => handleSaveRename(s.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveRename(s.id);
-                              if (e.key === "Escape") setRenamingSessionId(null);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          <span className="session-name">{s.name}</span>
-                        )}
+                      <span className="session-name">{s.name}</span>
                       </div>
-                      <div className="session-actions">
-                      <button
-                        className="session-action-btn"
-                        title="Rename"
-                        aria-label={`Rename ${s.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartRename(s);
-                        }}
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        className="session-action-btn"
-                        title="Delete"
-                        aria-label={`Delete ${s.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirmId(s.id);
-                        }}
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -656,6 +588,16 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
         onOpenInTerminal={handleOpenInTerminal}
         onCopyId={handleCopySessionId}
         onCopyPath={handleCopySessionPath}
+        onRename={(newName) => {
+          if (contextSession) {
+            safeInvoke("rename_session", { sessionId: contextSession.id, newName }, (msg) => addToast({ type: "error", message: msg }))
+              .then(() => refreshSessions())
+              .catch(console.error);
+          }
+        }}
+        onDelete={() => {
+          if (contextSession) setDeleteConfirmId(contextSession.id);
+        }}
       />
     </>
   );

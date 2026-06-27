@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Folder,
   FileCode2,
@@ -7,6 +7,8 @@ import {
   Hash,
   Clipboard,
   Check,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import type { SessionSummary } from "./SessionContext";
 import "./SessionActionsModal.css";
@@ -21,13 +23,18 @@ interface SessionActionsModalProps {
   onOpenInTerminal: () => void;
   onCopyId: () => void;
   onCopyPath: () => void;
+  onRename: (newName: string) => void;
+  onDelete: () => void;
 }
 
 interface Action {
   key: string;
+  matchKey?: string;   // e.key value for non-letter keys
   label: string;
   handler: () => void;
   icon: React.ElementType;
+  destructive?: boolean;
+  immediate?: boolean; // skip checkmark flash, call handler directly
 }
 
 export default function SessionActionsModal({
@@ -40,21 +47,35 @@ export default function SessionActionsModal({
   onOpenInTerminal,
   onCopyId,
   onCopyPath,
+  onRename,
+  onDelete,
 }: SessionActionsModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
 
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+
+  useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renaming]);
 
   useEffect(() => {
     if (open) {
       setMounted(true);
       setActiveIndex(0);
       setConfirmedKey(null);
+      setRenaming(false);
+      setRenameValue("");
       const raf = requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
       return () => cancelAnimationFrame(raf);
     } else if (mounted) {
@@ -82,9 +103,17 @@ export default function SessionActionsModal({
     { key: "T", label: "Open in Terminal", handler: onOpenInTerminal, icon: Terminal },
     { key: "I", label: "Copy Session ID", handler: onCopyId, icon: Hash },
     { key: "P", label: "Copy Session Path", handler: onCopyPath, icon: Clipboard },
+    { key: "R", label: "Rename", handler: () => { setRenaming(true); setRenameValue(session?.name ?? ""); }, icon: Pencil, immediate: true },
+    { key: "⌫", matchKey: "Backspace", label: "Delete Session", handler: onDelete, icon: Trash2, destructive: true },
   ];
 
+  const dividerAfterIndex = 5; // divider between tool actions and session management
+
   function triggerAction(action: Action) {
+    if (action.immediate) {
+      action.handler();
+      return;
+    }
     setConfirmedKey(action.key);
     setTimeout(() => {
       action.handler();
@@ -92,7 +121,19 @@ export default function SessionActionsModal({
     }, 160);
   }
 
+  function submitRename() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== session?.name) onRename(trimmed);
+    onClose();
+  }
+
+  function cancelRename() {
+    setRenaming(false);
+    dialogRef.current?.focus();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (renaming) return;
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -120,15 +161,19 @@ export default function SessionActionsModal({
         e.preventDefault();
         onClose();
         break;
+      case "Backspace":
+      case "Delete": {
+        if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+          const action = actions.find((a) => a.matchKey === "Backspace");
+          if (action) { e.preventDefault(); triggerAction(action); }
+        }
+        break;
+      }
       default: {
-        // Single-letter hotkeys
         if (!e.metaKey && !e.ctrlKey && !e.altKey) {
           const upper = e.key.toUpperCase();
-          const action = actions.find((a) => a.key === upper);
-          if (action) {
-            e.preventDefault();
-            triggerAction(action);
-          }
+          const action = actions.find((a) => a.key === upper && !a.matchKey);
+          if (action) { e.preventDefault(); triggerAction(action); }
         }
         break;
       }
@@ -173,7 +218,22 @@ export default function SessionActionsModal({
             <Terminal size={11} className="session-actions-context-icon" />
             Session
           </span>
-          <span className="session-actions-name">{session?.name ?? ""}</span>
+          {renaming ? (
+            <input
+              ref={renameInputRef}
+              className="session-actions-rename-input"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") submitRename();
+                if (e.key === "Escape") cancelRename();
+              }}
+              onBlur={submitRename}
+            />
+          ) : (
+            <span className="session-actions-name">{session?.name ?? ""}</span>
+          )}
         </div>
 
         <div className="session-actions-list" role="list">
@@ -182,24 +242,28 @@ export default function SessionActionsModal({
             const isActive = idx === activeIndex;
             const isConfirmed = confirmedKey === action.key;
             return (
-              <button
-                key={action.key}
-                ref={getItemRef(idx)}
-                className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}`}
-                role="listitem"
-                disabled={confirmedKey !== null}
-                onClick={() => triggerAction(action)}
-                onMouseEnter={() => { if (!confirmedKey) setActiveIndex(idx); }}
-              >
-                <span className="session-actions-row-left">
-                  {isConfirmed
-                    ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
-                    : <Icon size={15} className="session-actions-icon" />
-                  }
-                  <span className="session-actions-label">{action.label}</span>
-                </span>
-                <kbd className="session-actions-kbd">{action.key}</kbd>
-              </button>
+              <React.Fragment key={action.key}>
+                {idx === dividerAfterIndex + 1 && (
+                  <div className="session-actions-divider" role="separator" />
+                )}
+                <button
+                  ref={getItemRef(idx)}
+                  className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}${action.destructive ? " session-actions-item--destructive" : ""}`}
+                  role="listitem"
+                  disabled={confirmedKey !== null || renaming}
+                  onClick={() => triggerAction(action)}
+                  onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
+                >
+                  <span className="session-actions-row-left">
+                    {isConfirmed
+                      ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
+                      : <Icon size={15} className="session-actions-icon" />
+                    }
+                    <span className="session-actions-label">{action.label}</span>
+                  </span>
+                  <kbd className="session-actions-kbd">{action.key}</kbd>
+                </button>
+              </React.Fragment>
             );
           })}
         </div>

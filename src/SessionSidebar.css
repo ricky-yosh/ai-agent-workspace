@@ -364,29 +364,8 @@
   text-overflow: ellipsis;
 }
 
-.session-actions {
-  display: flex;
-  gap: 0px;
-  flex-shrink: 0;
-  width: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition: width 0.15s cubic-bezier(0.2, 0, 0, 1),
-              opacity 0.15s cubic-bezier(0.2, 0, 0, 1),
-              gap 0.15s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.session-row:hover .session-actions,
-.session-row:focus-within .session-actions {
-  width: 52px;
-  gap: 2px;
-  opacity: 1;
-  pointer-events: auto;
-}
 
 .session-row:focus-visible,
-.session-action-btn:focus-visible,
 .sidebar-collapsed-session:focus-visible,
 .sidebar-title-back:focus-visible,
 .new-session-btn:focus-visible,
@@ -395,46 +374,6 @@
   box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
 }
 
-.session-action-btn {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  background: none;
-  border: none;
-  border-radius: 3px;
-  color: var(--text-dim);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-}
-
-.session-action-btn::after {
-  content: "";
-  position: absolute;
-  inset: -8px;
-}
-
-.session-action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
-}
-
-.rename-input {
-  font-size: 13px;
-  padding: 2px 4px;
-  background: var(--bg-input);
-  border: 1px solid var(--accent-color);
-  border-radius: 3px;
-  color: var(--text-primary);
-  outline: none;
-  width: 100%;
-  min-width: 0;
-  font-family: inherit;
-}
 
 /* Resize handle lives in the gutter between the sidebar and the panels.
    Positioned absolutely against .app-layout; `left` tracks the sidebar width. */
@@ -487,13 +426,6 @@
   transform: scale(0.96);
 }
 
-:root[data-motion="full"] .session-action-btn {
-  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-motion="full"] .session-action-btn:active {
-  transform: scale(0.96);
-}
 
 :root[data-motion="full"] .session-row {
   transition: background 80ms ease, box-shadow 80ms ease, transform 80ms cubic-bezier(0.2, 0, 0, 1);
