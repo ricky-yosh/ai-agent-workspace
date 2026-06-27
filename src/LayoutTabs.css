@@ -127,10 +127,6 @@
   background: var(--bg-hover);
 }
 
-.layout-tabs-add:hover svg {
-  transform: rotate(90deg);
-}
-
 .layout-tabs-dropdown {
   position: fixed;
   min-width: 180px;
@@ -194,10 +190,3 @@
   transform: scale(0.96);
 }
 
-:root[data-motion="full"] .layout-tabs-add svg {
-  transition: transform 0.15s ease;
-}
-
-:root[data-motion="full"] .layout-tabs-add:hover svg {
-  transform: rotate(90deg);
-}
