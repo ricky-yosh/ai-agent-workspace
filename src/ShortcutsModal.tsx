@@ -37,6 +37,8 @@ const groups: ShortcutGroup[] = [
   {
     group: "Workspace Tabs",
     shortcuts: [
+      { keys: "⌘T", action: "New Workspace" },
+      { keys: "⌘'", action: "Tab actions" },
       { keys: "^ Tab", action: "Next Tab" },
       { keys: "^ ⇧ Tab", action: "Previous Tab" },
     ],
@@ -63,6 +65,7 @@ const groups: ShortcutGroup[] = [
     group: "Session Management",
     shortcuts: [
       { keys: "⌘N", action: "New Session" },
+      { keys: "⌘;", action: "Session actions" },
       { keys: "⌘\\", action: "Toggle Sidebar" },
     ],
   },

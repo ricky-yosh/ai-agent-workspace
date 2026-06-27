@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+import type { RefObject } from "react";
 import { Plus } from "lucide-react";
-import type { Layout, Screen } from "./types/screen";
-import { useAnchoredPosition } from "./hooks/useAnchoredPosition";
+import type { Screen } from "./types/screen";
+import TabActionsModal from "./TabActionsModal";
 import "./LayoutTabs.css";
-import "./ContextMenu.css";
 
 interface WorkspaceInstance {
   id: string;
@@ -16,38 +15,34 @@ interface WorkspaceInstance {
 interface LayoutTabsProps {
   workspaces: WorkspaceInstance[];
   activeWorkspaceId: string | null;
-  templates: Layout[];
   onWorkspaceSwitch: (workspaceId: string) => void;
-  onAddWorkspace: (templateId: string) => void;
   onCloseWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, newName: string) => void;
   onResetToTemplate: (workspaceId: string) => void;
   onSaveAsTemplate: (screen: Screen) => void;
-  onOpenTemplateManager: () => void;
+  onOpenNewWorkspace: () => void;
+  onManageTemplates: () => void;
+  openTabActionsRef?: RefObject<(() => void) | null>;
+  closeTabActionsRef?: RefObject<(() => void) | null>;
 }
 
 export default function LayoutTabs({
   workspaces,
   activeWorkspaceId,
-  templates,
   onWorkspaceSwitch,
-  onAddWorkspace,
   onCloseWorkspace,
   onRenameWorkspace,
   onResetToTemplate,
   onSaveAsTemplate,
-  onOpenTemplateManager,
+  onOpenNewWorkspace,
+  onManageTemplates,
+  openTabActionsRef,
+  closeTabActionsRef,
 }: LayoutTabsProps) {
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wsId: string } | null>(null);
-  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [dropdownVisible, setDropdownVisible] = useState(false);
+  const [tabActionsWsId, setTabActionsWsId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const ctxMenuRef = useRef<HTMLDivElement>(null);
-  const dropdownMenuRef = useRef<HTMLDivElement>(null);
 
   // Sliding pill indicator
   const barRef = useRef<HTMLDivElement>(null);
@@ -63,6 +58,20 @@ export default function LayoutTabs({
     }
   }, [renamingId]);
 
+  useEffect(() => {
+    if (!openTabActionsRef) return;
+    openTabActionsRef.current = () => {
+      if (activeWorkspaceId) setTabActionsWsId(activeWorkspaceId);
+    };
+    return () => { openTabActionsRef.current = null; };
+  }, [openTabActionsRef, activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!closeTabActionsRef) return;
+    closeTabActionsRef.current = () => setTabActionsWsId(null);
+    return () => { closeTabActionsRef.current = null; };
+  }, [closeTabActionsRef]);
+
   // Measure the active tab and position the pill
   const measurePill = useCallback(() => {
     if (!barRef.current || !activeWorkspaceId) {
@@ -74,8 +83,6 @@ export default function LayoutTabs({
       setPillStyle(null);
       return;
     }
-    // offsetLeft is relative to offsetParent; since barRef has position:relative
-    // it will be the offsetParent of the tab divs.
     const left = tabEl.offsetLeft;
     const width = tabEl.offsetWidth;
     setPillStyle({ left, width });
@@ -90,9 +97,6 @@ export default function LayoutTabs({
     }
     measurePill();
     if (!pillReadyRef.current) {
-      // After first measurement we need one rAF to let the browser paint the
-      // initial (non-animated) position, then mark the pill as ready so
-      // transitions are enabled for all subsequent changes.
       const raf = requestAnimationFrame(() => {
         pillReadyRef.current = true;
         if (pillRef.current) {
@@ -112,52 +116,19 @@ export default function LayoutTabs({
     return () => ro.disconnect();
   }, [measurePill]);
 
-  useEffect(() => {
-    if (ctxMenu) {
-      setCtxMenuOpen(false);
-      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
-      return () => cancelAnimationFrame(raf);
-    } else {
-      setCtxMenuOpen(false);
-    }
-  }, [ctxMenu]);
-
-  useEffect(() => {
-    if (dropdownOpen) {
-      setDropdownVisible(false);
-      const raf = requestAnimationFrame(() => setDropdownVisible(true));
-      return () => cancelAnimationFrame(raf);
-    } else {
-      setDropdownVisible(false);
-    }
-  }, [dropdownOpen]);
-
-  useAnchoredPosition(ctxMenuRef, {
-    anchorX: ctxMenu?.x ?? 0,
-    anchorY: ctxMenu?.y ?? 0,
-    enabled: ctxMenu !== null,
-  });
-
-  const btnRect = dropdownRef.current?.getBoundingClientRect();
-  useAnchoredPosition(dropdownMenuRef, {
-    anchorX: btnRect?.left ?? 0,
-    anchorY: btnRect?.bottom ?? 0,
-    enabled: dropdownOpen,
-  });
-
   function handleTabContextMenu(e: React.MouseEvent, wsId: string) {
     e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY, wsId });
+    setTabActionsWsId(wsId);
   }
 
+  const tabActionsWs = tabActionsWsId
+    ? workspaces.find((w) => w.id === tabActionsWsId) ?? null
+    : null;
+
   function handleRenameStart() {
-    if (!ctxMenu) return;
-    const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
-    if (ws) {
-      setRenamingId(ws.id);
-      setRenameValue(ws.name);
-    }
-    setCtxMenu(null);
+    if (!tabActionsWs) return;
+    setRenamingId(tabActionsWs.id);
+    setRenameValue(tabActionsWs.name);
   }
 
   function commitRename() {
@@ -167,28 +138,19 @@ export default function LayoutTabs({
     setRenamingId(null);
   }
 
-  function handleClose() {
-    if (!ctxMenu) return;
-    onCloseWorkspace(ctxMenu.wsId);
-    setCtxMenu(null);
+  function handleCloseTab() {
+    if (!tabActionsWs) return;
+    onCloseWorkspace(tabActionsWs.id);
   }
 
   function handleReset() {
-    if (!ctxMenu) return;
-    onResetToTemplate(ctxMenu.wsId);
-    setCtxMenu(null);
+    if (!tabActionsWs) return;
+    onResetToTemplate(tabActionsWs.id);
   }
 
   function handleSaveAs() {
-    if (!ctxMenu) return;
-    const ws = workspaces.find((w) => w.id === ctxMenu.wsId);
-    if (ws) onSaveAsTemplate(ws.current_screen);
-    setCtxMenu(null);
-  }
-
-  function handleDropdownSelect(templateId: string) {
-    onAddWorkspace(templateId);
-    setDropdownOpen(false);
+    if (!tabActionsWs) return;
+    onSaveAsTemplate(tabActionsWs.current_screen);
   }
 
   return (
@@ -233,60 +195,41 @@ export default function LayoutTabs({
             )}
           </div>
         ))}
-        <div className="layout-tabs-add-wrapper" ref={dropdownRef}>
+        <div className="layout-tabs-add-wrapper">
           <button
             className="layout-tabs-add"
-            onClick={() => setDropdownOpen(!dropdownOpen)}
+            onClick={onOpenNewWorkspace}
           >
             <Plus size={14} />
           </button>
-          {dropdownOpen && dropdownRef.current && createPortal(
-            <>
-              <div className={`context-menu-overlay${dropdownVisible ? " open" : ""}`} onClick={() => setDropdownOpen(false)} />
-              <div className={`context-menu layout-tabs-dropdown${dropdownVisible ? " open" : ""}`} ref={dropdownMenuRef}>
-                {templates.map((t) => (
-                  <div
-                    key={t.id}
-                    className="context-menu-item"
-                    onClick={() => handleDropdownSelect(t.id)}
-                  >
-                    {t.name}
-                  </div>
-                ))}
-                {templates.length === 0 && (
-                  <div className="context-menu-item context-menu-item-disabled">
-                    No templates
-                  </div>
-                )}
-                <div className="context-menu-divider" />
-                <div className="context-menu-item" onClick={() => { setDropdownOpen(false); onOpenTemplateManager(); }}>
-                  Manage Templates…
-                </div>
-              </div>
-            </>,
-            document.body
-          )}
         </div>
       </div>
-      {ctxMenu && (
-        <>
-          <div className={`context-menu-overlay${ctxMenuOpen ? " open" : ""}`} onClick={() => setCtxMenu(null)} />
-          <div className={`context-menu${ctxMenuOpen ? " open" : ""}`} ref={ctxMenuRef}>
-            <div className="context-menu-item" onClick={handleClose}>
-              Close
-            </div>
-            <div className="context-menu-item" onClick={handleRenameStart}>
-              Rename
-            </div>
-            <div className="context-menu-item" onClick={handleReset}>
-              Reset to Template
-            </div>
-            <div className="context-menu-item" onClick={handleSaveAs}>
-              Save as Template
-            </div>
-          </div>
-        </>
-      )}
+
+      <TabActionsModal
+        open={tabActionsWsId !== null}
+        onClose={() => setTabActionsWsId(null)}
+        workspaceName={tabActionsWs?.name ?? ""}
+        onRename={() => {
+          setTabActionsWsId(null);
+          handleRenameStart();
+        }}
+        onSaveAsTemplate={() => {
+          setTabActionsWsId(null);
+          handleSaveAs();
+        }}
+        onResetToTemplate={() => {
+          setTabActionsWsId(null);
+          handleReset();
+        }}
+        onCloseTab={() => {
+          setTabActionsWsId(null);
+          handleCloseTab();
+        }}
+        onManageTemplates={() => {
+          setTabActionsWsId(null);
+          onManageTemplates();
+        }}
+      />
     </div>
   );
 }

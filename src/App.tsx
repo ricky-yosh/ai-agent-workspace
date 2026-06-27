@@ -4,7 +4,7 @@ import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
 import ScreenRenderer from "./ScreenRenderer";
 import LayoutTabs from "./LayoutTabs";
-import ManageTemplatesModal from "./ManageTemplatesModal";
+import NewWorkspaceModal from "./NewWorkspaceModal";
 import type { Layout, Screen } from "./types/screen";
 import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider, useToast } from "./ToastContext";
@@ -73,12 +73,14 @@ export const TERMINAL_PASSTHROUGH_SHORTCUTS: ShortcutSpec[] = [
   { key: "ArrowRight", meta: true, shift: true },
   { key: "Enter", meta: true, shift: true },
   { key: "n", meta: true },
+  { key: "t", meta: true },
   { key: "w", meta: true },
   { key: "d", meta: true },
   { key: "d", meta: true, shift: true },
   { code: "Backslash", meta: true },
   { key: "Tab", ctrl: true },
   { key: "Tab", ctrl: true, shift: true },
+  { key: "'", meta: true },
 ];
 
 function useKeyboardShortcuts(shortcuts: Shortcut[]) {
@@ -403,7 +405,7 @@ function SaveAsTemplateDialog({
   );
 }
 
-function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null> }) {
+function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTabActionsRef, closeTabActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null>; openNewWorkspaceRef: React.RefObject<(() => void) | null>; openTabActionsRef: React.RefObject<(() => void) | null>; closeTabActionsRef: React.RefObject<(() => void) | null> }) {
   const { activeSessionId, sessions } = useSessions();
   const { addToast } = useToast();
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
@@ -417,7 +419,8 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
   } = useWorkspaceManager(onError);
 
   const [templates, setTemplates] = useState<Layout[]>([]);
-  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
+  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
+  const [newWorkspaceInitialTab, setNewWorkspaceInitialTab] = useState<"picker" | "manager">("picker");
   const [saveAsTarget, setSaveAsTarget] = useState<Screen | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null);
@@ -439,6 +442,10 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
   useEffect(() => {
     toggleZoomRef.current = toggleZoom;
   }, [toggleZoom, toggleZoomRef]);
+
+  useEffect(() => {
+    openNewWorkspaceRef.current = () => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(true); };
+  }, [openNewWorkspaceRef]);
 
   const panelContextRef = useRef<{
     screen: Screen | null;
@@ -612,21 +619,27 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
       <LayoutTabs
         workspaces={workspaces}
         activeWorkspaceId={activeWorkspace?.id ?? null}
-        templates={templates}
         onWorkspaceSwitch={handleWorkspaceSwitch}
-        onAddWorkspace={handleAddWorkspace}
         onCloseWorkspace={handleCloseWorkspace}
         onRenameWorkspace={handleRenameWorkspace}
         onResetToTemplate={handleResetToTemplate}
         onSaveAsTemplate={handleSaveAsTemplate}
-        onOpenTemplateManager={() => setTemplateManagerOpen(true)}
+        onOpenNewWorkspace={() => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(true); }}
+        onManageTemplates={() => { setNewWorkspaceInitialTab("manager"); setNewWorkspaceOpen(true); }}
+        openTabActionsRef={openTabActionsRef}
+        closeTabActionsRef={closeTabActionsRef}
       />
-      <ManageTemplatesModal
-        open={templateManagerOpen}
+      <NewWorkspaceModal
+        open={newWorkspaceOpen}
+        initialTab={newWorkspaceInitialTab}
+        onClose={() => setNewWorkspaceOpen(false)}
         templates={templates}
+        onSelect={(templateId) => {
+          handleAddWorkspace(templateId);
+          setNewWorkspaceOpen(false);
+        }}
         onRenameTemplate={handleRenameTemplate}
         onDeleteTemplate={handleDeleteTemplate}
-        onClose={() => setTemplateManagerOpen(false)}
       />
       <SaveAsTemplateDialog
         open={saveAsTarget !== null}
@@ -682,7 +695,7 @@ function MainArea({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.Ref
   );
 }
 
-function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null> }) {
+function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openSessionActionsRef, closeSessionActionsRef, openTabActionsRef, closeTabActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null>; openNewWorkspaceRef: React.RefObject<(() => void) | null>; openSessionActionsRef: React.RefObject<((sessionId: string) => void) | null>; closeSessionActionsRef: React.RefObject<(() => void) | null>; openTabActionsRef: React.RefObject<(() => void) | null>; closeTabActionsRef: React.RefObject<(() => void) | null> }) {
   const {
     sessions, activeSessionId, setActiveSessionId,
     setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
@@ -717,6 +730,9 @@ function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef }: { toggleZo
     { key: "w", meta: true, handler: () => panelActionsRef.current?.closePanel(), ignoreInputs: true },
     { key: "Enter", meta: true, shift: true, handler: () => toggleZoomRef.current?.() },
     { key: "n", meta: true, handler: () => setShowNewSessionDialog(true), ignoreInputs: true },
+    { key: "t", meta: true, handler: () => openNewWorkspaceRef.current?.(), ignoreInputs: true },
+    { key: ";", meta: true, handler: () => { closeTabActionsRef.current?.(); if (activeSessionId) openSessionActionsRef.current?.(activeSessionId); }, ignoreInputs: true },
+    { key: "'", meta: true, handler: () => { closeSessionActionsRef.current?.(); openTabActionsRef.current?.(); }, ignoreInputs: true },
     { code: "Backslash", meta: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), ignoreInputs: true },
   ]);
 
@@ -726,19 +742,24 @@ function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef }: { toggleZo
 function App() {
   const toggleZoomRef = useRef<(() => void) | null>(null);
   const panelActionsRef = useRef<PanelActions | null>(null);
+  const openNewWorkspaceRef = useRef<(() => void) | null>(null);
+  const openSessionActionsRef = useRef<((sessionId: string) => void) | null>(null);
+  const closeSessionActionsRef = useRef<(() => void) | null>(null);
+  const openTabActionsRef = useRef<(() => void) | null>(null);
+  const closeTabActionsRef = useRef<(() => void) | null>(null);
 
   return (
     <ToastProvider>
       <SessionProvider>
         <div className="app-layout">
           <ErrorBoundary name="Sidebar">
-            <SessionSidebar />
+            <SessionSidebar openActionsRef={openSessionActionsRef} closeActionsRef={closeSessionActionsRef} />
           </ErrorBoundary>
           <ErrorBoundary name="Workspace">
-            <MainArea toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} />
+            <MainArea toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
           </ErrorBoundary>
         </div>
-        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} />
+        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openSessionActionsRef={openSessionActionsRef} closeSessionActionsRef={closeSessionActionsRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
       </SessionProvider>
       <ToastContainer />
     </ToastProvider>

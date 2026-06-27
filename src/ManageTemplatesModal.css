@@ -9,13 +9,43 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
   border-radius: 8px 8px 0 0;
 }
 
 .dialog-title-row .dialog-title {
   margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-title-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+.dialog-back-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.dialog-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .dialog-close-btn {
@@ -153,13 +183,12 @@
 }
 
 .template-item-row.template-item-active {
-  background: var(--bg-active);
-  box-shadow: inset 0 0 0 1px var(--border-color);
+  background: rgba(0, 120, 212, 0.15);
 }
 
 .template-item-row:focus-visible {
-  outline: 1px solid var(--accent-color);
-  outline-offset: -1px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
 }
 
 .template-item-name {
@@ -258,7 +287,8 @@
 
 .template-item-btn:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--accent-color);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
 }
 
 .template-item-btn-delete:hover {
@@ -339,9 +369,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   padding: 8px 20px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid rgba(255,255,255,0.05);
   border-radius: 0 0 8px 8px;
   font-size: 11px;
   color: var(--text-muted);
@@ -351,13 +381,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
   font-family: inherit;
   font-size: 10px;
-  background: var(--bg-active);
-  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 3px;
   color: var(--text-dim);
 }

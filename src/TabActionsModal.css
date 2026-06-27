@@ -1,0 +1,193 @@
+.dialog-overlay .tab-actions-dialog {
+  padding: 0;
+  width: 280px;
+  max-width: 280px;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+.tab-actions-header {
+  padding: 12px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tab-actions-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.tab-actions-context-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.tab-actions-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── List ────────────────────────────────────────────── */
+
+.tab-actions-list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tab-actions-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: default;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  color: var(--text-primary);
+}
+
+.tab-actions-item:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 120, 212, 0.10) 0%,
+    rgba(0, 120, 212, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.tab-actions-item--active {
+  background: rgba(0, 120, 212, 0.15);
+}
+
+.tab-actions-item:focus-visible {
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
+  outline: none;
+}
+
+.tab-actions-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tab-actions-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.tab-actions-item:hover .tab-actions-icon,
+.tab-actions-item--active .tab-actions-icon {
+  color: var(--text-primary);
+}
+
+.tab-actions-label {
+  font-size: 13px;
+  color: inherit;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Action key (right side) ─────────────────────────── */
+
+.tab-actions-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ── Footer ──────────────────────────────────────────── */
+
+.tab-actions-footer {
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-actions-footer-sep {
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.tab-actions-footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+/* ── Confirmed (checkmark) state ─────────────────────── */
+
+.tab-actions-item--confirmed {
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: rgb(134, 239, 172);
+}
+
+.tab-actions-item--confirmed .tab-actions-label {
+  color: rgb(134, 239, 172);
+}
+
+.tab-actions-icon--confirmed {
+  color: rgb(134, 239, 172) !important;
+}
+
+/* ── Motion ──────────────────────────────────────────── */
+
+:root[data-motion="full"] .tab-actions-item {
+  transition: background 0.12s, transform 0.06s;
+}
+
+:root[data-motion="full"] .tab-actions-item--confirmed {
+  transition: background 0.1s, color 0.1s;
+}
+
+.tab-actions-item:active:not(:disabled) {
+  transform: scale(0.97);
+}

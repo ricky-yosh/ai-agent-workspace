@@ -556,7 +556,10 @@ export default function ManageTemplatesModal({
         onKeyDown={handleDialogKeyDown}
       >
         <div className="dialog-title-row">
-          <div className="dialog-title">Manage Layout Templates</div>
+          <div className="dialog-title">
+            <LayoutTemplate size={14} className="dialog-title-icon" />
+            Manage Layout Templates
+          </div>
           <button
             className="dialog-close-btn"
             onClick={onClose}

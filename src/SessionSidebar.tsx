@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, type RefObject } from "react";
 import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput, Pencil, X } from "lucide-react";
 import { safeInvoke } from "./safeInvoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -8,12 +8,11 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
 import { SessionIcon } from "./SessionVisuals";
-import { useClickOutside } from "./hooks/useClickOutside";
 import { useEventListener } from "./hooks/useEventListener";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Dialog } from "./components/Dialog";
+import SessionActionsModal from "./SessionActionsModal";
 import "./SessionSidebar.css";
-import "./ContextMenu.css";
 import "./Dialog.css";
 
 function folderNameOf(path: string): string {
@@ -238,7 +237,7 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
   );
 }
 
-export default function SessionSidebar() {
+export default function SessionSidebar({ openActionsRef, closeActionsRef }: { openActionsRef?: RefObject<((sessionId: string) => void) | null>; closeActionsRef?: RefObject<(() => void) | null> }) {
   const {
     sessions, activeSessionId, setActiveSessionId, refreshSessions,
     showNewSessionDialog, setShowNewSessionDialog,
@@ -249,26 +248,22 @@ export default function SessionSidebar() {
   );
   const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
-  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
+  const [sessionActionsId, setSessionActionsId] = useState<string | null>(null);
 
   const { addToast } = useToast();
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(contextMenuRef, () => setContextMenu(null));
-
-  useEffect(() => {
-    if (contextMenu) {
-      setCtxMenuOpen(false);
-      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
-      return () => cancelAnimationFrame(raf);
-    } else {
-      setCtxMenuOpen(false);
-    }
-  }, [contextMenu]);
 
   const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
+
+  useEffect(() => {
+    if (openActionsRef) openActionsRef.current = (id) => setSessionActionsId(prev => prev === id ? null : id);
+    return () => { if (openActionsRef) openActionsRef.current = null; };
+  }, [openActionsRef]);
+
+  useEffect(() => {
+    if (closeActionsRef) closeActionsRef.current = () => setSessionActionsId(null);
+    return () => { if (closeActionsRef) closeActionsRef.current = null; };
+  }, [closeActionsRef]);
 
   const grouped = useMemo(() => sessions.reduce<Record<string, SessionSummary[]>>(
     (acc, s) => {
@@ -332,8 +327,8 @@ export default function SessionSidebar() {
 
   useEventListener(document, "keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (contextMenu) {
-      setContextMenu(null);
+    if (sessionActionsId) {
+      setSessionActionsId(null);
     } else if (deleteConfirmId) {
       setDeleteConfirmId(null);
     } else if (showNewSessionDialog) {
@@ -341,10 +336,10 @@ export default function SessionSidebar() {
     } else if (renamingSessionId) {
       setRenamingSessionId(null);
     }
-  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, contextMenu]);
+  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, sessionActionsId]);
 
-  const contextSession = contextMenu
-    ? sessions.find((s) => s.id === contextMenu.sessionId)
+  const contextSession = sessionActionsId
+    ? sessions.find((s) => s.id === sessionActionsId)
     : null;
 
   async function handleOpenInFinder() {
@@ -362,19 +357,19 @@ export default function SessionSidebar() {
         addToast({ type: "error", message: "Failed to open Finder" });
       }
     }
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleCopySessionId() {
     if (!contextSession) return;
     await copyToClipboard(contextSession.id, "session ID", (msg) => addToast({ type: "error", message: msg }));
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleCopySessionPath() {
     if (!contextSession) return;
     await copyToClipboard(contextSession.working_directory, "path", (msg) => addToast({ type: "error", message: msg }));
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function getToolPref(key: string): Promise<string> {
@@ -432,7 +427,7 @@ export default function SessionSidebar() {
       "editor",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleOpenInDiff() {
@@ -450,7 +445,7 @@ export default function SessionSidebar() {
       "diff tool",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleOpenInTerminal() {
@@ -461,7 +456,7 @@ export default function SessionSidebar() {
       "terminal",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   return (
@@ -525,12 +520,18 @@ export default function SessionSidebar() {
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setContextMenu({ x: e.clientX, y: e.clientY, sessionId: s.id });
+                        setSessionActionsId(s.id);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
+                        if (e.key === "Enter") {
                           e.preventDefault();
                           handleSelect(s.id);
+                        } else if (e.key === " ") {
+                          e.preventDefault();
+                          setSessionActionsId(s.id);
+                        } else if (e.key === "Delete" || e.key === "Backspace") {
+                          e.preventDefault();
+                          setDeleteConfirmId(s.id);
                         }
                       }}
                       role="button"
@@ -645,29 +646,17 @@ export default function SessionSidebar() {
         destructive
       />
 
-      {contextMenu && (
-        <div ref={contextMenuRef} className={`context-menu${ctxMenuOpen ? " open" : ""}`} style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <div className="context-menu-item" onClick={handleOpenInFinder}>
-            Open in Finder
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInEditor}>
-            Open in Editor
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInDiff}>
-            Open in External Diff
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInTerminal}>
-            Open in Terminal
-          </div>
-          <div className="context-menu-divider" />
-          <div className="context-menu-item" onClick={handleCopySessionId}>
-            Copy SessionID
-          </div>
-          <div className="context-menu-item" onClick={handleCopySessionPath}>
-            Copy Session Path
-          </div>
-        </div>
-      )}
+      <SessionActionsModal
+        open={sessionActionsId !== null}
+        onClose={() => setSessionActionsId(null)}
+        session={contextSession ?? null}
+        onOpenInFinder={handleOpenInFinder}
+        onOpenInEditor={handleOpenInEditor}
+        onOpenInDiff={handleOpenInDiff}
+        onOpenInTerminal={handleOpenInTerminal}
+        onCopyId={handleCopySessionId}
+        onCopyPath={handleCopySessionPath}
+      />
     </>
   );
 }
