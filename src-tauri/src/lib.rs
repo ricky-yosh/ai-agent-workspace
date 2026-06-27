@@ -5,7 +5,7 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, Screen, DomainEvent,
+    Layout, Screen, Issue, DomainEvent,
 };
 
 mod pty;
@@ -30,6 +30,9 @@ fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
                     screen: Screen,
                 }
                 let _ = app.emit("workspace-changed", WorkspaceChangedPayload { session_id: session_id.clone(), workspace_id: workspace_id.clone(), screen: screen.clone() });
+            }
+            DomainEvent::IssuesChanged { session_id } => {
+                let _ = app.emit("issues-changed", serde_json::json!({ "session_id": session_id }));
             }
         }
     }
@@ -213,6 +216,11 @@ workspace_return!(join_areas, JoinAreas { session_id, workspace_id, source_area_
 workspace_return!(close_area, CloseArea { session_id, workspace_id, area_id }, session_id: String, workspace_id: String, area_id: String);
 workspace_return!(resize_edge, ResizeEdge { session_id, workspace_id, edge_id, position }, session_id: String, workspace_id: String, edge_id: String, position: f64);
 workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id, area_id, panel_type }, session_id: String, workspace_id: String, area_id: String, panel_type: String);
+
+// ── Issue commands ──────────────────────────────────────────────────
+
+command_handler!(list_issues, IssueList { session_id }, Issues, Vec<Issue>, session_id: String);
+command_handler!(get_issue, IssueGet { id }, Issue, Issue, id: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -553,6 +561,8 @@ pub fn run() {
             close_area,
             resize_edge,
             change_panel_type,
+            list_issues,
+            get_issue,
             open_preferences,
             open_in_app,
             is_git_repo,

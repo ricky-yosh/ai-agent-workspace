@@ -298,6 +298,56 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let screen = ws.current_screen.clone();
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
+        Command::IssueCreate { session_id, title, body } => {
+            let issues = state.db.issues(&conn);
+            let issue = issues.create(&session_id, &title, &body)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
+        }
+        Command::IssueList { session_id } => {
+            let issues = state.db.issues(&conn);
+            let list = issues.list_by_session(&session_id)?;
+            Ok(ExecutionOutcome::none(CommandResult::Issues(list)))
+        }
+        Command::IssueGet { id } => {
+            let issues = state.db.issues(&conn);
+            let issue = issues.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::Issue(issue)))
+        }
+        Command::IssueUpdate { id, title, body, labels, state: new_state } => {
+            let issues = state.db.issues(&conn);
+            let session_id = {
+                let existing = issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
+                existing.session_id
+            };
+            let title_ref = title.as_deref();
+            let body_ref = body.as_deref();
+            let labels_ref = labels.as_deref();
+            let state_ref = new_state.as_deref();
+            let issue = issues.update(&id, title_ref, body_ref, labels_ref, state_ref)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
+        }
+        Command::IssueClose { id } => {
+            let issues = state.db.issues(&conn);
+            let session_id = {
+                let existing = issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
+                existing.session_id
+            };
+            let issue = issues.close(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
+        }
+        Command::IssueDelete { id } => {
+            let issues = state.db.issues(&conn);
+            let session_id = {
+                let existing = issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
+                existing.session_id
+            };
+            issues.delete(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id }))
+        }
     }
 }
 
@@ -944,6 +994,333 @@ mod tests {
             _ => panic!("Expected WorkspaceChanged"),
         }
         assert_eq!(ws.current_screen.areas.len(), 1, "Should have 1 area after close");
+    }
+
+    #[test]
+    fn test_issue_create_and_list() {
+        let (state, _tmp) = setup();
+
+        // Create a session first
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        // Create an issue
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: session.id.clone(),
+                title: "Bug".to_string(),
+                body: "Something broke".to_string(),
+            },
+            &state,
+        ).unwrap();
+
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::IssuesChanged { .. }]));
+        if let DomainEvent::IssuesChanged { session_id: sid } = &outcome.events[0] {
+            assert_eq!(sid, &session.id);
+        }
+        let issue = match outcome.result {
+            CommandResult::Issue(i) => i,
+            _ => panic!("Expected Issue"),
+        };
+        assert_eq!(issue.title, "Bug");
+        assert_eq!(issue.body, "Something broke");
+        assert_eq!(issue.session_id, session.id);
+        assert_eq!(issue.number, 1);
+        assert_eq!(issue.state, "open");
+        assert_eq!(issue.author, "ai");
+
+        // List issues
+        let outcome = execute(
+            Command::IssueList {
+                session_id: session.id.clone(),
+            },
+            &state,
+        ).unwrap();
+        assert!(outcome.events.is_empty());
+        let issues = match outcome.result {
+            CommandResult::Issues(i) => i,
+            _ => panic!("Expected Issues"),
+        };
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].id, issue.id);
+    }
+
+    #[test]
+    fn test_issue_create_emits_issues_changed() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Issue 1".to_string(),
+                body: "".to_string(),
+            },
+            &state,
+        ).unwrap();
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::IssuesChanged { session_id } => {
+                assert_eq!(session_id, &sid);
+            }
+            _ => panic!("Expected IssuesChanged"),
+        }
+    }
+
+    #[test]
+    fn test_issue_get_emits_no_events() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Test".to_string(),
+                body: "".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueGet { id: issue_id.clone() },
+            &state,
+        ).unwrap();
+        assert!(outcome.events.is_empty());
+        let issue = match outcome.result {
+            CommandResult::Issue(i) => i,
+            _ => panic!("Expected Issue"),
+        };
+        assert_eq!(issue.id, issue_id);
+        assert_eq!(issue.title, "Test");
+    }
+
+    #[test]
+    fn test_issue_get_not_found() {
+        let (state, _tmp) = setup();
+        let result = execute(
+            Command::IssueGet { id: "nonexistent".to_string() },
+            &state,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "not_found");
+        assert_eq!(err.entity, "issue");
+    }
+
+    #[test]
+    fn test_issue_update_emits_issues_changed() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Original".to_string(),
+                body: "".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueUpdate {
+                id: issue_id.clone(),
+                title: Some("Updated".to_string()),
+                body: None,
+                labels: None,
+                state: None,
+            },
+            &state,
+        ).unwrap();
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::IssuesChanged { session_id } => {
+                assert_eq!(session_id, &sid);
+            }
+            _ => panic!("Expected IssuesChanged"),
+        }
+        let issue = match outcome.result {
+            CommandResult::Issue(i) => i,
+            _ => panic!("Expected Issue"),
+        };
+        assert_eq!(issue.id, issue_id);
+        assert_eq!(issue.title, "Updated");
+    }
+
+    #[test]
+    fn test_issue_close_emits_issues_changed() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Test".to_string(),
+                body: "".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueClose { id: issue_id.clone() },
+            &state,
+        ).unwrap();
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::IssuesChanged { session_id } => {
+                assert_eq!(session_id, &sid);
+            }
+            _ => panic!("Expected IssuesChanged"),
+        }
+        let issue = match outcome.result {
+            CommandResult::Issue(i) => i,
+            _ => panic!("Expected Issue"),
+        };
+        assert_eq!(issue.id, issue_id);
+        assert_eq!(issue.state, "closed");
+    }
+
+    #[test]
+    fn test_issue_update_not_found() {
+        let (state, _tmp) = setup();
+        let result = execute(
+            Command::IssueUpdate {
+                id: "nonexistent".to_string(),
+                title: Some("New".to_string()),
+                body: None,
+                labels: None,
+                state: None,
+            },
+            &state,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "not_found");
+    }
+
+    #[test]
+    fn test_issue_close_not_found() {
+        let (state, _tmp) = setup();
+        let result = execute(
+            Command::IssueClose { id: "nonexistent".to_string() },
+            &state,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "not_found");
+    }
+
+    #[test]
+    fn test_issue_delete_emits_issues_changed() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "To Delete".to_string(),
+                body: "".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueDelete { id: issue_id.clone() },
+            &state,
+        ).unwrap();
+        assert_eq!(outcome.events.len(), 1);
+        match &outcome.events[0] {
+            DomainEvent::IssuesChanged { session_id } => {
+                assert_eq!(session_id, &sid);
+            }
+            _ => panic!("Expected IssuesChanged"),
+        }
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+    }
+
+    #[test]
+    fn test_issue_delete_not_found() {
+        let (state, _tmp) = setup();
+        let result = execute(
+            Command::IssueDelete { id: "nonexistent".to_string() },
+            &state,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.error, "not_found");
+        assert_eq!(err.entity, "issue");
+    }
+
+    #[test]
+    fn test_issue_list_emits_no_events() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueList { session_id: sid },
+            &state,
+        ).unwrap();
+        assert!(outcome.events.is_empty());
     }
 
     #[test]

@@ -95,4 +95,28 @@ pub enum Command {
         area_id: String,
         panel_type: String,
     },
+    IssueCreate {
+        session_id: String,
+        title: String,
+        body: String,
+    },
+    IssueList {
+        session_id: String,
+    },
+    IssueGet {
+        id: String,
+    },
+    IssueUpdate {
+        id: String,
+        title: Option<String>,
+        body: Option<String>,
+        labels: Option<Vec<String>>,
+        state: Option<String>,
+    },
+    IssueClose {
+        id: String,
+    },
+    IssueDelete {
+        id: String,
+    },
 }

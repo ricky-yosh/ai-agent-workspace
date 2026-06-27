@@ -27,11 +27,20 @@ fn make_workspace_change_callback(handle: &tauri::AppHandle, event: &'static str
     }) as std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>)
 }
 
+#[cfg(feature = "tauri-integration")]
+fn make_session_id_callback(handle: &tauri::AppHandle, event: &'static str) -> Option<std::sync::Arc<dyn Fn(String) + Send + Sync>> {
+    let h = handle.clone();
+    Some(std::sync::Arc::new(move |session_id: String| {
+        let _ = h.emit(event, serde_json::json!({ "session_id": session_id }));
+    }) as std::sync::Arc<dyn Fn(String) + Send + Sync>)
+}
+
 fn invoke_callbacks(
     events: &[DomainEvent],
     session_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     layouts_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     workspace_cb: &Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
+    issues_cb: &Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
 ) {
     for event in events {
         match event {
@@ -44,6 +53,9 @@ fn invoke_callbacks(
             DomainEvent::LayoutsChanged => {
                 if let Some(cb) = layouts_cb { cb(); }
             }
+            DomainEvent::IssuesChanged { session_id } => {
+                if let Some(cb) = issues_cb { cb(session_id.clone()); }
+            }
         }
     }
 }
@@ -52,7 +64,17 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb);
                 Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -71,7 +93,17 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb);
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -107,6 +139,7 @@ pub struct McpHandler {
     pub on_session_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
     pub on_layouts_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    pub on_issues_changed: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
     pub resolved_session_id: Option<String>,
     pub resolution_source: String,
 }
@@ -148,7 +181,13 @@ impl McpHandler {
         join_areas,
         close_area,
         resize_edge,
-        change_panel_type
+        change_panel_type,
+        issue_create,
+        issue_list,
+        issue_get,
+        issue_update,
+        issue_close,
+        issue_delete
     });
 
     #[tool(description = "List all sessions")]
@@ -332,6 +371,48 @@ impl McpHandler {
         let state = AppState { db: self.db.clone() };
         run_mcp_command!(Command::ChangePanelType { session_id, workspace_id, area_id, panel_type }, &state, Workspace, ws, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
+
+    #[tool(description = "Create an issue in the current session")]
+    async fn issue_create(&self, #[tool(param)] title: String, #[tool(param)] body: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueCreate { session_id, title, body }, &state, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+    }
+
+    #[tool(description = "List all issues in the current session")]
+    async fn issue_list(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueList { session_id }, &state, Issues, issues, json)
+    }
+
+    #[tool(description = "Get an issue by ID")]
+    async fn issue_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let _session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueGet { id }, &state, Issue, issue, json)
+    }
+
+    #[tool(description = "Update an issue's title, body, labels, or state")]
+    async fn issue_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] body: Option<String>, #[tool(param)] labels: Option<Vec<String>>, #[tool(param)] state: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let _session_id = self.require_session_id()?;
+        let state_arg = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueUpdate { id, title, body, labels, state }, &state_arg, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+    }
+
+    #[tool(description = "Close an issue")]
+    async fn issue_close(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let _session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueClose { id }, &state, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+    }
+
+    #[tool(description = "Delete an issue")]
+    async fn issue_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let _session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+    }
 }
 
 #[cfg(test)]
@@ -349,6 +430,7 @@ mod tests {
             on_session_changed: None,
             on_workspace_changed: None,
             on_layouts_changed: None,
+            on_issues_changed: None,
             resolved_session_id: None,
             resolution_source: "env-var".to_string(),
         };
@@ -601,6 +683,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let on_session_changed = make_change_callback(&handle, "sessions-changed");
             let on_workspace_changed = make_workspace_change_callback(&handle, "workspace-changed");
             let on_layouts_changed = make_change_callback(&handle, "layouts-changed");
+            let on_issues_changed = make_session_id_callback(&handle, "issues-changed");
 
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new()
@@ -611,6 +694,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         on_session_changed,
                         on_workspace_changed,
                         on_layouts_changed,
+                        on_issues_changed,
                         resolved_session_id: None,
                         resolution_source: "env-var".to_string(),
                     };

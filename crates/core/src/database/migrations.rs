@@ -83,6 +83,7 @@ mod tests {
         assert!(tables.contains(&"sessions".to_string()));
         assert!(tables.contains(&"workspaces".to_string()));
         assert!(tables.contains(&"layouts".to_string()));
+        assert!(tables.contains(&"issues".to_string()));
         assert!(tables.contains(&"schema_version".to_string()));
     }
 

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use rusqlite::Connection;
 use thiserror::Error;
 
-use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository};
+use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository};
 use migrations::{migrate, MigrationError};
 
 #[derive(Debug, Error)]
@@ -49,6 +49,10 @@ impl Database {
 
     pub fn layouts<'a>(&self, conn: &'a Connection) -> LayoutRepository<'a> {
         LayoutRepository::new(&self.db_path, conn)
+    }
+
+    pub fn issues<'a>(&self, conn: &'a Connection) -> IssueRepository<'a> {
+        IssueRepository::new(&self.db_path, conn)
     }
 }
 
@@ -117,5 +121,12 @@ mod tests {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
         let _repo = db.layouts(&conn);
+    }
+
+    #[test]
+    fn test_issues_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.issues(&conn);
     }
 }

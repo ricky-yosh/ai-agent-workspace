@@ -30,7 +30,7 @@ Add a new **Issue Tracker** panel that the user can place in any workspace area.
 18. As a user, I want Issues to be removed when I delete their Session, so that stale project data doesn't linger.
 19. As a user, when there are no Issues yet, I want a clear empty state, so that I know the tracker is working and simply empty.
 20. As a user, I want long Issue lists to scroll gracefully, so that many Issues remain navigable.
-21. As a user, I want Issue numbers to be stable and never reused, so that references remain valid even after deletions.
+21. As a user, I want Issue numbers to be sequential within a Session, so that I can reference them easily.
 22. As a user, I want an Issue flagged ready-for-human to signal that I need to act, so that I know when my attention is required.
 23. As a user, I want to respond to a ready-for-human Issue by instructing the AI, so that the single AI-write path is preserved.
 24. As an AI agent, I want to create an Issue in the current Session with a title and markdown body, so that I can record work or findings for the user to see.
@@ -111,7 +111,7 @@ A unique index over (session_id, number) enforces per-Session numbering; an inde
 
 **Modules that will be tested:**
 
-- **The Issue repository.** Behaviors to cover: a new Issue receives the next sequential number within its Session; numbering is isolated across Sessions (two Sessions can each have #1); numbers are never reused after a delete; `labels` round-trip correctly through JSON, including the default `["needs-triage"]` and ad-hoc labels; a partial update changes only the supplied fields and advances `updated_at`; closing sets state to closed and reopening restores open; delete removes the Issue; list-by-Session returns only that Session's Issues, ordered open-first; deleting a Session cascades to remove its Issues.
+- **The Issue repository.** Behaviors to cover: a new Issue receives the next sequential number within its Session; numbering is isolated across Sessions (two Sessions can each have #1); numbers may be reused when the deleted Issue held the session's highest number (the UNIQUE index prevents collisions); `labels` round-trip correctly through JSON, including the default `["needs-triage"]` and ad-hoc labels; a partial update changes only the supplied fields and advances `updated_at`; closing sets state to closed and reopening restores open; delete removes the Issue; list-by-Session returns only that Session's Issues, ordered open-first; deleting a Session cascades to remove its Issues.
 - **The Issue command layer.** Behavior to cover: every mutating Issue command emits an `IssuesChanged` event carrying the correct `session_id`, and read commands emit no event. This protects the contract the panel's live refresh depends on.
 
 **Prior art:** the existing repository test suites (Session, Workspace, and Layout repositories) use an in-memory database helper and verify behavior through the repository interface — the new Issue repository tests mirror this pattern. The existing command executor test module verifies command behavior and event emission — the new Issue command tests mirror that.

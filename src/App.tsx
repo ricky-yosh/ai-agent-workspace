@@ -16,6 +16,7 @@ import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./BlankPanel";
 import "./TerminalPanel";
+import "./IssueTrackerPanel";
 import "./App.css";
 import "./Toast.css";
 import "./Dialog.css";

@@ -1,4 +1,4 @@
-use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, DomainEvent};
+use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, DomainEvent};
 
 #[derive(Debug)]
 pub enum CommandResult {
@@ -8,6 +8,8 @@ pub enum CommandResult {
     Layouts(Vec<Layout>),
     Workspace(WorkspaceInstance),
     Workspaces(Vec<WorkspaceInstance>),
+    Issue(Issue),
+    Issues(Vec<Issue>),
     Unit(()),
 }
 
