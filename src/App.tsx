@@ -444,7 +444,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
   }, [toggleZoom, toggleZoomRef]);
 
   useEffect(() => {
-    openNewWorkspaceRef.current = () => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(true); };
+    openNewWorkspaceRef.current = () => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(prev => !prev); };
   }, [openNewWorkspaceRef]);
 
   const panelContextRef = useRef<{
@@ -698,7 +698,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
 function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openSessionActionsRef, closeSessionActionsRef, openTabActionsRef, closeTabActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null>; openNewWorkspaceRef: React.RefObject<(() => void) | null>; openSessionActionsRef: React.RefObject<((sessionId: string) => void) | null>; closeSessionActionsRef: React.RefObject<(() => void) | null>; openTabActionsRef: React.RefObject<(() => void) | null>; closeTabActionsRef: React.RefObject<(() => void) | null> }) {
   const {
     sessions, activeSessionId, setActiveSessionId,
-    setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
+    showNewSessionDialog, setShowNewSessionDialog, sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
   const { addToast } = useToast();
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -729,8 +729,8 @@ function KeyboardShortcutsHandler({ toggleZoomRef, panelActionsRef, openNewWorks
     { key: "d", meta: true, shift: true, handler: () => panelActionsRef.current?.splitFocused('horizontal'), ignoreInputs: true },
     { key: "w", meta: true, handler: () => panelActionsRef.current?.closePanel(), ignoreInputs: true },
     { key: "Enter", meta: true, shift: true, handler: () => toggleZoomRef.current?.() },
-    { key: "n", meta: true, handler: () => setShowNewSessionDialog(true), ignoreInputs: true },
-    { key: "t", meta: true, handler: () => openNewWorkspaceRef.current?.(), ignoreInputs: true },
+    { key: "n", meta: true, handler: () => setShowNewSessionDialog(!showNewSessionDialog) },
+    { key: "t", meta: true, handler: () => openNewWorkspaceRef.current?.() },
     { key: ";", meta: true, handler: () => { closeTabActionsRef.current?.(); if (activeSessionId) openSessionActionsRef.current?.(activeSessionId); }, ignoreInputs: true },
     { key: "'", meta: true, handler: () => { closeSessionActionsRef.current?.(); openTabActionsRef.current?.(); }, ignoreInputs: true },
     { code: "Backslash", meta: true, handler: () => setSidebarCollapsed(!sidebarCollapsed), ignoreInputs: true },
