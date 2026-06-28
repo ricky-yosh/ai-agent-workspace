@@ -148,11 +148,13 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           moveFocus(displayedIssues.length - 1);
           break;
         case "ArrowRight":
+          e.preventDefault();
           if (focusedIndex !== null) {
             setExpandedId(displayedIssues[focusedIndex].id);
           }
           break;
         case "ArrowLeft":
+          e.preventDefault();
           if (focusedIndex !== null && expandedId === displayedIssues[focusedIndex].id) {
             setExpandedId(null);
           }
@@ -260,6 +262,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                   else rowRefs.current.delete(idx);
                 }}
                 tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
+                onFocus={() => setFocusedIndex(idx)}
                 onClick={() => {
                   setExpandedId(expandedId === issue.id ? null : issue.id);
                   moveFocus(idx);
