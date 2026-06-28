@@ -69,9 +69,18 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [filterFocused, setFilterFocused] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const displayedIssues = filterQuery
+    ? issues.filter((i) => i.title.toLowerCase().includes(filterQuery.toLowerCase()))
+    : issues;
 
   const fetchIssues = useCallback(() => {
     if (!sessionId) return;
@@ -116,33 +125,74 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     }
   }, [focusedIndex]);
 
+  const moveFocus = useCallback((newIndex: number) => {
+    setFocusedIndex(newIndex);
+    rowRefs.current.get(newIndex)?.focus();
+  }, []);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setFocusedIndex((i) => (i === null ? 0 : Math.min(i + 1, issues.length - 1)));
+          moveFocus(focusedIndex === null ? 0 : Math.min(focusedIndex + 1, displayedIssues.length - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
-          setFocusedIndex((i) => (i === null ? 0 : Math.max(i - 1, 0)));
+          moveFocus(focusedIndex === null ? 0 : Math.max(focusedIndex - 1, 0));
+          break;
+        case "Home":
+          e.preventDefault();
+          moveFocus(0);
+          break;
+        case "End":
+          e.preventDefault();
+          moveFocus(displayedIssues.length - 1);
+          break;
+        case "ArrowRight":
+          if (focusedIndex !== null) {
+            setExpandedId(displayedIssues[focusedIndex].id);
+          }
+          break;
+        case "ArrowLeft":
+          if (focusedIndex !== null && expandedId === displayedIssues[focusedIndex].id) {
+            setExpandedId(null);
+          }
           break;
         case "Enter":
           if (focusedIndex !== null) {
-            const id = issues[focusedIndex].id;
+            const id = displayedIssues[focusedIndex].id;
             setExpandedId((prev) => (prev === id ? null : id));
           }
           break;
         case "Escape":
-          if (focusedIndex !== null && expandedId === issues[focusedIndex].id) {
+          if (focusedIndex !== null && expandedId === displayedIssues[focusedIndex]?.id) {
             setExpandedId(null);
           } else {
             setFocusedIndex(null);
           }
           break;
+        case "/":
+          e.preventDefault();
+          filterInputRef.current?.focus();
+          break;
+        default: {
+          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            const char = e.key.toLowerCase();
+            const start = focusedIndex === null ? 0 : focusedIndex + 1;
+            const len = displayedIssues.length;
+            for (let i = 0; i < len; i++) {
+              const idx = (start + i) % len;
+              if (displayedIssues[idx].title.toLowerCase().startsWith(char)) {
+                moveFocus(idx);
+                break;
+              }
+            }
+          }
+        }
       }
     },
-    [issues, focusedIndex, expandedId],
+    [displayedIssues, focusedIndex, expandedId, moveFocus],
   );
 
   if (loading) {
@@ -171,13 +221,69 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div className="issue-tracker-panel" style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, position: "relative" }}>
+        <input
+          ref={filterInputRef}
+          type="text"
+          value={filterQuery}
+          onChange={(e) => {
+            setFilterQuery(e.target.value);
+            setFocusedIndex(null);
+          }}
+          onFocus={() => setFilterFocused(true)}
+          onBlur={() => setFilterFocused(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setFilterQuery("");
+              setFocusedIndex(null);
+              listRef.current?.querySelector<HTMLElement>("[tabindex='0']")?.focus();
+            }
+          }}
+          placeholder="Filter issues…"
+          className="issue-filter-input"
+          style={{
+            flex: 1,
+            display: filterQuery !== "" || filterFocused ? "block" : "none",
+          }}
+        />
+        <button
+          className="issue-help-btn"
+          onClick={() => setShowHelp((v) => !v)}
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts"
+          style={{ marginLeft: "auto" }}
+        >
+          ⌨
+        </button>
+        {showHelp && (
+          <div className="issue-help-overlay">
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 12 }}>Keyboard shortcuts</div>
+            <table className="issue-help-table">
+              <tbody>
+                <tr><td>↑ ↓</td><td>Navigate</td></tr>
+                <tr><td>→</td><td>Expand</td></tr>
+                <tr><td>←</td><td>Collapse</td></tr>
+                <tr><td>Enter</td><td>Toggle expand</td></tr>
+                <tr><td>Home / End</td><td>First / Last</td></tr>
+                <tr><td>/</td><td>Filter</td></tr>
+                <tr><td>a–z</td><td>Type-ahead jump</td></tr>
+                <tr><td>Esc</td><td>Clear / exit</td></tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       <div
+        ref={listRef}
         className="issue-tracker-list"
-        tabIndex={0}
         onKeyDown={handleKeyDown}
-        onBlur={() => setFocusedIndex(null)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setFocusedIndex(null);
+          }
+        }}
       >
-        {issues.map((issue, idx) => {
+        {displayedIssues.map((issue, idx) => {
           const progress = parseTaskProgress(issue.body);
           return (
             <div key={issue.id}>
@@ -186,9 +292,10 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                   if (el) rowRefs.current.set(idx, el);
                   else rowRefs.current.delete(idx);
                 }}
+                tabIndex={focusedIndex === idx ? 0 : -1}
                 onClick={() => {
                   setExpandedId(expandedId === issue.id ? null : issue.id);
-                  setFocusedIndex(idx);
+                  moveFocus(idx);
                 }}
                 style={{
                   padding: "8px 12px",

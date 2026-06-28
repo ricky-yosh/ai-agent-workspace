@@ -11,3 +11,65 @@
 .issue-body.expanded {
   height: var(--content-height);
 }
+
+.issue-filter-input {
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 4px;
+  color: var(--text-primary, #ccc);
+  font-size: 12px;
+  outline: none;
+  padding: 3px 8px;
+}
+
+.issue-filter-input:focus {
+  border-color: #4d8ef0;
+}
+
+.issue-help-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.issue-help-btn:hover {
+  background: var(--bg-tertiary, #333);
+  color: var(--text-primary, #ccc);
+}
+
+.issue-help-overlay {
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  color: var(--text-secondary, #aaa);
+  font-size: 12px;
+  padding: 10px 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  white-space: nowrap;
+  z-index: 100;
+}
+
+.issue-help-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.issue-help-table td {
+  padding: 2px 6px 2px 0;
+}
+
+.issue-help-table td:first-child {
+  color: var(--text-primary, #ccc);
+  font-family: monospace;
+  font-size: 11px;
+  min-width: 80px;
+}
