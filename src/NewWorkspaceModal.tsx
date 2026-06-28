@@ -368,6 +368,8 @@ export default function NewWorkspaceModal({
                 <kbd>↵</kbd> create
                 <span className="new-workspace-footer-sep" />
                 <kbd>⌘</kbd><kbd>2</kbd> templates
+                <span className="new-workspace-footer-sep" />
+                <kbd>Esc</kbd> close
               </span>
             </div>
           </>
@@ -504,6 +506,8 @@ export default function NewWorkspaceModal({
                 <kbd>⌫</kbd> delete
                 <span className="new-workspace-footer-sep" />
                 <kbd>⌘</kbd><kbd>1</kbd> new
+                <span className="new-workspace-footer-sep" />
+                <kbd>Esc</kbd> close
               </span>
             </div>
           </>
