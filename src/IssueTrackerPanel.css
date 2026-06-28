@@ -2,16 +2,62 @@
   outline: none;
 }
 
+/* ── Row ─────────────────────────────────────────────────── */
+.issue-row {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border, #3c3c3c);
+  border-left: 3px solid transparent;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 120ms, background 120ms;
+  margin-bottom: 4px;
+}
+
+.issue-row.selected {
+  border-left-color: #4d8ef0;
+  background: rgba(77, 142, 240, 0.07);
+  border-radius: 6px 6px 0 0;
+  margin-bottom: 0;
+}
+
+.issue-row.focused {
+  background: var(--bg-tertiary, #2d2d2d);
+}
+
+.issue-row.focused.selected {
+  background: rgba(77, 142, 240, 0.12);
+}
+
+/* ── Body ────────────────────────────────────────────────── */
 .issue-body {
   overflow: hidden;
   transition: height 200ms cubic-bezier(0.2, 0, 0, 1);
   height: 0;
+  border-radius: 0 0 6px 6px;
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border, #3c3c3c);
+  border-top: none;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 0;
+  transition: height 200ms cubic-bezier(0.2, 0, 0, 1), border-color 120ms, background 120ms;
 }
 
 .issue-body.expanded {
   height: var(--content-height);
+  margin-bottom: 4px;
 }
 
+.issue-body.selected {
+  border-left-color: #4d8ef0;
+  background: rgba(77, 142, 240, 0.04);
+}
+
+/* ── Filter input ────────────────────────────────────────── */
 .issue-filter-input {
   background: var(--bg-secondary, #252526);
   border: 1px solid var(--border, #3c3c3c);
@@ -25,4 +71,3 @@
 .issue-filter-input:focus {
   border-color: #4d8ef0;
 }
-

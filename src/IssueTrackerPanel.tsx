@@ -74,7 +74,6 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const filterInputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const displayedIssues = filterQuery
     ? issues.filter((i) => i.title.toLowerCase().includes(filterQuery.toLowerCase()))
@@ -234,7 +233,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
             if (e.key === "Escape") {
               setFilterQuery("");
               setFocusedIndex(null);
-              listRef.current?.querySelector<HTMLElement>("[tabindex='0']")?.focus();
+              rowRefs.current.get(0)?.focus();
             }
           }}
           placeholder="Filter issues…"
@@ -242,18 +241,13 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           style={{ width: "100%" }}
         />
       </div>
-      <div
-        ref={listRef}
-        className="issue-tracker-list"
-        onKeyDown={handleKeyDown}
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-            setFocusedIndex(null);
-          }
-        }}
-      >
+      <div className="issue-tracker-list">
         {displayedIssues.map((issue, idx) => {
+          const isSelected = expandedId === issue.id;
+          const isFocused = focusedIndex === idx;
           const progress = parseTaskProgress(issue.body);
+          const rowClass = ["issue-row", isSelected ? "selected" : "", isFocused ? "focused" : ""].filter(Boolean).join(" ");
+          const bodyClass = ["issue-body", isSelected && issue.body !== "" ? "expanded" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
           return (
             <div key={issue.id}>
               <div
@@ -261,23 +255,18 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                   if (el) rowRefs.current.set(idx, el);
                   else rowRefs.current.delete(idx);
                 }}
+                className={rowClass}
                 tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
                 onFocus={() => setFocusedIndex(idx)}
-                onClick={() => {
-                  setExpandedId(expandedId === issue.id ? null : issue.id);
-                  moveFocus(idx);
+                onBlur={(e) => {
+                  if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) {
+                    setFocusedIndex(null);
+                  }
                 }}
-                style={{
-                  padding: "8px 12px",
-                  marginBottom: expandedId === issue.id ? 0 : 4,
-                  borderRadius: expandedId === issue.id ? "6px 6px 0 0" : 6,
-                  background: "var(--bg-secondary, #252526)",
-                  border: "1px solid var(--border, #3c3c3c)",
-                  fontSize: 13,
-                  cursor: "pointer",
-                  ...(focusedIndex === idx
-                    ? { outline: "2px solid #4d8ef0", outlineOffset: "-2px" }
-                    : {}),
+                onKeyDown={handleKeyDown}
+                onClick={() => {
+                  setExpandedId(isSelected ? null : issue.id);
+                  moveFocus(idx);
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -327,16 +316,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                   if (el) bodyRefs.current.set(issue.id, el);
                   else bodyRefs.current.delete(issue.id);
                 }}
-                className={expandedId === issue.id && issue.body !== "" ? "issue-body expanded" : "issue-body"}
-                style={{
-                  marginBottom: expandedId === issue.id ? 4 : 0,
-                  borderRadius: "0 0 6px 6px",
-                  background: "var(--bg-secondary, #252526)",
-                  border: "1px solid var(--border, #3c3c3c)",
-                  borderTop: "none",
-                  fontSize: 12,
-                  color: "var(--text-secondary, #aaa)",
-                }}
+                className={bodyClass}
               >
                 <div style={{ padding: "8px 12px" }}>
                   <ReactMarkdown
@@ -351,72 +331,32 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                       code: ({ children, className }) => {
                         const isBlock = Boolean(className);
                         if (isBlock) {
-                          return (
-                            <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>
-                          );
+                          return <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>;
                         }
                         return (
-                          <code
-                            style={{
-                              background: "rgba(255,255,255,0.08)",
-                              borderRadius: 3,
-                              padding: "1px 4px",
-                              fontFamily: "monospace",
-                              fontSize: 11,
-                            }}
-                          >
+                          <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "monospace", fontSize: 11 }}>
                             {children}
                           </code>
                         );
                       },
                       pre: ({ children }) => (
-                        <pre
-                          style={{
-                            background: "rgba(0,0,0,0.3)",
-                            borderRadius: 4,
-                            padding: 8,
-                            overflowX: "auto",
-                            fontSize: 11,
-                            margin: "4px 0",
-                          }}
-                        >
+                        <pre style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: 8, overflowX: "auto", fontSize: 11, margin: "4px 0" }}>
                           {children}
                         </pre>
                       ),
                       blockquote: ({ children }) => (
-                        <blockquote
-                          style={{
-                            borderLeft: "3px solid var(--border, #3c3c3c)",
-                            margin: 0,
-                            paddingLeft: 10,
-                            color: "var(--text-muted, #888)",
-                          }}
-                        >
+                        <blockquote style={{ borderLeft: "3px solid var(--border, #3c3c3c)", margin: 0, paddingLeft: 10, color: "var(--text-muted, #888)" }}>
                           {children}
                         </blockquote>
                       ),
-                      p: ({ children }) => (
-                        <p style={{ margin: "4px 0" }}>{children}</p>
-                      ),
-                      ul: ({ children }) => (
-                        <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>
-                      ),
-                      ol: ({ children }) => (
-                        <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>
-                      ),
+                      p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
+                      ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>,
+                      ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>,
                       a: ({ children, href }) => (
-                        <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>
-                          {children}
-                        </a>
+                        <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>{children}</a>
                       ),
                       input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
-                        <input
-                          type="checkbox"
-                          disabled
-                          checked={checked ?? false}
-                          onChange={() => {}}
-                          style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }}
-                        />
+                        <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }} />
                       ),
                     }}
                   >
