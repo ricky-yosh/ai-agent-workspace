@@ -4,6 +4,8 @@ import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { safeInvoke } from "./safeInvoke";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "./IssueTrackerPanel.css";
 
 function labelStyle(label: string): { background: string; color: string } {
@@ -38,6 +40,13 @@ function IssueStateIcon({ state }: { state: string }) {
       <path d="M4.5 7l2 2 3-3" stroke="#888" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function parseTaskProgress(body: string): { total: number; done: number } | null {
+  const matches = body.match(/^- \[[ x]\]/gm);
+  if (!matches || matches.length === 0) return null;
+  const done = matches.filter((m) => m === "- [x]").length;
+  return { total: matches.length, done };
 }
 
 interface Issue {
@@ -168,77 +177,179 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
         onKeyDown={handleKeyDown}
         onBlur={() => setFocusedIndex(null)}
       >
-        {issues.map((issue, idx) => (
-          <div key={issue.id}>
-            <div
-              ref={(el) => {
-                if (el) rowRefs.current.set(idx, el);
-                else rowRefs.current.delete(idx);
-              }}
-              onClick={() => {
-                setExpandedId(expandedId === issue.id ? null : issue.id);
-                setFocusedIndex(idx);
-              }}
-              style={{
-                padding: "8px 12px",
-                marginBottom: expandedId === issue.id ? 0 : 4,
-                borderRadius: expandedId === issue.id ? "6px 6px 0 0" : 6,
-                background: "var(--bg-secondary, #252526)",
-                border: "1px solid var(--border, #3c3c3c)",
-                fontSize: 13,
-                cursor: "pointer",
-                ...(focusedIndex === idx
-                  ? { outline: "2px solid #4d8ef0", outlineOffset: "-2px" }
-                  : {}),
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={{ color: "var(--text-muted, #888)", fontWeight: 600, minWidth: 48 }}>
-                  #{issue.number}
-                </span>
-                <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {issue.title}
-                </span>
-                <IssueStateIcon state={issue.state} />
-              </div>
-              {issue.labels.length > 0 && (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {issue.labels.map((label) => (
+        {issues.map((issue, idx) => {
+          const progress = parseTaskProgress(issue.body);
+          return (
+            <div key={issue.id}>
+              <div
+                ref={(el) => {
+                  if (el) rowRefs.current.set(idx, el);
+                  else rowRefs.current.delete(idx);
+                }}
+                onClick={() => {
+                  setExpandedId(expandedId === issue.id ? null : issue.id);
+                  setFocusedIndex(idx);
+                }}
+                style={{
+                  padding: "8px 12px",
+                  marginBottom: expandedId === issue.id ? 0 : 4,
+                  borderRadius: expandedId === issue.id ? "6px 6px 0 0" : 6,
+                  background: "var(--bg-secondary, #252526)",
+                  border: "1px solid var(--border, #3c3c3c)",
+                  fontSize: 13,
+                  cursor: "pointer",
+                  ...(focusedIndex === idx
+                    ? { outline: "2px solid #4d8ef0", outlineOffset: "-2px" }
+                    : {}),
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ color: "var(--text-muted, #888)", fontWeight: 600, minWidth: 48 }}>
+                    #{issue.number}
+                  </span>
+                  <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {issue.title}
+                  </span>
+                  {progress !== null && (
                     <span
-                      key={label}
                       style={{
                         fontSize: 11,
-                        padding: "1px 6px",
+                        color: "var(--text-muted, #888)",
+                        background: "var(--bg-tertiary, #333)",
                         borderRadius: 4,
-                        ...labelStyle(label),
+                        padding: "1px 5px",
+                        fontVariantNumeric: "tabular-nums",
+                        flexShrink: 0,
                       }}
                     >
-                      {label}
+                      {progress.done}/{progress.total}
                     </span>
-                  ))}
+                  )}
+                  <IssueStateIcon state={issue.state} />
                 </div>
-              )}
+                {issue.labels.length > 0 && (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {issue.labels.map((label) => (
+                      <span
+                        key={label}
+                        style={{
+                          fontSize: 11,
+                          padding: "1px 6px",
+                          borderRadius: 4,
+                          ...labelStyle(label),
+                        }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div
+                ref={(el) => {
+                  if (el) bodyRefs.current.set(issue.id, el);
+                  else bodyRefs.current.delete(issue.id);
+                }}
+                className={expandedId === issue.id && issue.body !== "" ? "issue-body expanded" : "issue-body"}
+                style={{
+                  marginBottom: expandedId === issue.id ? 4 : 0,
+                  borderRadius: "0 0 6px 6px",
+                  background: "var(--bg-secondary, #252526)",
+                  border: "1px solid var(--border, #3c3c3c)",
+                  borderTop: "none",
+                  fontSize: 12,
+                  color: "var(--text-secondary, #aaa)",
+                }}
+              >
+                <div style={{ padding: "8px 12px" }}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h2: ({ children }) => (
+                        <h2 style={{ fontSize: 14, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h2>
+                      ),
+                      h3: ({ children }) => (
+                        <h3 style={{ fontSize: 13, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h3>
+                      ),
+                      code: ({ children, className }) => {
+                        const isBlock = Boolean(className);
+                        if (isBlock) {
+                          return (
+                            <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>
+                          );
+                        }
+                        return (
+                          <code
+                            style={{
+                              background: "rgba(255,255,255,0.08)",
+                              borderRadius: 3,
+                              padding: "1px 4px",
+                              fontFamily: "monospace",
+                              fontSize: 11,
+                            }}
+                          >
+                            {children}
+                          </code>
+                        );
+                      },
+                      pre: ({ children }) => (
+                        <pre
+                          style={{
+                            background: "rgba(0,0,0,0.3)",
+                            borderRadius: 4,
+                            padding: 8,
+                            overflowX: "auto",
+                            fontSize: 11,
+                            margin: "4px 0",
+                          }}
+                        >
+                          {children}
+                        </pre>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote
+                          style={{
+                            borderLeft: "3px solid var(--border, #3c3c3c)",
+                            margin: 0,
+                            paddingLeft: 10,
+                            color: "var(--text-muted, #888)",
+                          }}
+                        >
+                          {children}
+                        </blockquote>
+                      ),
+                      p: ({ children }) => (
+                        <p style={{ margin: "4px 0" }}>{children}</p>
+                      ),
+                      ul: ({ children }) => (
+                        <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>
+                      ),
+                      ol: ({ children }) => (
+                        <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>
+                      ),
+                      a: ({ children, href }) => (
+                        <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>
+                          {children}
+                        </a>
+                      ),
+                      input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
+                        <input
+                          type="checkbox"
+                          disabled
+                          checked={checked ?? false}
+                          onChange={() => {}}
+                          style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }}
+                        />
+                      ),
+                    }}
+                  >
+                    {issue.body}
+                  </ReactMarkdown>
+                </div>
+              </div>
             </div>
-            <div
-              ref={(el) => {
-                if (el) bodyRefs.current.set(issue.id, el);
-                else bodyRefs.current.delete(issue.id);
-              }}
-              className={expandedId === issue.id && issue.body !== "" ? "issue-body expanded" : "issue-body"}
-              style={{
-                marginBottom: expandedId === issue.id ? 4 : 0,
-                borderRadius: "0 0 6px 6px",
-                background: "var(--bg-secondary, #252526)",
-                border: "1px solid var(--border, #3c3c3c)",
-                borderTop: "none",
-                fontSize: 12,
-                color: "var(--text-secondary, #aaa)",
-              }}
-            >
-              <div style={{ padding: "8px 12px", whiteSpace: "pre-wrap" }}>{issue.body}</div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
