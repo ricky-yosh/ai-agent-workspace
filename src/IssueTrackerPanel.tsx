@@ -63,7 +63,7 @@ interface Issue {
 }
 
 function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
-  const { sessionId } = usePanelContext();
+  const { sessionId, focusedAreaId, areaId } = usePanelContext();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +74,8 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const filterInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const displayedIssues = filterQuery
     ? issues.filter((i) => i.title.toLowerCase().includes(filterQuery.toLowerCase()))
@@ -85,9 +87,13 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     safeInvoke<Issue[]>("list_issues", { sessionId })
       .then((data) => {
         setIssues(data);
-        if (expandedId && !data.some((i) => i.id === expandedId)) {
-          setExpandedId(null);
-        }
+        // Clear the expanded row only if it no longer exists. Read the
+        // current value via the functional updater so this callback does NOT
+        // depend on `expandedId` — otherwise expanding/collapsing a row would
+        // change `fetchIssues`'s identity and re-trigger a full reload, which
+        // flashes the loading state, unmounts the list, and steals keyboard
+        // focus from the row mid-navigation.
+        setExpandedId((prev) => (prev && !data.some((i) => i.id === prev) ? null : prev));
         setLoading(false);
         setError(null);
       })
@@ -95,7 +101,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
         setError(String(err));
         setLoading(false);
       });
-  }, [sessionId, expandedId]);
+  }, [sessionId]);
 
   useEffect(() => {
     fetchIssues();
@@ -117,10 +123,28 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   }, [issues, expandedId]);
 
   useEffect(() => {
-    if (focusedIndex !== null) {
-      rowRefs.current.get(focusedIndex)?.scrollIntoView({ block: "nearest" });
+    if (focusedIndex === null) return;
+    const row = rowRefs.current.get(focusedIndex);
+    const panel = panelRef.current;
+    if (!row || !panel) return;
+    const rowRect = row.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    if (rowRect.bottom > panelRect.bottom) {
+      panel.scrollTop += rowRect.bottom - panelRect.bottom;
+    } else if (rowRect.top < panelRect.top) {
+      panel.scrollTop -= panelRect.top - rowRect.top;
     }
   }, [focusedIndex]);
+
+  useEffect(() => {
+    if (focusedAreaId === areaId) {
+      if (focusedIndex !== null) {
+        rowRefs.current.get(focusedIndex)?.focus();
+      } else {
+        panelRef.current?.focus();
+      }
+    }
+  }, [focusedAreaId, areaId, focusedIndex]);
 
   const moveFocus = useCallback((newIndex: number) => {
     setFocusedIndex(newIndex);
@@ -129,6 +153,11 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // This handler is delegated on the panel container, so it also receives
+      // keydowns that bubble up from the filter input. The input manages its
+      // own keys (typing, Escape, ArrowDown), so ignore events originating
+      // there to avoid e.g. triggering row typeahead while the user is typing.
+      if (e.target === filterInputRef.current) return;
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -154,7 +183,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           break;
         case "ArrowLeft":
           e.preventDefault();
-          if (focusedIndex !== null && expandedId === displayedIssues[focusedIndex].id) {
+          if (focusedIndex !== null) {
             setExpandedId(null);
           }
           break;
@@ -194,7 +223,10 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     [displayedIssues, focusedIndex, expandedId, moveFocus],
   );
 
-  if (loading) {
+  // Only replace the whole panel with the loading state on the very first
+  // load. Background refetches keep the list mounted so they don't unmount the
+  // focused row and steal keyboard focus.
+  if (loading && issues.length === 0) {
     return (
       <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted, #888)", fontSize: 13 }}>
         Loading issues…
@@ -219,7 +251,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   }
 
   return (
-    <div className="issue-tracker-panel" style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }}>
+    <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
       <div style={{ marginBottom: 6 }}>
         <input
           ref={filterInputRef}
@@ -231,9 +263,20 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
+              e.preventDefault();
               setFilterQuery("");
               setFocusedIndex(null);
               rowRefs.current.get(0)?.focus();
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              if (displayedIssues.length > 0) {
+                moveFocus(0);
+              }
+            }
+          }}
+          onBlur={(e) => {
+            if (!panelRef.current?.contains(e.relatedTarget as Node)) {
+              setFocusedIndex(null);
             }
           }}
           placeholder="Filter issues…"
@@ -241,7 +284,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           style={{ width: "100%" }}
         />
       </div>
-      <div className="issue-tracker-list">
+      <div ref={listRef} className="issue-tracker-list">
         {displayedIssues.map((issue, idx) => {
           const isSelected = expandedId === issue.id;
           const isFocused = focusedIndex === idx;
@@ -259,11 +302,10 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                 tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
                 onFocus={() => setFocusedIndex(idx)}
                 onBlur={(e) => {
-                  if (!e.currentTarget.parentElement?.contains(e.relatedTarget as Node)) {
+                  if (!listRef.current?.contains(e.relatedTarget as Node)) {
                     setFocusedIndex(null);
                   }
                 }}
-                onKeyDown={handleKeyDown}
                 onClick={() => {
                   setExpandedId(isSelected ? null : issue.id);
                   moveFocus(idx);
