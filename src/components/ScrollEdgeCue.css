@@ -1,0 +1,62 @@
+.scroll-edge-cue {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scroll-edge-cue--vertical {
+  left: 0;
+  right: 0;
+  height: 40px;
+}
+
+.scroll-edge-cue--horizontal {
+  top: 0;
+  bottom: 0;
+  width: 40px;
+}
+
+.scroll-edge-cue--top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--bg-primary) 0%, transparent 100%);
+}
+
+.scroll-edge-cue--bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg-primary) 0%, transparent 100%);
+}
+
+.scroll-edge-cue--left {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-primary) 0%, transparent 100%);
+}
+
+.scroll-edge-cue--right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-primary) 0%, transparent 100%);
+}
+
+.scroll-edge-cue-chevron {
+  position: absolute;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.scroll-edge-cue--top .scroll-edge-cue-chevron {
+  top: 4px;
+}
+
+.scroll-edge-cue--bottom .scroll-edge-cue-chevron {
+  bottom: 4px;
+}
+
+.scroll-edge-cue--left .scroll-edge-cue-chevron {
+  left: 4px;
+}
+
+.scroll-edge-cue--right .scroll-edge-cue-chevron {
+  right: 4px;
+}
