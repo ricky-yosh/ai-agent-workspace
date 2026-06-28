@@ -467,8 +467,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
     const ctx = panelContextRef.current;
     if (!ctx.screen) return;
 
-    const terminals = ctx.screen.areas.filter(a => a.panel_type === "terminal");
-    const candidates = terminals.length > 0 ? terminals : ctx.screen.areas;
+    const candidates = ctx.screen.areas;
 
     if (!focusedId) {
       setFocusedAreaId(candidates[0]?.id ?? null);
