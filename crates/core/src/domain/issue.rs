@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,4 +13,12 @@ pub struct Issue {
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueSummary {
+    pub total: usize,
+    pub open: usize,
+    pub closed: usize,
+    pub by_label: HashMap<String, usize>,
 }

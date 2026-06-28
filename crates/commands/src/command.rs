@@ -119,4 +119,16 @@ pub enum Command {
     IssueDelete {
         id: String,
     },
+    IssueSearch {
+        session_id: String,
+        state: Option<String>,
+        label: Option<String>,
+        keyword: Option<String>,
+    },
+    IssueGetNext {
+        session_id: String,
+    },
+    IssueSummarizeBacklog {
+        session_id: String,
+    },
 }

@@ -348,6 +348,28 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             issues.delete(&id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id }))
         }
+        Command::IssueSearch { session_id, state: filter_state, label, keyword } => {
+            let issues = state.db.issues(&conn);
+            let list = issues.search(
+                &session_id,
+                filter_state.as_deref(),
+                label.as_deref(),
+                keyword.as_deref(),
+            )?;
+            Ok(ExecutionOutcome::none(CommandResult::Issues(list)))
+        }
+        Command::IssueGetNext { session_id } => {
+            let issues = state.db.issues(&conn);
+            match issues.get_next(&session_id)? {
+                Some(issue) => Ok(ExecutionOutcome::none(CommandResult::Issue(issue))),
+                None => Ok(ExecutionOutcome::none(CommandResult::Unit(()))),
+            }
+        }
+        Command::IssueSummarizeBacklog { session_id } => {
+            let issues = state.db.issues(&conn);
+            let summary = issues.summarize(&session_id)?;
+            Ok(ExecutionOutcome::none(CommandResult::IssueBacklogSummary(summary)))
+        }
     }
 }
 

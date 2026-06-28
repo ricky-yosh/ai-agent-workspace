@@ -187,7 +187,10 @@ impl McpHandler {
         issue_get,
         issue_update,
         issue_close,
-        issue_delete
+        issue_delete,
+        issue_search,
+        issue_get_next,
+        issue_summarize_backlog
     });
 
     #[tool(description = "List all sessions")]
@@ -412,6 +415,27 @@ impl McpHandler {
         let _session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
         run_mcp_command!(Command::IssueDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+    }
+
+    #[tool(description = "Search issues in the current session by state, label, and/or keyword")]
+    async fn issue_search(&self, #[tool(param)] state: Option<String>, #[tool(param)] label: Option<String>, #[tool(param)] keyword: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state_arg = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueSearch { session_id, state, label, keyword }, &state_arg, Issues, issues, json)
+    }
+
+    #[tool(description = "Get the next open issue to work on, prioritized by triage label, or null if none")]
+    async fn issue_get_next(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueGetNext { session_id }, &state, Issue, issue, json_or_null)
+    }
+
+    #[tool(description = "Summarize the issue backlog: total, open, closed, and counts by label")]
+    async fn issue_summarize_backlog(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::IssueSummarizeBacklog { session_id }, &state, IssueBacklogSummary, summary, json)
     }
 }
 
@@ -669,6 +693,137 @@ mod tests {
         assert!(text.contains("General"));
         assert!(text.contains("built_in"));
         assert!(text.contains("true"));
+    }
+
+    // --- Issue tool tests ---
+
+    fn setup_with_session() -> (McpHandler, TempDir) {
+        let (mut handler, dir) = setup();
+        let conn = handler.db.connection().unwrap();
+        let sessions = handler.db.sessions(&conn);
+        let session = sessions.create("/tmp/test", "Test Session").unwrap();
+        handler.resolved_session_id = Some(session.id);
+        (handler, dir)
+    }
+
+    #[tokio::test]
+    async fn test_issue_search_no_filters() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Bug".into(), "crash".into()).await.unwrap();
+        handler.issue_create("Feature".into(), "add thing".into()).await.unwrap();
+
+        let result = handler.issue_search(None, None, None).await.unwrap();
+        let text = extract_text(result);
+        let issues: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(issues.as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_issue_search_by_state() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Open".into(), "".into()).await.unwrap();
+        let r = handler.issue_create("ToClose".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        handler.issue_close(id).await.unwrap();
+
+        let result = handler.issue_search(Some("open".into()), None, None).await.unwrap();
+        let issues: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(issues.as_array().unwrap().len(), 1);
+        assert_eq!(issues[0]["title"], "Open");
+    }
+
+    #[tokio::test]
+    async fn test_issue_search_by_keyword() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Login bug".into(), "auth fails".into()).await.unwrap();
+        handler.issue_create("Docs update".into(), "rewrite readme".into()).await.unwrap();
+
+        let result = handler.issue_search(None, None, Some("login".into())).await.unwrap();
+        let issues: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(issues.as_array().unwrap().len(), 1);
+        assert_eq!(issues[0]["title"], "Login bug");
+    }
+
+    #[tokio::test]
+    async fn test_issue_search_by_label() {
+        let (handler, _dir) = setup_with_session();
+        let r = handler.issue_create("Ready".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        handler.issue_update(id, None, None, Some(vec!["ready-for-agent".into()]), None).await.unwrap();
+        handler.issue_create("Triage".into(), "".into()).await.unwrap();
+
+        let result = handler.issue_search(None, Some("ready-for-agent".into()), None).await.unwrap();
+        let issues: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(issues.as_array().unwrap().len(), 1);
+        assert_eq!(issues[0]["title"], "Ready");
+    }
+
+    #[tokio::test]
+    async fn test_issue_get_next_null_when_empty() {
+        let (handler, _dir) = setup_with_session();
+        let result = handler.issue_get_next().await.unwrap();
+        let text = extract_text(result);
+        assert_eq!(text, "null");
+    }
+
+    #[tokio::test]
+    async fn test_issue_get_next_returns_highest_priority() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Triage issue".into(), "".into()).await.unwrap();
+        let r = handler.issue_create("Agent issue".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        handler.issue_update(id, None, None, Some(vec!["ready-for-agent".into()]), None).await.unwrap();
+
+        let result = handler.issue_get_next().await.unwrap();
+        let text = extract_text(result);
+        let issue: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(issue["title"], "Agent issue");
+    }
+
+    #[tokio::test]
+    async fn test_issue_get_next_null_when_all_closed() {
+        let (handler, _dir) = setup_with_session();
+        let r = handler.issue_create("Issue".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        handler.issue_close(id).await.unwrap();
+
+        let result = handler.issue_get_next().await.unwrap();
+        let text = extract_text(result);
+        assert_eq!(text, "null");
+    }
+
+    #[tokio::test]
+    async fn test_issue_summarize_backlog_empty() {
+        let (handler, _dir) = setup_with_session();
+        let result = handler.issue_summarize_backlog().await.unwrap();
+        let text = extract_text(result);
+        let summary: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(summary["total"], 0);
+        assert_eq!(summary["open"], 0);
+        assert_eq!(summary["closed"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_issue_summarize_backlog_counts() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("A".into(), "".into()).await.unwrap();
+        handler.issue_create("B".into(), "".into()).await.unwrap();
+        let r = handler.issue_create("C".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+        handler.issue_close(id).await.unwrap();
+
+        let result = handler.issue_summarize_backlog().await.unwrap();
+        let text = extract_text(result);
+        let summary: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(summary["total"], 3);
+        assert_eq!(summary["open"], 2);
+        assert_eq!(summary["closed"], 1);
+        assert_eq!(summary["by_label"]["needs-triage"], 3);
     }
 }
 

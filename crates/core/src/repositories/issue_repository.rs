@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::domain::Issue;
+use crate::domain::{Issue, IssueSummary};
 
 fn now_epoch_millis() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -152,6 +152,72 @@ impl<'a> IssueRepository<'a> {
     pub fn delete(&self, id: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute("DELETE FROM issues WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn search(
+        &self,
+        session_id: &str,
+        state: Option<&str>,
+        label: Option<&str>,
+        keyword: Option<&str>,
+    ) -> Result<Vec<Issue>, rusqlite::Error> {
+        let all = self.list_by_session(session_id)?;
+        let results = all.into_iter().filter(|issue| {
+            if let Some(s) = state {
+                if issue.state != s {
+                    return false;
+                }
+            }
+            if let Some(l) = label {
+                if !issue.labels.iter().any(|lbl| lbl == l) {
+                    return false;
+                }
+            }
+            if let Some(kw) = keyword {
+                let kw_lower = kw.to_lowercase();
+                if !issue.title.to_lowercase().contains(&kw_lower)
+                    && !issue.body.to_lowercase().contains(&kw_lower)
+                {
+                    return false;
+                }
+            }
+            true
+        }).collect();
+        Ok(results)
+    }
+
+    pub fn get_next(&self, session_id: &str) -> Result<Option<Issue>, rusqlite::Error> {
+        fn label_priority(issue: &Issue) -> usize {
+            let order = ["ready-for-agent", "ready-for-human", "needs-info", "needs-triage"];
+            for (i, lbl) in order.iter().enumerate() {
+                if issue.labels.iter().any(|l| l == lbl) {
+                    return i;
+                }
+            }
+            order.len()
+        }
+
+        let all = self.list_by_session(session_id)?;
+        let mut open: Vec<Issue> = all.into_iter().filter(|i| i.state == "open").collect();
+        open.sort_by(|a, b| {
+            label_priority(a).cmp(&label_priority(b))
+                .then(a.number.cmp(&b.number))
+        });
+        Ok(open.into_iter().next())
+    }
+
+    pub fn summarize(&self, session_id: &str) -> Result<IssueSummary, rusqlite::Error> {
+        let all = self.list_by_session(session_id)?;
+        let total = all.len();
+        let open = all.iter().filter(|i| i.state == "open").count();
+        let closed = all.iter().filter(|i| i.state == "closed").count();
+        let mut by_label = std::collections::HashMap::new();
+        for issue in &all {
+            for label in &issue.labels {
+                *by_label.entry(label.clone()).or_insert(0usize) += 1;
+            }
+        }
+        Ok(IssueSummary { total, open, closed, by_label })
     }
 }
 
@@ -468,5 +534,239 @@ mod tests {
 
         let remaining = repo.list_by_session(&session.id).unwrap();
         assert_eq!(remaining.len(), 0);
+    }
+
+    #[test]
+    fn test_search_by_state() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "Open issue", "").unwrap();
+        let i2 = repo.create(&session.id, "Closed issue", "").unwrap();
+        repo.close(&i2.id).unwrap();
+
+        let open = repo.search(&session.id, Some("open"), None, None).unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].id, i1.id);
+
+        let closed = repo.search(&session.id, Some("closed"), None, None).unwrap();
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].id, i2.id);
+    }
+
+    #[test]
+    fn test_search_by_label() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "Ready issue", "").unwrap();
+        repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+        let _i2 = repo.create(&session.id, "Triage issue", "").unwrap();
+
+        let ready = repo.search(&session.id, None, Some("ready-for-agent"), None).unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].id, i1.id);
+
+        let triage = repo.search(&session.id, None, Some("needs-triage"), None).unwrap();
+        assert_eq!(triage.len(), 1);
+    }
+
+    #[test]
+    fn test_search_by_keyword_title() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        repo.create(&session.id, "Fix the login bug", "").unwrap();
+        repo.create(&session.id, "Update docs", "").unwrap();
+
+        let results = repo.search(&session.id, None, None, Some("LOGIN")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Fix the login bug");
+    }
+
+    #[test]
+    fn test_search_by_keyword_body() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        repo.create(&session.id, "Issue A", "auth failure in production").unwrap();
+        repo.create(&session.id, "Issue B", "unrelated content").unwrap();
+
+        let results = repo.search(&session.id, None, None, Some("auth failure")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Issue A");
+    }
+
+    #[test]
+    fn test_search_combined_filters() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "Bug report", "crash on startup").unwrap();
+        repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+
+        let i2 = repo.create(&session.id, "Bug report", "crash on startup").unwrap();
+        repo.close(&i2.id).unwrap();
+        repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+
+        let results = repo.search(&session.id, Some("open"), Some("ready-for-agent"), Some("crash")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, i1.id);
+    }
+
+    #[test]
+    fn test_search_no_filters_returns_all() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        repo.create(&session.id, "A", "").unwrap();
+        repo.create(&session.id, "B", "").unwrap();
+
+        let results = repo.search(&session.id, None, None, None).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_get_next_returns_none_when_no_open() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i = repo.create(&session.id, "Done", "").unwrap();
+        repo.close(&i.id).unwrap();
+
+        let next = repo.get_next(&session.id).unwrap();
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_get_next_empty_session() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let next = repo.get_next(&session.id).unwrap();
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_get_next_priority_order() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "Needs triage", "").unwrap();
+        let i2 = repo.create(&session.id, "Ready for agent", "").unwrap();
+        repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+        let i3 = repo.create(&session.id, "Needs info", "").unwrap();
+        repo.update(&i3.id, None, None, Some(&["needs-info".to_string()]), None).unwrap();
+
+        let next = repo.get_next(&session.id).unwrap().unwrap();
+        assert_eq!(next.id, i2.id, "ready-for-agent should come first");
+
+        repo.close(&i2.id).unwrap();
+        let next = repo.get_next(&session.id).unwrap().unwrap();
+        assert_eq!(next.id, i3.id, "needs-info should come second");
+
+        repo.close(&i3.id).unwrap();
+        let next = repo.get_next(&session.id).unwrap().unwrap();
+        assert_eq!(next.id, i1.id, "needs-triage should come last");
+    }
+
+    #[test]
+    fn test_get_next_same_priority_by_number() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "First", "").unwrap();
+        repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+        let i2 = repo.create(&session.id, "Second", "").unwrap();
+        repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
+
+        let next = repo.get_next(&session.id).unwrap().unwrap();
+        assert_eq!(next.id, i1.id, "lower number wins within same priority tier");
+    }
+
+    #[test]
+    fn test_summarize_empty() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let summary = repo.summarize(&session.id).unwrap();
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.open, 0);
+        assert_eq!(summary.closed, 0);
+        assert!(summary.by_label.is_empty());
+    }
+
+    #[test]
+    fn test_summarize_counts() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "A", "").unwrap();
+        let i2 = repo.create(&session.id, "B", "").unwrap();
+        repo.close(&i2.id).unwrap();
+        repo.create(&session.id, "C", "").unwrap();
+
+        let summary = repo.summarize(&session.id).unwrap();
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.open, 2);
+        assert_eq!(summary.closed, 1);
+
+        assert_eq!(*summary.by_label.get("needs-triage").unwrap(), 3);
+        let _ = i1;
+    }
+
+    #[test]
+    fn test_summarize_by_label_multi_label() {
+        let db = setup_db();
+        let conn = db.connection().unwrap();
+        let sessions = db.sessions(&conn);
+        let session = sessions.create("/tmp", "Test").unwrap();
+        let repo = db.issues(&conn);
+
+        let i1 = repo.create(&session.id, "A", "").unwrap();
+        repo.update(&i1.id, None, None, Some(&["bug".to_string(), "ready-for-agent".to_string()]), None).unwrap();
+        let i2 = repo.create(&session.id, "B", "").unwrap();
+        repo.update(&i2.id, None, None, Some(&["bug".to_string()]), None).unwrap();
+
+        let summary = repo.summarize(&session.id).unwrap();
+        assert_eq!(summary.total, 2);
+        assert_eq!(*summary.by_label.get("bug").unwrap(), 2);
+        assert_eq!(*summary.by_label.get("ready-for-agent").unwrap(), 1);
     }
 }
