@@ -70,6 +70,20 @@ const groups: ShortcutGroup[] = [
     ],
   },
   {
+    group: "Issue Tracker",
+    shortcuts: [
+      { keys: "↑ ↓", action: "Navigate issues" },
+      { keys: "→", action: "Expand issue" },
+      { keys: "←", action: "Collapse issue" },
+      { keys: "↵", action: "Toggle expand" },
+      { keys: "Home", action: "First issue" },
+      { keys: "End", action: "Last issue" },
+      { keys: "/", action: "Filter issues" },
+      { keys: "a–z", action: "Type-ahead jump" },
+      { keys: "Esc", action: "Clear filter / exit focus" },
+    ],
+  },
+  {
     group: "General",
     shortcuts: [
       { keys: "?", action: "Show keyboard shortcuts" },

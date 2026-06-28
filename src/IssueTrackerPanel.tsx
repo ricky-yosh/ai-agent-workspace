@@ -70,8 +70,6 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
-  const [filterFocused, setFilterFocused] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
 
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -221,7 +219,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div className="issue-tracker-panel" style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6, position: "relative" }}>
+      <div style={{ marginBottom: 6 }}>
         <input
           ref={filterInputRef}
           type="text"
@@ -230,8 +228,6 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
             setFilterQuery(e.target.value);
             setFocusedIndex(null);
           }}
-          onFocus={() => setFilterFocused(true)}
-          onBlur={() => setFilterFocused(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               setFilterQuery("");
@@ -241,37 +237,8 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           }}
           placeholder="Filter issues…"
           className="issue-filter-input"
-          style={{
-            flex: 1,
-            display: filterQuery !== "" || filterFocused ? "block" : "none",
-          }}
+          style={{ width: "100%" }}
         />
-        <button
-          className="issue-help-btn"
-          onClick={() => setShowHelp((v) => !v)}
-          aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts"
-          style={{ marginLeft: "auto" }}
-        >
-          ⌨
-        </button>
-        {showHelp && (
-          <div className="issue-help-overlay">
-            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 12 }}>Keyboard shortcuts</div>
-            <table className="issue-help-table">
-              <tbody>
-                <tr><td>↑ ↓</td><td>Navigate</td></tr>
-                <tr><td>→</td><td>Expand</td></tr>
-                <tr><td>←</td><td>Collapse</td></tr>
-                <tr><td>Enter</td><td>Toggle expand</td></tr>
-                <tr><td>Home / End</td><td>First / Last</td></tr>
-                <tr><td>/</td><td>Filter</td></tr>
-                <tr><td>a–z</td><td>Type-ahead jump</td></tr>
-                <tr><td>Esc</td><td>Clear / exit</td></tr>
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
       <div
         ref={listRef}
@@ -292,7 +259,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                   if (el) rowRefs.current.set(idx, el);
                   else rowRefs.current.delete(idx);
                 }}
-                tabIndex={focusedIndex === idx ? 0 : -1}
+                tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
                 onClick={() => {
                   setExpandedId(expandedId === issue.id ? null : issue.id);
                   moveFocus(idx);
