@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import { Search, X } from "lucide-react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
@@ -137,6 +138,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   }, [focusedIndex]);
 
   useEffect(() => {
+    if (document.activeElement === filterInputRef.current) return;
     if (focusedAreaId === areaId) {
       if (focusedIndex !== null) {
         rowRefs.current.get(focusedIndex)?.focus();
@@ -145,6 +147,33 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
       }
     }
   }, [focusedAreaId, areaId, focusedIndex]);
+
+  useLayoutEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      panelRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  useEffect(() => {
+    function onGlobalKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "/" &&
+        panelRef.current?.contains(document.activeElement) &&
+        document.activeElement !== filterInputRef.current
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        filterInputRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onGlobalKeyDown, { capture: true });
+    return () => document.removeEventListener("keydown", onGlobalKeyDown, { capture: true });
+  }, []);
 
   const moveFocus = useCallback((newIndex: number) => {
     setFocusedIndex(newIndex);
@@ -252,7 +281,8 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
-      <div style={{ marginBottom: 6 }}>
+      <div className="issue-filter-search" onClick={() => filterInputRef.current?.focus()}>
+        <Search size={14} className="issue-filter-search-icon" />
         <input
           ref={filterInputRef}
           type="text"
@@ -260,6 +290,9 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           onChange={(e) => {
             setFilterQuery(e.target.value);
             setFocusedIndex(null);
+          }}
+          onMouseDown={() => {
+            filterInputRef.current?.focus();
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
@@ -279,13 +312,36 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
               setFocusedIndex(null);
             }
           }}
-          placeholder="Filter issues…"
-          className="issue-filter-input"
-          style={{ width: "100%" }}
+          placeholder="Filter issues… (press /)"
+          className="issue-filter-search-input"
         />
+        {filterQuery && (
+          <span className="issue-filter-count">
+            {displayedIssues.length}/{issues.length}
+          </span>
+        )}
+        {filterQuery && (
+          <button
+            className="issue-filter-clear"
+            onClick={() => {
+              setFilterQuery("");
+              setFocusedIndex(null);
+              filterInputRef.current?.focus();
+            }}
+            aria-label="Clear filter"
+            type="button"
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
       <div ref={listRef} className="issue-tracker-list">
-        {displayedIssues.map((issue, idx) => {
+        {filterQuery && displayedIssues.length === 0 ? (
+          <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
+            No matching issues
+          </div>
+        ) : (
+          displayedIssues.map((issue, idx) => {
           const isSelected = expandedId === issue.id;
           const isFocused = focusedIndex === idx;
           const progress = parseTaskProgress(issue.body);
@@ -408,7 +464,8 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
               </div>
             </div>
           );
-        })}
+        })
+      )}
       </div>
     </div>
   );

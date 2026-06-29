@@ -94,7 +94,7 @@ describe("IssueTrackerPanel keyboard expand/collapse", () => {
     renderPanel();
 
     await screen.findByText("First issue");
-    const filter = screen.getByPlaceholderText("Filter issues…") as HTMLInputElement;
+    const filter = screen.getByPlaceholderText("Filter issues… (press /)") as HTMLInputElement;
 
     // 'x' would typeahead-jump to a row if it leaked to the panel handler.
     await user.type(filter, "x");

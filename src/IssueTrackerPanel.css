@@ -68,18 +68,55 @@
   border-color: rgba(77, 142, 240, 0.35);
 }
 
-/* ── Filter input ────────────────────────────────────────── */
-.issue-filter-input {
-  background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border, #3c3c3c);
-  border-radius: 4px;
-  color: var(--text-primary, #ccc);
-  font-size: 12px;
-  outline: none;
-  padding: 3px 8px;
-  transition: border-color 80ms;
+/* ── Filter search ───────────────────────────────────────── */
+.issue-filter-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.issue-filter-input:focus {
-  border-color: #4d8ef0;
+.issue-filter-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.issue-filter-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.issue-filter-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.issue-filter-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.issue-filter-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.issue-filter-clear:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
 }
