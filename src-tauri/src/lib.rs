@@ -5,11 +5,13 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, Screen, Issue, DomainEvent,
+    Layout, Screen, Issue, ChangeEvent, DomainEvent,
 };
 
 mod pty;
 use pty::{PtyStore, PtySpawnResult};
+
+mod db_watcher;
 
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
 const APP_DATA_DIR_NAME: &str = "AI Agent Workspace";
@@ -221,6 +223,11 @@ workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id,
 
 command_handler!(list_issues, IssueList { session_id }, Issues, Vec<Issue>, session_id: String);
 command_handler!(get_issue, IssueGet { id }, Issue, Issue, id: String);
+
+// ── Change event commands ──────────────────────────────────────
+
+command_handler!(list_change_events, ChangeEventList { session_id }, ChangeEvents, Vec<ChangeEvent>, session_id: String);
+command_handler!(mark_change_event_processed, ChangeEventMarkProcessed { event_id }, Unit, (), event_id: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -485,6 +492,7 @@ fn ensure_cli_installed() {
 pub fn run() {
     let data_dir = dirs::data_dir().expect("No data directory");
     let db_path = data_dir.join(APP_DATA_DIR_NAME).join("workspace.db");
+    let db_path_for_watcher = db_path.clone();
     let app_state = AppState::new(db_path);
 
     // Demote any sessions that were left Running from a previous run
@@ -503,8 +511,12 @@ pub fn run() {
         .plugin(ai_agent_workspace_mcp::init())
         .manage(app_state)
         .manage(pty_store)
-        .setup(|app| {
+        .setup(move |app| {
             ensure_cli_installed();
+
+            // Spawn DB file watcher for real-time updates from external
+            // processes (e.g. the MCP server) that modify the database directly.
+            db_watcher::spawn_db_watcher(app.handle().clone(), &db_path_for_watcher);
 
             let submenu = Submenu::with_items(
                 app,
@@ -563,6 +575,8 @@ pub fn run() {
             change_panel_type,
             list_issues,
             get_issue,
+            list_change_events,
+            mark_change_event_processed,
             open_preferences,
             open_in_app,
             is_git_repo,
