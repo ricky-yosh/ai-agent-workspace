@@ -16,6 +16,8 @@
 | **AppState** | Holds `Database` only. No mutexes. Cloned cheaply (PathBuf). | State |
 | **Issue** | A tracked unit of work or report belonging to a Session, stored in the database; the AI creates them and the user views them. Ephemeral app state, never committed to the repo. | Task, Ticket |
 | **Issue Tracker** | The panel type that displays a session's Issues in a GitHub-style list. | |
+| **ChangeEvent** | A row in the `change_events` table recording an entity mutation (created, updated, deleted), written by a SQLite trigger. Contains the full entity snapshot as JSON so the frontend can animate changes even after the source row is gone. | Event, Notification |
+| **CDC (Change Data Capture)** | The pattern of using database triggers to write mutation events into a queue table, decoupling data changes from their visual representation. | |
 
 ## Relationships
 
@@ -41,3 +43,4 @@
 - Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`; the AI may add ad-hoc labels.
 - No comment thread in v1; the AI keeps the Issue `body` current as a living description. Comments (a separate `issue_comments` table) are a possible fast-follow.
 - The Issue Tracker panel is read-only for the user; all Issue mutations flow through the AI via MCP. The panel reads via Tauri (`list_issues`, `get_issue`) and refreshes on the `issues-changed` event.
+- UI animations for MCP-driven entity mutations (create, update, delete) are driven by a CDC event log rather than state diffing; see [ADR 0014](adr/0014-cdc-event-log-for-mcp-animations.md).
