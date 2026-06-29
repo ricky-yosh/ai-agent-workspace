@@ -43,6 +43,49 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
 
     if current_version < SCHEMA_VERSION {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS change_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                processed_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_change_events_session_id ON change_events(session_id);
+            CREATE INDEX IF NOT EXISTS idx_change_events_unprocessed ON change_events(processed_at) WHERE processed_at IS NULL;"
+        )?;
+
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS issue_delete_trigger
+            AFTER DELETE ON issues
+            BEGIN
+                INSERT INTO change_events (id, session_id, entity_type, entity_id, event_type, payload_json, created_at)
+                VALUES (
+                    lower(hex(randomblob(16))),
+                    OLD.session_id,
+                    'issue',
+                    OLD.id,
+                    'deleted',
+                    json_object(
+                        'id', OLD.id,
+                        'session_id', OLD.session_id,
+                        'number', OLD.number,
+                        'title', OLD.title,
+                        'body', OLD.body,
+                        'state', OLD.state,
+                        'labels', OLD.labels,
+                        'author', OLD.author,
+                        'created_at', OLD.created_at,
+                        'updated_at', OLD.updated_at
+                    ),
+                    CAST((julianday('now') - 2440587.5) * 86400 * 1000 AS INTEGER)
+                );
+            END;"
+        )?;
+
         if current_version == 0 {
             conn.execute(
                 "INSERT INTO schema_version (version) VALUES (?1)",

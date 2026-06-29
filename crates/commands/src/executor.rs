@@ -370,6 +370,16 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let summary = issues.summarize(&session_id)?;
             Ok(ExecutionOutcome::none(CommandResult::IssueBacklogSummary(summary)))
         }
+        Command::ChangeEventList { session_id } => {
+            let events = state.db.change_events(&conn);
+            let list = events.list_unprocessed(&session_id)?;
+            Ok(ExecutionOutcome::none(CommandResult::ChangeEvents(list)))
+        }
+        Command::ChangeEventMarkProcessed { event_id } => {
+            let events = state.db.change_events(&conn);
+            events.mark_processed(&event_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id: String::new() }))
+        }
     }
 }
 

@@ -131,4 +131,10 @@ pub enum Command {
     IssueSummarizeBacklog {
         session_id: String,
     },
+    ChangeEventList {
+        session_id: String,
+    },
+    ChangeEventMarkProcessed {
+        event_id: String,
+    },
 }
