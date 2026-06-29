@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { Search, X } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
@@ -63,6 +64,17 @@ interface Issue {
   updated_at: string;
 }
 
+interface ChangeEvent {
+  id: string;
+  session_id: string;
+  entity_type: string;
+  entity_id: string;
+  event_type: string;
+  payload_json: string;
+  created_at: string;
+  processed_at: string | null;
+}
+
 function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId, focusedAreaId, areaId } = usePanelContext();
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -71,12 +83,20 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
+  const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const filterInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const issuesRef = useRef<Issue[]>([]);
+  const prevSnapshotsRef = useRef<Map<string, { title: string; labels: string[]; state: string; body: string }>>(new Map());
+  const fetchInFlight = useRef(false);
+  const pendingFetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingProcessedEvents = useRef<string[]>([]);
 
   const displayedIssues = filterQuery
     ? issues.filter((i) => i.title.toLowerCase().includes(filterQuery.toLowerCase()))
@@ -84,37 +104,167 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   const fetchIssues = useCallback(() => {
     if (!sessionId) return;
+    if (fetchInFlight.current) return;
+    fetchInFlight.current = true;
     setLoading(true);
     safeInvoke<Issue[]>("list_issues", { sessionId })
       .then((data) => {
-        setIssues(data);
-        // Clear the expanded row only if it no longer exists. Read the
-        // current value via the functional updater so this callback does NOT
-        // depend on `expandedId` — otherwise expanding/collapsing a row would
-        // change `fetchIssues`'s identity and re-trigger a full reload, which
-        // flashes the loading state, unmounts the list, and steals keyboard
-        // focus from the row mid-navigation.
-        setExpandedId((prev) => (prev && !data.some((i) => i.id === prev) ? null : prev));
-        setLoading(false);
-        setError(null);
+        // Fetch unprocessed change events for animation
+        safeInvoke<ChangeEvent[]>("list_change_events", { sessionId })
+          .then((events) => {
+            const deleteEvents = events.filter((e) => e.event_type === "deleted");
+
+            if (deleteEvents.length > 0) {
+              // Extract deleted issues from event payloads
+              // The CDC payload stores labels as a JSON string, so parse it
+              const deletedIssues = deleteEvents
+                .map((e) => {
+                  try {
+                    const parsed = JSON.parse(e.payload_json);
+                    // Ensure labels is an array (CDC stores it as a JSON string)
+                    if (typeof parsed.labels === "string") {
+                      try { parsed.labels = JSON.parse(parsed.labels); }
+                      catch { parsed.labels = []; }
+                    }
+                    return parsed as Issue;
+                  }
+                  catch { return null; }
+                })
+                .filter(Boolean) as Issue[];
+
+              const deletedIds = new Set(deletedIssues.map((i) => i.id));
+
+              // Merge deleted issues back into the list for exit animation
+              // AnimatePresence will animate them out, then onExitComplete removes them
+              const mergedIssues = [...data];
+              deletedIssues.forEach((di) => {
+                if (!mergedIssues.some((i) => i.id === di.id)) {
+                  mergedIssues.push(di);
+                }
+              });
+
+              setRemovingIds(deletedIds);
+              setIssues(mergedIssues);
+              pendingProcessedEvents.current = deleteEvents.map((e) => e.id);
+
+              // Safety timeout: remove items after animation duration even if onExitComplete doesn't fire
+              setTimeout(() => {
+                setRemovingIds((prevRemoving) => {
+                  if (prevRemoving.size > 0) {
+                    setIssues((prevIssues) => prevIssues.filter((i) => !prevRemoving.has(i.id)));
+                    markEventsProcessed();
+                  }
+                  return new Set();
+                });
+              }, 300);
+            } else {
+              setIssues(data);
+              pendingProcessedEvents.current = [];
+            }
+
+            setExpandedId((prev) => (prev && !data.some((i) => i.id === prev) ? null : prev));
+            setLoading(false);
+            setError(null);
+
+            // Detect updated issues for highlight pulse
+            const newHighlighted = new Set<string>();
+            data.forEach((issue) => {
+              const prev = prevSnapshotsRef.current.get(issue.id);
+              if (!prev) return;
+              if (
+                prev.title !== issue.title ||
+                prev.state !== issue.state ||
+                prev.body !== issue.body ||
+                prev.labels.join(",") !== issue.labels.join(",")
+              ) {
+                newHighlighted.add(issue.id);
+              }
+            });
+            const newSnapshots = new Map<string, { title: string; labels: string[]; state: string; body: string }>();
+            data.forEach((issue) => {
+              newSnapshots.set(issue.id, {
+                title: issue.title,
+                labels: [...issue.labels],
+                state: issue.state,
+                body: issue.body,
+              });
+            });
+            prevSnapshotsRef.current = newSnapshots;
+            if (newHighlighted.size > 0) {
+              setHighlightedIds(newHighlighted);
+              setTimeout(() => {
+                setHighlightedIds(new Set());
+              }, 300);
+            }
+
+            if (isFirstLoad) {
+              setIsFirstLoad(false);
+            }
+
+            fetchInFlight.current = false;
+          })
+          .catch(() => {
+            // Fallback: just update issues without animations
+            setIssues(data);
+            setExpandedId((prev) => (prev && !data.some((i) => i.id === prev) ? null : prev));
+            setLoading(false);
+            setError(null);
+            fetchInFlight.current = false;
+          });
       })
       .catch((err) => {
         setError(String(err));
         setLoading(false);
+        fetchInFlight.current = false;
       });
-  }, [sessionId]);
+  }, [sessionId, isFirstLoad]);
+
+  // Mark CDC events as processed after exit animations complete
+  const markEventsProcessed = useCallback(() => {
+    if (pendingProcessedEvents.current.length > 0) {
+      pendingProcessedEvents.current.forEach((eid) => {
+        safeInvoke("mark_change_event_processed", { eventId: eid }).catch(() => {});
+      });
+      pendingProcessedEvents.current = [];
+    }
+  }, []);
 
   useEffect(() => {
     fetchIssues();
   }, [fetchIssues]);
 
+  const debouncedFetchIssues = useCallback(() => {
+    if (pendingFetchTimer.current) {
+      clearTimeout(pendingFetchTimer.current);
+    }
+    pendingFetchTimer.current = setTimeout(() => {
+      fetchIssues();
+      pendingFetchTimer.current = null;
+    }, 50);
+  }, [fetchIssues]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingFetchTimer.current) {
+        clearTimeout(pendingFetchTimer.current);
+      }
+    };
+  }, []);
+
   useTauriEvent<{ session_id: string }>(
     "issues-changed",
     useCallback((payload) => {
       if (payload.session_id === sessionId) {
-        fetchIssues();
+        debouncedFetchIssues();
       }
-    }, [sessionId, fetchIssues]),
+    }, [sessionId, debouncedFetchIssues]),
+  );
+
+  useTauriEvent(
+    "db-changed",
+    useCallback(() => {
+      debouncedFetchIssues();
+    }, [debouncedFetchIssues]),
   );
 
   useLayoutEffect(() => {
@@ -124,17 +274,12 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   }, [issues, expandedId]);
 
   useEffect(() => {
+    issuesRef.current = issues;
+  }, [issues]);
+
+  useEffect(() => {
     if (focusedIndex === null) return;
-    const row = rowRefs.current.get(focusedIndex);
-    const panel = panelRef.current;
-    if (!row || !panel) return;
-    const rowRect = row.getBoundingClientRect();
-    const panelRect = panel.getBoundingClientRect();
-    if (rowRect.bottom > panelRect.bottom) {
-      panel.scrollTop += rowRect.bottom - panelRect.bottom;
-    } else if (rowRect.top < panelRect.top) {
-      panel.scrollTop -= panelRect.top - rowRect.top;
-    }
+    rowRefs.current.get(focusedIndex)?.scrollIntoView({ block: "nearest" });
   }, [focusedIndex]);
 
   useEffect(() => {
@@ -341,131 +486,166 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
             No matching issues
           </div>
         ) : (
-          displayedIssues.map((issue, idx) => {
-          const isSelected = expandedId === issue.id;
-          const isFocused = focusedIndex === idx;
-          const progress = parseTaskProgress(issue.body);
-          const rowClass = ["issue-row", isSelected ? "selected" : "", isFocused ? "focused" : ""].filter(Boolean).join(" ");
-          const bodyClass = ["issue-body", isSelected && issue.body !== "" ? "expanded" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
-          return (
-            <div key={issue.id}>
-              <div
-                ref={(el) => {
-                  if (el) rowRefs.current.set(idx, el);
-                  else rowRefs.current.delete(idx);
-                }}
-                className={rowClass}
-                tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
-                onFocus={() => setFocusedIndex(idx)}
-                onBlur={(e) => {
-                  if (!listRef.current?.contains(e.relatedTarget as Node)) {
-                    setFocusedIndex(null);
-                  }
-                }}
-                onClick={() => {
-                  setExpandedId(isSelected ? null : issue.id);
-                  moveFocus(idx);
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ color: "var(--text-muted, #888)", fontWeight: 600, minWidth: 48 }}>
-                    #{issue.number}
-                  </span>
-                  <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {issue.title}
-                  </span>
-                  {progress !== null && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: "var(--text-muted, #888)",
-                        background: "var(--bg-tertiary, #333)",
-                        borderRadius: 4,
-                        padding: "1px 5px",
-                        fontVariantNumeric: "tabular-nums",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {progress.done}/{progress.total}
-                    </span>
-                  )}
-                  <IssueStateIcon state={issue.state} />
-                </div>
-                {issue.labels.length > 0 && (
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {issue.labels.map((label) => (
-                      <span
-                        key={label}
-                        style={{
-                          fontSize: 11,
-                          padding: "1px 6px",
-                          borderRadius: 4,
-                          ...labelStyle(label),
-                        }}
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div
-                ref={(el) => {
-                  if (el) bodyRefs.current.set(issue.id, el);
-                  else bodyRefs.current.delete(issue.id);
-                }}
-                className={bodyClass}
-              >
-                <div style={{ padding: "8px 12px" }}>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h2: ({ children }) => (
-                        <h2 style={{ fontSize: 14, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h2>
-                      ),
-                      h3: ({ children }) => (
-                        <h3 style={{ fontSize: 13, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h3>
-                      ),
-                      code: ({ children, className }) => {
-                        const isBlock = Boolean(className);
-                        if (isBlock) {
-                          return <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>;
-                        }
-                        return (
-                          <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "monospace", fontSize: 11 }}>
-                            {children}
-                          </code>
-                        );
-                      },
-                      pre: ({ children }) => (
-                        <pre style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: 8, overflowX: "auto", fontSize: 11, margin: "4px 0" }}>
-                          {children}
-                        </pre>
-                      ),
-                      blockquote: ({ children }) => (
-                        <blockquote style={{ borderLeft: "3px solid var(--border, #3c3c3c)", margin: 0, paddingLeft: 10, color: "var(--text-muted, #888)" }}>
-                          {children}
-                        </blockquote>
-                      ),
-                      p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
-                      ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>,
-                      ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>,
-                      a: ({ children, href }) => (
-                        <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>{children}</a>
-                      ),
-                      input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
-                        <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }} />
-                      ),
+          <AnimatePresence mode="popLayout" onExitComplete={() => {
+            // When any exit animation completes, clean up all removing items
+            setRemovingIds((prevRemoving) => {
+              if (prevRemoving.size > 0) {
+                // Remove all exited items from the issues array
+                setIssues((prevIssues) => prevIssues.filter((i) => !prevRemoving.has(i.id)));
+                // Mark CDC events as processed
+                markEventsProcessed();
+              }
+              return new Set();
+            });
+          }}>
+            {displayedIssues.map((issue, idx) => {
+              const isRemoving = removingIds.has(issue.id);
+              const isSelected = isRemoving ? false : expandedId === issue.id;
+              const isFocused = isRemoving ? false : focusedIndex === idx;
+              const progress = parseTaskProgress(issue.body);
+              const rowClass = ["issue-row", isSelected ? "selected" : "", isFocused ? "focused" : ""].filter(Boolean).join(" ");
+              const bodyClass = ["issue-body", isSelected && issue.body !== "" ? "expanded" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
+              const isHighlighted = highlightedIds.has(issue.id);
+              return (
+                <motion.div
+                  key={issue.id}
+                  layout
+                  initial={isFirstLoad ? { opacity: 0, y: 8 } : false}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    backgroundColor: isHighlighted ? "rgba(77, 142, 240, 0.18)" : undefined,
+                    borderColor: isHighlighted ? "rgba(77, 142, 240, 0.25)" : undefined,
+                  }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{
+                    duration: isFirstLoad ? 0.2 : 0.15,
+                    delay: isFirstLoad ? idx * 0.03 : 0,
+                    ease: [0.2, 0, 0, 1],
+                    layout: { duration: 0.2 },
+                  }}
+                >
+                  <div
+                    ref={(el) => {
+                      if (el) {
+                        rowRefs.current.set(idx, el);
+                      } else {
+                        rowRefs.current.delete(idx);
+                      }
+                    }}
+                    className={rowClass}
+                    tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
+                    onFocus={() => setFocusedIndex(idx)}
+                    onBlur={(e) => {
+                      if (!listRef.current?.contains(e.relatedTarget as Node)) {
+                        setFocusedIndex(null);
+                      }
+                    }}
+                    onClick={() => {
+                      setExpandedId(isSelected ? null : issue.id);
+                      moveFocus(idx);
                     }}
                   >
-                    {issue.body}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            </div>
-          );
-        })
-      )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ color: "var(--text-muted, #888)", fontWeight: 600, minWidth: 48, fontVariantNumeric: "tabular-nums" }}>
+                        #{issue.number}
+                      </span>
+                      <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {issue.title}
+                      </span>
+                      {progress !== null && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted, #888)",
+                            background: "var(--bg-tertiary, #333)",
+                            borderRadius: 4,
+                            padding: "1px 5px",
+                            fontVariantNumeric: "tabular-nums",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {progress.done}/{progress.total}
+                        </span>
+                      )}
+                      <IssueStateIcon state={issue.state} />
+                    </div>
+                    {issue.labels.length > 0 && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {issue.labels.map((label) => (
+                          <span
+                            key={label}
+                            style={{
+                              fontSize: 11,
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              ...labelStyle(label),
+                            }}
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    ref={(el) => {
+                      if (el) bodyRefs.current.set(issue.id, el);
+                      else bodyRefs.current.delete(issue.id);
+                    }}
+                    className={bodyClass}
+                  >
+                    <div style={{ padding: "8px 12px" }}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h2: ({ children }) => (
+                            <h2 style={{ fontSize: 14, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h2>
+                          ),
+                          h3: ({ children }) => (
+                            <h3 style={{ fontSize: 13, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h3>
+                          ),
+                          code: ({ children, className }) => {
+                            const isBlock = Boolean(className);
+                            if (isBlock) {
+                              return <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>;
+                            }
+                            return (
+                              <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "monospace", fontSize: 11 }}>
+                                {children}
+                              </code>
+                            );
+                          },
+                          pre: ({ children }) => (
+                            <pre style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: 8, overflowX: "auto", fontSize: 11, margin: "4px 0" }}>
+                              {children}
+                            </pre>
+                          ),
+                          blockquote: ({ children }) => (
+                            <blockquote style={{ borderLeft: "3px solid var(--border, #3c3c3c)", margin: 0, paddingLeft: 10, color: "var(--text-muted, #888)" }}>
+                              {children}
+                            </blockquote>
+                          ),
+                          p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
+                          ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>,
+                          a: ({ children, href }) => (
+                            <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>{children}</a>
+                          ),
+                          input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
+                            <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }} />
+                          ),
+                        }}
+                      >
+                        {issue.body}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );
