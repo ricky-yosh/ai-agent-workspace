@@ -42,5 +42,6 @@ export default defineConfig(async () => ({
     globals: true,
     setupFiles: "./src/test/setup.ts",
     css: true,
+    exclude: ["**/.claude/worktrees/**", "**/node_modules/**"],
   },
 }));

@@ -10,7 +10,10 @@ const sampleIssues = [
 ];
 
 vi.mock("./safeInvoke", () => ({
-  safeInvoke: vi.fn(() => Promise.resolve(sampleIssues)),
+  safeInvoke: vi.fn((cmd: string) => {
+    if (cmd === "list_change_events") return Promise.resolve([]);
+    return Promise.resolve(sampleIssues);
+  }),
 }));
 
 vi.mock("./hooks/useTauriEvent", () => ({
@@ -22,6 +25,18 @@ vi.mock("react-markdown", () => ({
   default: ({ children }: { children: string }) => <div>{children}</div>,
 }));
 vi.mock("remark-gfm", () => ({ default: () => {} }));
+
+// motion/react uses Web APIs not available in jsdom; pass through as-is.
+// motion.div renders as a transparent wrapper that forwards all props.
+vi.mock("motion/react", () => {
+  function MotionDiv({ initial, animate, exit, transition, layout, whileHover, whileTap, whileFocus, whileInView, onAnimationComplete, onUpdate, children, ...rest }: Record<string, unknown>) {
+    return <div {...rest}>{children as React.ReactNode}</div>;
+  }
+  return {
+    motion: { div: MotionDiv },
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  };
+});
 
 import IssueTrackerPanel from "./IssueTrackerPanel";
 
