@@ -23,6 +23,7 @@ import "./Dialog.css";
 import { disposeTerminal } from "./TerminalPanel";
 import { getAdjacency } from "./screenGeometry";
 import type { Adjacency } from "./screenGeometry";
+import { isMac } from "./utils/platform";
 
 export interface WorkspaceInstance {
   id: string;
@@ -609,6 +610,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
   if (!activeSessionId) {
     return (
       <main className="main-content">
+        <div className={`home-hint-svg ${isMac ? 'home-hint-svg--mac' : 'home-hint-svg--linux'}`} aria-label="Click + to create a new session" />
         <StatusBoard />
       </main>
     );
