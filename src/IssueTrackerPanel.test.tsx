@@ -131,4 +131,32 @@ describe("IssueTrackerPanel keyboard expand/collapse", () => {
 
     expect(document.activeElement).toBe(row1);
   });
+
+  it("ArrowUp at first row focuses the filter input", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const firstRow = await screen.findByText("First issue");
+    const row0 = firstRow.closest(".issue-row") as HTMLElement;
+    const filter = screen.getByPlaceholderText("Filter issues… (press /)") as HTMLInputElement;
+
+    act(() => row0.focus());
+    await user.keyboard("{ArrowUp}");
+
+    expect(document.activeElement).toBe(filter);
+  });
+
+  it("ArrowUp from filter input focuses the last row", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByText("First issue");
+    const row1 = screen.getByText("Second issue").closest(".issue-row") as HTMLElement;
+    const filter = screen.getByPlaceholderText("Filter issues… (press /)") as HTMLInputElement;
+
+    act(() => filter.focus());
+    await user.keyboard("{ArrowUp}");
+
+    expect(document.activeElement).toBe(row1);
+  });
 });

@@ -339,7 +339,12 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           break;
         case "ArrowUp":
           e.preventDefault();
-          moveFocus(focusedIndex === null ? 0 : Math.max(focusedIndex - 1, 0));
+          if (focusedIndex !== null && focusedIndex > 0) {
+            moveFocus(focusedIndex - 1);
+          } else {
+            setFocusedIndex(null);
+            filterInputRef.current?.focus();
+          }
           break;
         case "Home":
           e.preventDefault();
@@ -449,6 +454,11 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
               e.preventDefault();
               if (displayedIssues.length > 0) {
                 moveFocus(0);
+              }
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              if (displayedIssues.length > 0) {
+                moveFocus(displayedIssues.length - 1);
               }
             }
           }}
