@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState, type ReactNode } from "react";
+import { useRef, useEffect, type ReactNode } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 interface DialogProps {
@@ -9,45 +10,57 @@ interface DialogProps {
   className?: string;
 }
 
+function isReducedMotion(): boolean {
+  return document.documentElement.dataset.motion === "reduced";
+}
+
 export function Dialog({ open, onClose, title, children, className = "" }: DialogProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
 
   useClickOutside(ref, onClose);
 
   useEffect(() => {
-    if (open) {
-      setMounted(true);
-      const raf = requestAnimationFrame(() => setVisible(true));
-      return () => cancelAnimationFrame(raf);
-    } else if (mounted) {
-      setVisible(false);
-      const timer = setTimeout(() => setMounted(false), 150);
-      return () => clearTimeout(timer);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!mounted) return;
+    if (!open) return;
     function onKeydown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKeydown);
     return () => document.removeEventListener("keydown", onKeydown);
-  }, [mounted, onClose]);
+  }, [open, onClose]);
 
-  if (!mounted) return null;
-
-  const overlayClass = `dialog-overlay${visible ? " open" : " closing"}`;
-  const dialogClass = `dialog ${className}${visible ? " open" : " closing"}`;
+  const reduced = isReducedMotion();
+  const duration = reduced ? 0 : 0.15;
+  const ease: [number, number, number, number] = [0.2, 0, 0, 1];
+  const springEase: [number, number, number, number] = [0.34, 1.56, 0.64, 1];
 
   return (
-    <div className={overlayClass}>
-      <div ref={ref} className={dialogClass}>
-        <div className="dialog-title">{title}</div>
-        {children}
-      </div>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="dialog-overlay"
+          style={{ pointerEvents: "auto" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration, ease }}
+        >
+          <motion.div
+            ref={ref}
+            className={`dialog ${className}`}
+            initial={{ opacity: 0, scale: 0.97, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{
+              opacity: { duration: 0.12, ease },
+              scale: { duration: 0.22, ease: springEase },
+              y: { duration: 0.22, ease: springEase },
+            }}
+          >
+            <div className="dialog-title">{title}</div>
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
