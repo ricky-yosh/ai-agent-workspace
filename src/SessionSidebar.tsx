@@ -559,14 +559,12 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
         onMouseDown={handleMouseDown}
       />
 
-      {showNewSessionDialog && (
-        <NewSessionDialog
-          open={showNewSessionDialog}
-          onClose={() => setShowNewSessionDialog(false)}
-          onCreate={handleCreate}
-          groupedSessions={grouped}
-        />
-      )}
+      <NewSessionDialog
+        open={showNewSessionDialog}
+        onClose={() => setShowNewSessionDialog(false)}
+        onCreate={handleCreate}
+        groupedSessions={grouped}
+      />
 
       <ConfirmDialog
         open={deleteConfirmId !== null}
