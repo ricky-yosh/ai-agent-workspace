@@ -105,9 +105,11 @@ pub enum Command {
     },
     IssueGet {
         id: String,
+        session_id: Option<String>,
     },
     IssueUpdate {
         id: String,
+        session_id: Option<String>,
         title: Option<String>,
         body: Option<String>,
         labels: Option<Vec<String>>,
@@ -115,9 +117,11 @@ pub enum Command {
     },
     IssueClose {
         id: String,
+        session_id: Option<String>,
     },
     IssueDelete {
         id: String,
+        session_id: Option<String>,
     },
     IssueSearch {
         session_id: String,

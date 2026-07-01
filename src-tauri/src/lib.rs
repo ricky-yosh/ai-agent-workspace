@@ -222,7 +222,7 @@ workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id,
 // ── Issue commands ──────────────────────────────────────────────────
 
 command_handler!(list_issues, IssueList { session_id }, Issues, Vec<Issue>, session_id: String);
-command_handler!(get_issue, IssueGet { id }, Issue, Issue, id: String);
+command_handler!(get_issue, IssueGet { id, session_id }, Issue, Issue, id: String, session_id: Option<String>);
 
 // ── Change event commands ──────────────────────────────────────
 

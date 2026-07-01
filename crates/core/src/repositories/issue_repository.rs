@@ -115,6 +115,46 @@ impl<'a> IssueRepository<'a> {
         )
     }
 
+    pub fn get_by_number(&self, session_id: &str, number: i32) -> Result<Issue, rusqlite::Error> {
+        self.conn.query_row(
+            "SELECT id, session_id, number, title, body, state, labels, author, created_at, updated_at
+             FROM issues WHERE session_id = ?1 AND number = ?2",
+            params![session_id, number],
+            |row| {
+                let labels_json: String = row.get(6)?;
+                let labels: Vec<String> = serde_json::from_str(&labels_json)
+                    .unwrap_or_default();
+                let created: i64 = row.get(8)?;
+                let updated: i64 = row.get(9)?;
+                Ok(Issue {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    number: row.get(2)?,
+                    title: row.get(3)?,
+                    body: row.get(4)?,
+                    state: row.get(5)?,
+                    labels,
+                    author: row.get(7)?,
+                    created_at: epoch_millis_to_iso(created),
+                    updated_at: epoch_millis_to_iso(updated),
+                })
+            },
+        )
+    }
+
+    pub fn resolve(&self, issue_ref: &str, session_id: &str) -> Result<Issue, rusqlite::Error> {
+        // Try UUID first
+        if let Ok(issue) = self.get(issue_ref) {
+            return Ok(issue);
+        }
+        // Try as issue number
+        if let Ok(number) = issue_ref.parse::<i32>() {
+            return self.get_by_number(session_id, number);
+        }
+        // Neither UUID nor number — return the original get error
+        self.get(issue_ref)
+    }
+
     pub fn update(&self, id: &str, title: Option<&str>, body: Option<&str>, labels: Option<&[String]>, state: Option<&str>) -> Result<Issue, rusqlite::Error> {
         let now = now_epoch_millis();
         let mut set_clauses = vec!["updated_at = ?".to_string()];

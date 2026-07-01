@@ -308,45 +308,58 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let list = issues.list_by_session(&session_id)?;
             Ok(ExecutionOutcome::none(CommandResult::Issues(list)))
         }
-        Command::IssueGet { id } => {
+        Command::IssueGet { id, session_id } => {
             let issues = state.db.issues(&conn);
-            let issue = issues.get(&id)
-                .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
+            let issue = match &session_id {
+                Some(sid) => issues.resolve(&id, sid)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
+                None => issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
+            };
             Ok(ExecutionOutcome::none(CommandResult::Issue(issue)))
         }
-        Command::IssueUpdate { id, title, body, labels, state: new_state } => {
+        Command::IssueUpdate { id, session_id, title, body, labels, state: new_state } => {
             let issues = state.db.issues(&conn);
-            let session_id = {
-                let existing = issues.get(&id)
-                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
-                existing.session_id
+            let existing = match &session_id {
+                Some(sid) => issues.resolve(&id, sid)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
+                None => issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
             };
+            let session_id_str = existing.session_id;
+            let real_id = existing.id;
             let title_ref = title.as_deref();
             let body_ref = body.as_deref();
             let labels_ref = labels.as_deref();
             let state_ref = new_state.as_deref();
-            let issue = issues.update(&id, title_ref, body_ref, labels_ref, state_ref)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
+            let issue = issues.update(&real_id, title_ref, body_ref, labels_ref, state_ref)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id: session_id_str }))
         }
-        Command::IssueClose { id } => {
+        Command::IssueClose { id, session_id } => {
             let issues = state.db.issues(&conn);
-            let session_id = {
-                let existing = issues.get(&id)
-                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
-                existing.session_id
+            let existing = match &session_id {
+                Some(sid) => issues.resolve(&id, sid)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
+                None => issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
             };
-            let issue = issues.close(&id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
+            let session_id_str = existing.session_id;
+            let real_id = existing.id;
+            let issue = issues.close(&real_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id: session_id_str }))
         }
-        Command::IssueDelete { id } => {
+        Command::IssueDelete { id, session_id } => {
             let issues = state.db.issues(&conn);
-            let session_id = {
-                let existing = issues.get(&id)
-                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?;
-                existing.session_id
+            let existing = match &session_id {
+                Some(sid) => issues.resolve(&id, sid)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
+                None => issues.get(&id)
+                    .map_err(|e| CommandError::not_found_from_sql("issue", &id, e))?,
             };
-            issues.delete(&id)?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id }))
+            let session_id_str = existing.session_id;
+            let real_id = existing.id;
+            issues.delete(&real_id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id: session_id_str }))
         }
         Command::IssueSearch { session_id, state: filter_state, label, keyword } => {
             let issues = state.db.issues(&conn);
@@ -1140,7 +1153,7 @@ mod tests {
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueGet { id: issue_id.clone() },
+            Command::IssueGet { id: issue_id.clone(), session_id: None },
             &state,
         ).unwrap();
         assert!(outcome.events.is_empty());
@@ -1156,7 +1169,7 @@ mod tests {
     fn test_issue_get_not_found() {
         let (state, _tmp) = setup();
         let result = execute(
-            Command::IssueGet { id: "nonexistent".to_string() },
+            Command::IssueGet { id: "nonexistent".to_string(), session_id: None },
             &state,
         );
         assert!(result.is_err());
@@ -1191,6 +1204,7 @@ mod tests {
         let outcome = execute(
             Command::IssueUpdate {
                 id: issue_id.clone(),
+                session_id: None,
                 title: Some("Updated".to_string()),
                 body: None,
                 labels: None,
@@ -1237,7 +1251,7 @@ mod tests {
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueClose { id: issue_id.clone() },
+            Command::IssueClose { id: issue_id.clone(), session_id: None },
             &state,
         ).unwrap();
         assert_eq!(outcome.events.len(), 1);
@@ -1261,6 +1275,7 @@ mod tests {
         let result = execute(
             Command::IssueUpdate {
                 id: "nonexistent".to_string(),
+                session_id: None,
                 title: Some("New".to_string()),
                 body: None,
                 labels: None,
@@ -1277,7 +1292,7 @@ mod tests {
     fn test_issue_close_not_found() {
         let (state, _tmp) = setup();
         let result = execute(
-            Command::IssueClose { id: "nonexistent".to_string() },
+            Command::IssueClose { id: "nonexistent".to_string(), session_id: None },
             &state,
         );
         assert!(result.is_err());
@@ -1309,7 +1324,7 @@ mod tests {
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueDelete { id: issue_id.clone() },
+            Command::IssueDelete { id: issue_id.clone(), session_id: None },
             &state,
         ).unwrap();
         assert_eq!(outcome.events.len(), 1);
@@ -1326,7 +1341,7 @@ mod tests {
     fn test_issue_delete_not_found() {
         let (state, _tmp) = setup();
         let result = execute(
-            Command::IssueDelete { id: "nonexistent".to_string() },
+            Command::IssueDelete { id: "nonexistent".to_string(), session_id: None },
             &state,
         );
         assert!(result.is_err());

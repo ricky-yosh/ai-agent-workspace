@@ -389,32 +389,32 @@ impl McpHandler {
         run_mcp_command!(Command::IssueList { session_id }, &state, Issues, issues, json)
     }
 
-    #[tool(description = "Get an issue by ID")]
+    #[tool(description = "Get an issue by ID or number")]
     async fn issue_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let _session_id = self.require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::IssueGet { id }, &state, Issue, issue, json)
+        run_mcp_command!(Command::IssueGet { id, session_id: Some(session_id) }, &state, Issue, issue, json)
     }
 
-    #[tool(description = "Update an issue's title, body, labels, or state")]
+    #[tool(description = "Update an issue's title, body, labels, or state. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] body: Option<String>, #[tool(param)] labels: Option<Vec<String>>, #[tool(param)] state: Option<String>) -> Result<CallToolResult, rmcp::Error> {
-        let _session_id = self.require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state_arg = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::IssueUpdate { id, title, body, labels, state }, &state_arg, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+        run_mcp_command!(Command::IssueUpdate { id, session_id: Some(session_id), title, body, labels, state }, &state_arg, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
     }
 
-    #[tool(description = "Close an issue")]
+    #[tool(description = "Close an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_close(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let _session_id = self.require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::IssueClose { id }, &state, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+        run_mcp_command!(Command::IssueClose { id, session_id: Some(session_id) }, &state, Issue, issue, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
     }
 
-    #[tool(description = "Delete an issue")]
+    #[tool(description = "Delete an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let _session_id = self.require_session_id()?;
+        let session_id = self.require_session_id()?;
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::IssueDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
+        run_mcp_command!(Command::IssueDelete { id, session_id: Some(session_id) }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed)
     }
 
     #[tool(description = "Search issues in the current session by state, label, and/or keyword")]
