@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useScrollEdges } from "./hooks/useScrollEdges";
 import ScrollEdgeCue from "./components/ScrollEdgeCue";
+import { replaceModifiers } from "./utils/platform";
 import "./ShortcutsModal.css";
 
 interface ShortcutEntry {
@@ -192,7 +193,7 @@ export default function ShortcutsModal({ open, onClose }: { open: boolean; onClo
                       onMouseEnter={() => setActiveIndex(idx)}
                     >
                       <span className="shortcuts-keys">
-                        {splitKeys(s.keys).map((k, i) => (
+                        {splitKeys(replaceModifiers(s.keys)).map((k, i) => (
                           <kbd key={i}>{k}</kbd>
                         ))}
                       </span>
