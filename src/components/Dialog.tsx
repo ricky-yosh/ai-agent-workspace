@@ -1,66 +1,101 @@
-import { useRef, useEffect, type ReactNode } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { useRef, useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
+  header?: ReactNode;
   children: ReactNode;
   className?: string;
+  overlayClassName?: string;
+  width?: number | string;
+  onKeyDown?: (e: ReactKeyboardEvent) => void;
+  autoFocus?: boolean;
 }
 
-function isReducedMotion(): boolean {
-  return document.documentElement.dataset.motion === "reduced";
-}
-
-export function Dialog({ open, onClose, title, children, className = "" }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  header,
+  children,
+  className = "",
+  overlayClassName = "",
+  width,
+  onKeyDown,
+  autoFocus = true,
+}: DialogProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   useClickOutside(ref, onClose);
 
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+        setVisible(true);
+      }));
+      return () => cancelAnimationFrame(raf);
+    } else if (mounted) {
+      setVisible(false);
+      let unmountTimer: ReturnType<typeof setTimeout>;
+      let raf2: number;
+      const raf = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          unmountTimer = setTimeout(() => {
+            setMounted(false);
+          }, 200);
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf);
+        if (raf2 !== undefined) cancelAnimationFrame(raf2);
+        if (unmountTimer) clearTimeout(unmountTimer);
+      };
+    }
+  }, [open, mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
     function onKeydown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKeydown);
     return () => document.removeEventListener("keydown", onKeydown);
-  }, [open, onClose]);
+  }, [mounted, onClose]);
 
-  const reduced = isReducedMotion();
-  const duration = reduced ? 0 : 0.15;
-  const ease: [number, number, number, number] = [0.2, 0, 0, 1];
-  const springEase: [number, number, number, number] = [0.34, 1.56, 0.64, 1];
+  useEffect(() => {
+    if (visible && autoFocus) ref.current?.focus();
+  }, [visible, autoFocus]);
+
+  if (!mounted) return null;
+
+  const overlayClass = `dialog-overlay${overlayClassName ? ` ${overlayClassName}` : ""}${visible ? " open" : " closing"}`;
+  const dialogClass = `dialog ${className}${visible ? " open" : " closing"}`;
+  const dialogStyle = width !== undefined ? { width: typeof width === "number" ? `${width}px` : width } : undefined;
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="dialog-overlay"
-          style={{ pointerEvents: "auto" }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration, ease }}
-        >
-          <motion.div
-            ref={ref}
-            className={`dialog ${className}`}
-            initial={{ opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{
-              opacity: { duration: 0.12, ease },
-              scale: { duration: 0.22, ease: springEase },
-              y: { duration: 0.22, ease: springEase },
-            }}
-          >
-            <div className="dialog-title">{title}</div>
-            {children}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div
+      className={overlayClass}
+      style={{ pointerEvents: "auto" }}
+      role="presentation"
+    >
+      <div
+        ref={ref}
+        className={dialogClass}
+        style={dialogStyle}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+      >
+        {header ?? (title && <div className="dialog-title">{title}</div>)}
+        {children}
+      </div>
+    </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { SessionSummary } from "./SessionContext";
+import { Dialog } from "./components/Dialog";
 import "./SessionActionsModal.css";
 
 interface SessionActionsModalProps {
@@ -29,12 +30,12 @@ interface SessionActionsModalProps {
 
 interface Action {
   key: string;
-  matchKey?: string;   // e.key value for non-letter keys
+  matchKey?: string;
   label: string;
   handler: () => void;
   icon: React.ElementType;
   destructive?: boolean;
-  immediate?: boolean; // skip checkmark flash, call handler directly
+  immediate?: boolean;
 }
 
 export default function SessionActionsModal({
@@ -50,15 +51,11 @@ export default function SessionActionsModal({
   onRename,
   onDelete,
 }: SessionActionsModalProps) {
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
@@ -71,27 +68,13 @@ export default function SessionActionsModal({
 
   useEffect(() => {
     if (open) {
-      setMounted(true);
       setActiveIndex(0);
       setConfirmedKey(null);
       setRenaming(false);
       setRenameValue("");
-      const raf = requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)));
-      return () => cancelAnimationFrame(raf);
-    } else if (mounted) {
-      setVisible(false);
-      const timer = setTimeout(() => setMounted(false), 150);
-      return () => clearTimeout(timer);
     }
   }, [open]);
 
-  useEffect(() => {
-    if (visible && dialogRef.current) {
-      dialogRef.current.focus();
-    }
-  }, [visible]);
-
-  // Scroll active item into view
   useEffect(() => {
     itemRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
@@ -107,7 +90,7 @@ export default function SessionActionsModal({
     { key: "⌫", matchKey: "Backspace", label: "Delete Session", handler: onDelete, icon: Trash2, destructive: true },
   ];
 
-  const dividerAfterIndex = 5; // divider between tool actions and session management
+  const dividerAfterIndex = 5;
 
   function triggerAction(action: Action) {
     if (action.immediate) {
@@ -129,7 +112,6 @@ export default function SessionActionsModal({
 
   function cancelRename() {
     setRenaming(false);
-    dialogRef.current?.focus();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -159,6 +141,7 @@ export default function SessionActionsModal({
       }
       case "Escape":
         e.preventDefault();
+        e.stopPropagation();
         onClose();
         break;
       case "Backspace":
@@ -180,10 +163,6 @@ export default function SessionActionsModal({
     }
   }
 
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
   function getItemRef(idx: number) {
     return (el: HTMLButtonElement | null) => {
       if (el) itemRefs.current.set(idx, el);
@@ -191,28 +170,16 @@ export default function SessionActionsModal({
     };
   }
 
-  if (!mounted) return null;
-
-  const overlayClass = `dialog-overlay dialog-overlay--action${visible ? " open" : " closing"}`;
-  const dialogClass = `dialog session-actions-dialog${visible ? " open" : " closing"}`;
-
   return (
-    <div
-      className={overlayClass}
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      role="presentation"
-    >
-      <div
-        className={dialogClass}
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Session actions: ${session?.name ?? ""}`}
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={`Session actions: ${session?.name ?? ""}`}
+      className="session-actions-dialog"
+      overlayClassName="dialog-overlay--action"
+      width={280}
+      onKeyDown={handleKeyDown}
+      header={
         <div className="session-actions-header">
           <span className="session-actions-context">
             <Terminal size={11} className="session-actions-context-icon" />
@@ -235,47 +202,47 @@ export default function SessionActionsModal({
             <span className="session-actions-name">{session?.name ?? ""}</span>
           )}
         </div>
-
-        <div className="session-actions-list" role="list">
-          {actions.map((action, idx) => {
-            const Icon = action.icon;
-            const isActive = idx === activeIndex;
-            const isConfirmed = confirmedKey === action.key;
-            return (
-              <React.Fragment key={action.key}>
-                {idx === dividerAfterIndex + 1 && (
-                  <div className="session-actions-divider" role="separator" />
-                )}
-                <button
-                  ref={getItemRef(idx)}
-                  className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}${action.destructive ? " session-actions-item--destructive" : ""}`}
-                  role="listitem"
-                  disabled={confirmedKey !== null || renaming}
-                  onClick={() => triggerAction(action)}
-                  onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
-                >
-                  <span className="session-actions-row-left">
-                    {isConfirmed
-                      ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
-                      : <Icon size={15} className="session-actions-icon" />
-                    }
-                    <span className="session-actions-label">{action.label}</span>
-                  </span>
-                  <kbd className="session-actions-kbd">{action.key}</kbd>
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </div>
-
-        <div className="session-actions-footer">
-          <kbd>↑</kbd><kbd>↓</kbd> navigate
-          <span className="session-actions-footer-sep" />
-          <kbd>↵</kbd> select
-          <span className="session-actions-footer-sep" />
-          <kbd>Esc</kbd> close
-        </div>
+      }
+    >
+      <div className="session-actions-list" role="list">
+        {actions.map((action, idx) => {
+          const Icon = action.icon;
+          const isActive = idx === activeIndex;
+          const isConfirmed = confirmedKey === action.key;
+          return (
+            <React.Fragment key={action.key}>
+              {idx === dividerAfterIndex + 1 && (
+                <div className="session-actions-divider" role="separator" />
+              )}
+              <button
+                ref={getItemRef(idx)}
+                className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}${action.destructive ? " session-actions-item--destructive" : ""}`}
+                role="listitem"
+                disabled={confirmedKey !== null || renaming}
+                onClick={() => triggerAction(action)}
+                onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
+              >
+                <span className="session-actions-row-left">
+                  {isConfirmed
+                    ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
+                    : <Icon size={15} className="session-actions-icon" />
+                  }
+                  <span className="session-actions-label">{action.label}</span>
+                </span>
+                <kbd className="session-actions-kbd">{action.key}</kbd>
+              </button>
+            </React.Fragment>
+          );
+        })}
       </div>
-    </div>
+
+      <div className="session-actions-footer">
+        <kbd>↑</kbd><kbd>↓</kbd> navigate
+        <span className="session-actions-footer-sep" />
+        <kbd>↵</kbd> select
+        <span className="session-actions-footer-sep" />
+        <kbd>Esc</kbd> close
+      </div>
+    </Dialog>
   );
 }

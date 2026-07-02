@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useScrollEdges } from "./hooks/useScrollEdges";
 import ScrollEdgeCue from "./components/ScrollEdgeCue";
 import { replaceModifiers } from "./utils/platform";
+import { Dialog } from "./components/Dialog";
 import "./ShortcutsModal.css";
 
 interface ShortcutEntry {
@@ -96,8 +97,6 @@ const groups: ShortcutGroup[] = [
 ];
 
 export default function ShortcutsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [mounted, setMounted] = useState(false);
-  const [visible, setVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -114,104 +113,83 @@ export default function ShortcutsModal({ open, onClose }: { open: boolean; onClo
   }, []);
 
   useEffect(() => {
-    if (open) {
-      setMounted(true);
-      setActiveIndex(0);
-      const raf = requestAnimationFrame(() => setVisible(true));
-      return () => cancelAnimationFrame(raf);
-    } else if (mounted) {
-      setVisible(false);
-      const timer = setTimeout(() => setMounted(false), 150);
-      return () => clearTimeout(timer);
-    }
+    if (open) setActiveIndex(0);
   }, [open]);
 
   useEffect(() => {
     itemRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  useEffect(() => {
-    if (!mounted) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          onClose();
-          break;
-        case "ArrowDown":
-          e.preventDefault();
-          setActiveIndex((i) => Math.min(i + 1, flatShortcuts.length - 1));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          setActiveIndex((i) => Math.max(i - 1, 0));
-          break;
-        case "Home":
-          e.preventDefault();
-          setActiveIndex(0);
-          break;
-        case "End":
-          e.preventDefault();
-          setActiveIndex(flatShortcuts.length - 1);
-          break;
-      }
+  function handleKeyDown(e: React.KeyboardEvent) {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActiveIndex((i) => Math.min(i + 1, flatShortcuts.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActiveIndex((i) => Math.max(i - 1, 0));
+        break;
+      case "Home":
+        e.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setActiveIndex(flatShortcuts.length - 1);
+        break;
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [mounted, onClose, flatShortcuts.length]);
-
-  if (!mounted) return null;
+  }
 
   let flatIdx = 0;
 
   return (
-    <div
-      className={`dialog-overlay${visible ? " open" : " closing"}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Keyboard Shortcuts"
+      className="shortcuts-dialog"
+      width={420}
+      onKeyDown={handleKeyDown}
     >
-      <div className={`dialog shortcuts-dialog${visible ? " open" : " closing"}`} onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-title">Keyboard Shortcuts</div>
-        <div className="shortcuts-body-wrapper">
-          <ScrollEdgeCue edge="top" visible={edges.top} />
-          <div className="shortcuts-body" ref={scrollRef}>
-            {groups.map((g) => (
-              <div key={g.group} className="shortcuts-group">
-                <div className="shortcuts-group-title">{g.group}</div>
-                {g.shortcuts.map((s) => {
-                  const idx = flatIdx++;
-                  const isActive = idx === activeIndex;
-                  return (
-                    <div
-                      key={s.keys + s.action}
-                      ref={(el) => {
-                        if (el) itemRefs.current.set(idx, el);
-                        else itemRefs.current.delete(idx);
-                      }}
-                      className={`shortcuts-row${isActive ? " shortcuts-row--active" : ""}`}
-                      onMouseEnter={() => setActiveIndex(idx)}
-                    >
-                      <span className="shortcuts-keys">
-                        {splitKeys(replaceModifiers(s.keys)).map((k, i) => (
-                          <kbd key={i}>{k}</kbd>
-                        ))}
-                      </span>
-                      <span className="shortcuts-action">{s.action}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <ScrollEdgeCue edge="bottom" visible={edges.bottom} />
+      <div className="shortcuts-body-wrapper">
+        <ScrollEdgeCue edge="top" visible={edges.top} />
+        <div className="shortcuts-body" ref={scrollRef}>
+          {groups.map((g) => (
+            <div key={g.group} className="shortcuts-group">
+              <div className="shortcuts-group-title">{g.group}</div>
+              {g.shortcuts.map((s) => {
+                const idx = flatIdx++;
+                const isActive = idx === activeIndex;
+                return (
+                  <div
+                    key={s.keys + s.action}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(idx, el);
+                      else itemRefs.current.delete(idx);
+                    }}
+                    className={`shortcuts-row${isActive ? " shortcuts-row--active" : ""}`}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                  >
+                    <span className="shortcuts-keys">
+                      {splitKeys(replaceModifiers(s.keys)).map((k, i) => (
+                        <kbd key={i}>{k}</kbd>
+                      ))}
+                    </span>
+                    <span className="shortcuts-action">{s.action}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
-        <div className="shortcuts-footer">
-          <kbd>↑</kbd><kbd>↓</kbd> navigate
-          <span className="shortcuts-footer-sep" />
-          <kbd>Esc</kbd> close
-        </div>
+        <ScrollEdgeCue edge="bottom" visible={edges.bottom} />
       </div>
-    </div>
+      <div className="shortcuts-footer">
+        <kbd>↑</kbd><kbd>↓</kbd> navigate
+        <span className="shortcuts-footer-sep" />
+        <kbd>Esc</kbd> close
+      </div>
+    </Dialog>
   );
 }
