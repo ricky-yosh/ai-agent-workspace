@@ -133,8 +133,24 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     endY: number;
   } | null>(null);
 
+  // Edge drag state (for creating new edges)
+  const [edgeDragState, setEdgeDragState] = useState<{
+    sourceNodeId: string;
+    sourceX: number;
+    sourceY: number;
+    targetX: number;
+    targetY: number;
+  } | null>(null);
+
   // Space key held for panning
   const isSpacePressedRef = useRef(false);
+
+  // Alt key held for edge creation mode
+  const isAltPressedRef = useRef(false);
+  const [isAltPressed, setIsAltPressed] = useState(false);
+
+  // Hovered node id (for connection source breathe effect)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // Flag to prevent handleCanvasClick from clearing selection after box-select
   const justCompletedBoxSelectRef = useRef(false);
@@ -143,6 +159,14 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Shockwave effect: track newly created node IDs
+  const [newlyCreatedNodeIds, setNewlyCreatedNodeIds] = useState<Set<string>>(new Set());
+  const prevNodeIdsRef = useRef<Set<string>>(new Set());
+
+  // Tag enter animation: track newly added tag IDs
+  const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
+  const prevTagIdsRef = useRef<Set<string>>(new Set());
 
   // Undo/Redo state
   const [undoStack, setUndoStack] = useState<CanvasCommand[]>([]);
@@ -246,6 +270,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             metadataJson: command.node.metadata_json,
           });
           setNodes((prev) => [...prev, newNode]);
+          // Trigger shockwave for recreated node
+          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
+          setTimeout(() => {
+            setNewlyCreatedNodeIds((prev) => {
+              const next = new Set(prev);
+              next.delete(newNode.id);
+              return next;
+            });
+          }, 1400);
           return true;
         }
       }
@@ -273,6 +306,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             metadataJson: command.node.metadata_json,
           });
           setNodes((prev) => [...prev, newNode]);
+          // Trigger shockwave for recreated node
+          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
+          setTimeout(() => {
+            setNewlyCreatedNodeIds((prev) => {
+              const next = new Set(prev);
+              next.delete(newNode.id);
+              return next;
+            });
+          }, 1400);
           return true;
         }
         case "update_node":
@@ -393,10 +435,29 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const fetchNodes = useCallback(() => {
     if (!selectedCanvasId) {
       setNodes([]);
+      prevNodeIdsRef.current = new Set();
       return;
     }
     safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId })
       .then((data) => {
+        // Detect newly created nodes (IDs not in previous set)
+        const newIds = data.filter((n) => !prevNodeIdsRef.current.has(n.id)).map((n) => n.id);
+        if (newIds.length > 0) {
+          setNewlyCreatedNodeIds((prev) => {
+            const next = new Set(prev);
+            for (const id of newIds) next.add(id);
+            return next;
+          });
+          // Remove from shockwave set after animation completes
+          setTimeout(() => {
+            setNewlyCreatedNodeIds((prev) => {
+              const next = new Set(prev);
+              for (const id of newIds) next.delete(id);
+              return next;
+            });
+          }, 1400);
+        }
+        prevNodeIdsRef.current = new Set(data.map((n) => n.id));
         setNodes(data);
       })
       .catch((err) => {
@@ -435,10 +496,29 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const fetchTags = useCallback(() => {
     if (!selectedCanvasId) {
       setTags([]);
+      prevTagIdsRef.current = new Set();
       return;
     }
     safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: selectedCanvasId })
       .then((data) => {
+        // Detect newly added tags (IDs not in previous set)
+        const newIds = data.filter((t) => !prevTagIdsRef.current.has(t.id)).map((t) => t.id);
+        if (newIds.length > 0) {
+          setNewlyAddedTagIds((prev) => {
+            const next = new Set(prev);
+            for (const id of newIds) next.add(id);
+            return next;
+          });
+          // Remove from animation set after animation completes
+          setTimeout(() => {
+            setNewlyAddedTagIds((prev) => {
+              const next = new Set(prev);
+              for (const id of newIds) next.delete(id);
+              return next;
+            });
+          }, 300); // Slightly longer than 0.26s to ensure animation completes
+        }
+        prevTagIdsRef.current = new Set(data.map((t) => t.id));
         setTags(data);
       })
       .catch((err) => {
@@ -674,7 +754,75 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }, 100);
   }, []);
 
-  // Handle mouse down on a node to start dragging
+  // Start edge creation (called from node mouse down with Alt key)
+  const handleEdgeDragStart = useCallback((e: React.MouseEvent, node: CanvasNode) => {
+    e.stopPropagation();
+    e.preventDefault();
+    // Calculate source point (center of node)
+    const sourceX = node.x + node.width / 2;
+    const sourceY = node.y + node.height / 2;
+    setEdgeDragState({
+      sourceNodeId: node.id,
+      sourceX,
+      sourceY,
+      targetX: sourceX,
+      targetY: sourceY,
+    });
+  }, []);
+
+  // Update edge drag position
+  const handleEdgeDragMove = useCallback((e: React.MouseEvent) => {
+    if (!edgeDragState) return;
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Convert screen coordinates to canvas coordinates
+    const canvasX = (e.clientX - rect.left - offsetX) / zoom;
+    const canvasY = (e.clientY - rect.top - offsetY) / zoom;
+    setEdgeDragState((prev) => prev ? { ...prev, targetX: canvasX, targetY: canvasY } : null);
+  }, [edgeDragState, offsetX, offsetY, zoom]);
+
+  // Complete edge creation
+  const handleEdgeDragEnd = useCallback((e: React.MouseEvent) => {
+    if (!edgeDragState) return;
+    // Find if we dropped on a node
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setEdgeDragState(null);
+      return;
+    }
+    const canvasX = (e.clientX - rect.left - offsetX) / zoom;
+    const canvasY = (e.clientY - rect.top - offsetY) / zoom;
+
+    // Check if dropped on a node
+    for (const node of nodes) {
+      if (node.id === edgeDragState.sourceNodeId) continue;
+      if (
+        canvasX >= node.x &&
+        canvasX <= node.x + node.width &&
+        canvasY >= node.y &&
+        canvasY <= node.y + node.height
+      ) {
+        // Create the edge
+        safeInvoke<CanvasEdge>("create_canvas_edge", {
+          canvasId: selectedCanvasId,
+          sourceNodeId: edgeDragState.sourceNodeId,
+          targetNodeId: node.id,
+          label: null,
+          metadataJson: null,
+        }).then((newEdge) => {
+          setEdges((prev) => [...prev, newEdge]);
+          showToast("Edge created");
+        }).catch((err) => {
+          console.error("Failed to create edge:", err);
+          showToast("Failed to create edge");
+        });
+        break;
+      }
+    }
+    setEdgeDragState(null);
+  }, [edgeDragState, offsetX, offsetY, zoom, nodes, selectedCanvasId, showToast]);
+
+  // Handle mouse down on a node to start dragging or edge creation
   const handleNodeMouseDown = useCallback((
     e: React.MouseEvent,
     node: CanvasNode
@@ -684,6 +832,12 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
     // Only start drag with left mouse button
     if (e.button !== 0) return;
+
+    // Alt + left click starts edge creation
+    if (e.altKey) {
+      handleEdgeDragStart(e, node);
+      return;
+    }
 
     // Determine which nodes to drag: if node is in selection, drag all selected; otherwise just this one
     const isDraggingSelected = selectedNodeIds.has(node.id);
@@ -706,13 +860,19 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       multiNodeStarts: nodesToDrag.length > 1 ? multiNodeStarts : undefined,
     });
     setDraggedNodeId(node.id);
-  }, [selectedNodeIds, nodes]);
+  }, [selectedNodeIds, nodes, handleEdgeDragStart]);
 
   // Handle mouse move on canvas
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     // Handle box-select rubber band
     if (boxSelect) {
       handleBoxSelectMove(e);
+      return;
+    }
+
+    // Handle edge drag
+    if (edgeDragState) {
+      handleEdgeDragMove(e);
       return;
     }
 
@@ -751,15 +911,21 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       );
       updateNodePosition(dragState.nodeId, newX, newY);
     }
-  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove]);
+  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove]);
 
   // Handle mouse up to end dragging
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e?: React.MouseEvent) => {
     if (dragThrottleRef.current) {
       clearTimeout(dragThrottleRef.current);
     }
     if (batchUpdatePositionsRef.current) {
       clearTimeout(batchUpdatePositionsRef.current);
+    }
+
+    // Complete edge drag if active
+    if (edgeDragState && e) {
+      handleEdgeDragEnd(e);
+      return;
     }
 
     // Complete box-select if active
@@ -808,7 +974,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
     setDragState(null);
     setDraggedNodeId(null);
-  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd]);
+  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, edgeDragState, handleEdgeDragEnd]);
 
   // Handle node click to select
   const handleNodeClick = useCallback((e: React.MouseEvent, nodeId: string) => {
@@ -975,6 +1141,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       }
 
       if (e.key === "Escape") {
+        // Cancel edge drag if active
+        if (edgeDragState) {
+          setEdgeDragState(null);
+          return;
+        }
         setSelectedNodeIds(new Set());
         setEditingNodeId(null);
         setEditingValue("");
@@ -987,11 +1158,21 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           isSpacePressedRef.current = true;
         }
       }
+
+      if (e.key === "Alt") {
+        isAltPressedRef.current = true;
+        setIsAltPressed(true);
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === " ") {
         isSpacePressedRef.current = false;
+      }
+      if (e.key === "Alt") {
+        isAltPressedRef.current = false;
+        setIsAltPressed(false);
+        setHoveredNodeId(null);
       }
     };
 
@@ -1001,7 +1182,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [deleteSelectedNodes, handleUndo, handleRedo]);
+  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState]);
 
   useEffect(() => {
     fetchCanvases();
@@ -1040,6 +1221,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       if (boxSelect) {
         handleBoxSelectEnd();
       }
+      setEdgeDragState(null);
       setDragState(null);
       setDraggedNodeId(null);
     };
@@ -1206,7 +1388,159 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     : edges;
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
+    <div className="visual-canvas-panel" style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
+      {/* ── Design Tokens ── */}
+      <style>{`
+        .visual-canvas-panel {
+          /* Animation timing */
+          --canvas-duration-fast: .15s;
+          --canvas-duration-normal: .26s;
+          --canvas-duration-slow: .62s;
+
+          /* Animation easing */
+          --canvas-ease-state: cubic-bezier(.2,.8,.2,1);
+          --canvas-ease-spring: cubic-bezier(.19,1.42,.36,1);
+          --canvas-ease-spring-subtle: cubic-bezier(.16,1,.3,1);
+
+          /* Edge animation tokens */
+          --canvas-edge-dash-array: 6 6;
+          --canvas-edge-dash-speed: .68s;
+
+          /* Colors */
+          --canvas-bg: #0b090f;
+          --canvas-node-bg: #1f1828;
+          --canvas-node-border: #7c3aed55;
+          --canvas-node-selected: #7c3aed;
+          --canvas-edge-color: #7c3aed;
+          --canvas-accent: #9b6cb9;
+          --canvas-accent-bright: #c6a7d8;
+
+          /* Radii */
+          --canvas-radius-node: 10px;
+          --canvas-radius-tag: 8px;
+          --canvas-radius-group: 14px;
+        }
+
+        @keyframes edge-drag-flow {
+          0% { stroke-dashoffset: 0; }
+          100% { stroke-dashoffset: -22px; }
+        }
+
+        .edge-dragging {
+          stroke-dasharray: var(--canvas-edge-dash-array);
+          animation: edge-drag-flow var(--canvas-edge-dash-speed) linear infinite;
+        }
+
+        @keyframes edge-handle-bob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-3px); }
+        }
+
+        .edge-handle {
+          animation: edge-handle-bob 3s ease-in-out infinite;
+          cursor: grab;
+        }
+
+        .edge-handle:hover {
+          animation-play-state: paused;
+          transform: scale(1.2);
+          transition: transform var(--canvas-duration-fast) var(--canvas-ease-state);
+        }
+
+        @keyframes node-shockwave-scale {
+          0% {
+            animation-timing-function: cubic-bezier(.16,1,.3,1);
+            transform: translate(-50%, -50%) scale(1);
+          }
+          34% {
+            transform: translate(-50%, -50%) scale(2.2);
+            animation-timing-function: cubic-bezier(.19,1,.22,1);
+          }
+          60% {
+            animation-timing-function: cubic-bezier(.22,1,.36,1);
+            transform: translate(-50%, -50%) scale(1.72);
+          }
+          82% {
+            animation-timing-function: cubic-bezier(.22,1,.36,1);
+            transform: translate(-50%, -50%) scale(1.16);
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(1);
+          }
+        }
+
+        @keyframes node-shockwave-fade {
+          0% { opacity: 0; }
+          14% { opacity: 0.88; }
+          46% { opacity: 0.62; }
+          78% { opacity: 0.22; }
+          100% { opacity: 0; }
+        }
+
+        .node-shockwave {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 26px;
+          height: 26px;
+          margin: -13px 0 0 -13px;
+          border-radius: 50%;
+          border: 1.5px solid var(--canvas-accent);
+          background: var(--canvas-accent);
+          opacity: 0;
+          pointer-events: none;
+          animation:
+            node-shockwave-scale 1.32s cubic-bezier(.16,1,.3,1) both,
+            node-shockwave-fade 1.38s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        @keyframes node-connection-breathe {
+          0%, 100% {
+            opacity: 0.78;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.025);
+          }
+        }
+
+        .node-connection-source {
+          animation: node-connection-breathe 1.5s ease-in-out infinite;
+        }
+
+        @keyframes tag-enter {
+          0% {
+            opacity: 0;
+            transform: translateY(5px) scale(0.92);
+          }
+          62% {
+            opacity: 1;
+            transform: translateY(-1px) scale(1.045);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .tag-pill {
+          padding: 1px 6px;
+          border-radius: var(--canvas-radius-tag);
+          background: var(--canvas-accent);
+          color: #fff;
+          font-size: 9px;
+          font-weight: 500;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .tag-pill-enter {
+          animation: tag-enter 0.26s cubic-bezier(.16,1,.3,1) both;
+        }
+      `}</style>
+
       {/* Header with back button */}
       <div style={{
         padding: "8px 12px",
@@ -1284,7 +1618,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               padding: "2px 8px",
               borderRadius: 10,
               border: "1px solid var(--border, #3c3c3c)",
-              background: !activeTagFilter ? "var(--accent, #7c6df0)" : "transparent",
+              background: !activeTagFilter ? "var(--canvas-accent)" : "transparent",
               color: !activeTagFilter ? "#fff" : "var(--text-muted, #888)",
               fontSize: 11,
               cursor: "pointer",
@@ -1308,7 +1642,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                 padding: "2px 8px",
                 borderRadius: 10,
                 border: "1px solid var(--border, #3c3c3c)",
-                background: activeTagFilter === tag ? "var(--accent, #7c6df0)" : "transparent",
+                background: activeTagFilter === tag ? "var(--canvas-accent)" : "transparent",
                 color: activeTagFilter === tag ? "#fff" : "var(--text-muted, #888)",
                 fontSize: 11,
                 cursor: "pointer",
@@ -1341,7 +1675,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           style={{
             minWidth: 800,
             minHeight: 600,
-            background: "var(--bg-primary, #1a1a1a)",
+            background: "var(--canvas-bg)",
             overflow: "visible",
           }}
           onClick={handleCanvasClick}
@@ -1444,7 +1778,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                   <motion.path
                     d={path}
                     fill="none"
-                    stroke="var(--accent, #7c6df0)"
+                    stroke="var(--canvas-edge-color)"
                     strokeWidth={2}
                     strokeLinecap="round"
                     initial={{ pathLength: 0 }}
@@ -1458,10 +1792,25 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                       ${end.x - arrowSize * Math.cos(arrowAngle - Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle - Math.PI / 6)}
                       ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
                     `}
-                    fill="var(--accent, #7c6df0)"
+                    fill="var(--canvas-edge-color)"
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
+                  />
+                  {/* Edge handles (start and end circles) */}
+                  <circle
+                    cx={start.x}
+                    cy={start.y}
+                    r={4}
+                    fill="var(--canvas-edge-color)"
+                    className="edge-handle"
+                  />
+                  <circle
+                    cx={end.x}
+                    cy={end.y}
+                    r={4}
+                    fill="var(--canvas-edge-color)"
+                    className="edge-handle"
                   />
                   {/* Label */}
                   {edge.label && (
@@ -1480,6 +1829,21 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               );
             })}
           </AnimatePresence>
+
+          {/* Edge preview (being dragged to create new edge) */}
+          {edgeDragState && (
+            <line
+              x1={edgeDragState.sourceX}
+              y1={edgeDragState.sourceY}
+              x2={edgeDragState.targetX}
+              y2={edgeDragState.targetY}
+              stroke="var(--canvas-edge-color)"
+              strokeWidth={2}
+              strokeLinecap="round"
+              className="edge-dragging"
+              pointerEvents="none"
+            />
+          )}
 
           {/* Groups - render behind nodes */}
           <AnimatePresence>
@@ -1516,9 +1880,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                     height={groupHeight}
                     rx={12}
                     ry={12}
-                    fill="var(--accent, #7c6df0)"
+                    fill="var(--canvas-accent)"
                     fillOpacity={0.06}
-                    stroke="var(--accent, #7c6df0)"
+                    stroke="var(--canvas-accent)"
                     strokeWidth={1.5}
                     strokeOpacity={0.3}
                     strokeDasharray="6 3"
@@ -1527,7 +1891,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                   <text
                     x={minX + 10}
                     y={minY - 8}
-                    fill="var(--accent, #7c6df0)"
+                    fill="var(--canvas-accent)"
                     fontSize={12}
                     fontFamily="var(--font-family, sans-serif)"
                     fontWeight={500}
@@ -1575,6 +1939,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                   onMouseDown={(e) => { if (!isEditing) handleNodeMouseDown(e, node); }}
                   onClick={(e) => { if (!isEditing) handleNodeClick(e, node.id); }}
                   onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
+                  onMouseEnter={() => setHoveredNodeId(node.id)}
+                  onMouseLeave={() => setHoveredNodeId(null)}
                 >
                   {/* Node background */}
                   <rect
@@ -1584,10 +1950,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                     height={node.height}
                     rx={8}
                     ry={8}
-                    fill="var(--bg-secondary, #222)"
-                    stroke={isDragging ? "var(--accent, #7c6df0)" : isSelected ? "var(--accent, #7c6df0)" : isEditing ? "var(--accent, #7c6df0)" : "var(--border, #3c3c3c)"}
+                    fill="var(--canvas-node-bg)"
+                    stroke={isDragging ? "var(--canvas-node-selected)" : isSelected ? "var(--canvas-node-selected)" : isEditing ? "var(--canvas-node-selected)" : "var(--canvas-node-border)"}
                     strokeWidth={isDragging || isEditing ? 2 : isSelected ? 2 : 1}
                     filter={isDragging ? "url(#drop-shadow)" : undefined}
+                    className={isAltPressed && hoveredNodeId === node.id ? "node-connection-source" : undefined}
                   />
                   {/* Node content */}
                   <foreignObject
@@ -1652,30 +2019,12 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                         }}
                       >
                         {nodeTags.slice(0, 3).map((t) => (
-                          <motion.span
+                          <span
                             key={t.id}
-                            initial={{ scale: 0, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 300,
-                              damping: 20,
-                              duration: 0.26,
-                            }}
-                            style={{
-                              padding: "1px 6px",
-                              borderRadius: 8,
-                              background: "var(--accent, #7c6df0)",
-                              color: "#fff",
-                              fontSize: 9,
-                              fontWeight: 500,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
+                            className={`tag-pill${newlyAddedTagIds.has(t.id) ? " tag-pill-enter" : ""}`}
                           >
                             {t.tag}
-                          </motion.span>
+                          </span>
                         ))}
                         {nodeTags.length > 3 && (
                           <span style={{
@@ -1687,6 +2036,18 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                           </span>
                         )}
                       </div>
+                    </foreignObject>
+                  )}
+                  {/* Shockwave effect for newly created nodes */}
+                  {newlyCreatedNodeIds.has(node.id) && (
+                    <foreignObject
+                      x={node.x}
+                      y={node.y}
+                      width={node.width}
+                      height={node.height}
+                      style={{ overflow: "visible", pointerEvents: "none" }}
+                    >
+                      <div className="node-shockwave" />
                     </foreignObject>
                   )}
                 </motion.g>
@@ -1716,9 +2077,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               y={Math.min(boxSelect.startY, boxSelect.endY)}
               width={Math.abs(boxSelect.endX - boxSelect.startX)}
               height={Math.abs(boxSelect.endY - boxSelect.startY)}
-              fill="var(--accent, #7c6df0)"
+              fill="var(--canvas-edge-color)"
               fillOpacity={0.08}
-              stroke="var(--accent, #7c6df0)"
+              stroke="var(--canvas-edge-color)"
               strokeWidth={1}
               strokeOpacity={0.5}
               strokeDasharray="4 2"
@@ -1739,7 +2100,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             right: 12,
             padding: "4px 10px",
             borderRadius: 6,
-            background: "var(--accent, #7c6df0)",
+            background: "var(--canvas-accent)",
             color: "#fff",
             fontSize: 11,
             fontWeight: 500,
