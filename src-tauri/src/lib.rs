@@ -287,14 +287,9 @@ fn read_file(
     session_id: String,
     file_path: String,
 ) -> Result<ReadFileResult, String> {
-    // Resolve the session's working directory
-    let working_dir = {
-        let conn = state.db.connection().map_err(|e| e.to_string())?;
-        let sessions = state.db.sessions(&conn);
-        let session = sessions.get(&session_id)
-            .map_err(|e| format!("Session not found: {}", e))?;
-        session.working_directory
-    };
+    // Resolve the session's working directory (single lightweight SELECT)
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
 
     // Resolve the file path relative to the working directory
     let base = std::path::Path::new(&working_dir);
@@ -310,15 +305,29 @@ fn read_file(
         return Err("Access denied: path escapes the working directory".to_string());
     }
 
-    // Read the file as bytes first to check for binary content
-    let bytes = std::fs::read(&canonical_resolved)
+    // Read only the first 8KB for efficient binary detection
+    let mut buf = [0u8; 8192];
+    let mut file = std::fs::File::open(&canonical_resolved)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    use std::io::Read;
+    let bytes_read = file.read(&mut buf)
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    let size = bytes.len() as u64;
+    // Check for null bytes in the prefix — strong binary indicator
+    if buf[..bytes_read].contains(&0) {
+        return Err("Binary file detected".to_string());
+    }
 
-    // Attempt to interpret as UTF-8; reject binary files
-    let content = String::from_utf8(bytes)
-        .map_err(|e| format!("Binary file detected: {}", e))?;
+    // Read the rest of the file if it's not binary
+    let size = std::fs::metadata(&canonical_resolved)
+        .map_err(|e| format!("Failed to stat file: {}", e))?
+        .len();
+
+    let mut content = String::with_capacity(size as usize);
+    content.push_str(std::str::from_utf8(&buf[..bytes_read])
+        .map_err(|e| format!("Binary file detected: {}", e))?);
+    file.read_to_string(&mut content)
+        .map_err(|e| format!("Failed to read file as UTF-8: {}", e))?;
 
     Ok(ReadFileResult { content, size })
 }
@@ -347,14 +356,9 @@ fn list_directory(
     session_id: String,
     dir_path: String,
 ) -> Result<DirectoryListing, String> {
-    // Resolve the session's working directory
-    let working_dir = {
-        let conn = state.db.connection().map_err(|e| e.to_string())?;
-        let sessions = state.db.sessions(&conn);
-        let session = sessions.get(&session_id)
-            .map_err(|e| format!("Session not found: {}", e))?;
-        session.working_directory
-    };
+    // Resolve the session's working directory (single lightweight SELECT)
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
 
     // Resolve the directory path relative to the working directory
     let base = std::path::Path::new(&working_dir);
@@ -403,10 +407,17 @@ fn list_directory(
         entries.push(DirectoryEntry { name, path, is_dir, is_hidden });
     }
 
-    // Sort: directories first, then alphabetical
-    entries.sort_by(|a, b| {
+    // Sort: directories first, then alphabetical (case-insensitive).
+    // Uses byte-level ASCII case folding to avoid O(n log n) allocations.
+    entries.sort_unstable_by(|a, b| {
         b.is_dir.cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| {
+                a.name.bytes().map(|b| b.to_ascii_lowercase())
+                    .zip(b.name.bytes().map(|b| b.to_ascii_lowercase()))
+                    .find(|(x, y)| x != y)
+                    .map(|(x, y)| x.cmp(&y))
+                    .unwrap_or_else(|| a.name.len().cmp(&b.name.len()))
+            })
     });
 
     Ok(DirectoryListing { entries })
@@ -418,14 +429,9 @@ fn get_git_diff(
     session_id: String,
     staged: bool,
 ) -> Result<GitDiffResult, String> {
-    // Resolve the session's working directory
-    let working_dir = {
-        let conn = state.db.connection().map_err(|e| e.to_string())?;
-        let sessions = state.db.sessions(&conn);
-        let session = sessions.get(&session_id)
-            .map_err(|e| format!("Session not found: {}", e))?;
-        session.working_directory
-    };
+    // Resolve the session's working directory (single lightweight SELECT)
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
 
     let base = std::path::Path::new(&working_dir);
     if !base.join(".git").exists() {
@@ -574,10 +580,7 @@ fn pty_spawn(
 
     let working_directory = {
         let app_state = app.state::<AppState>();
-        let conn = app_state.db.connection().map_err(|e| e.to_string())?;
-        let sessions = app_state.db.sessions(&conn);
-        let session = sessions.get(&session_id).map_err(|e| e.to_string())?;
-        session.working_directory
+        app_state.db.get_working_directory(&session_id).map_err(|e| e.to_string())?
     };
 
     pty::pty_spawn(

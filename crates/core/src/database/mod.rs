@@ -2,6 +2,7 @@ pub mod migrations;
 pub mod schema;
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use thiserror::Error;
 
@@ -18,18 +19,76 @@ pub enum DatabaseError {
 
 pub type Result<T> = std::result::Result<T, DatabaseError>;
 
-#[derive(Clone)]
+/// RAII wrapper that checks out a `Connection` from the `Database` cache.
+/// When dropped, the connection is returned to the cache for reuse.
+/// Implements `Deref<Target=Connection>` so callers use it transparently.
+pub struct CachedConnection<'a> {
+    cache: &'a Mutex<Option<Connection>>,
+    conn: Option<Connection>,
+}
+
+impl<'a> std::ops::Deref for CachedConnection<'a> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.conn.as_ref().expect("connection already returned")
+    }
+}
+
+impl<'a> std::ops::DerefMut for CachedConnection<'a> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.conn.as_mut().expect("connection already returned")
+    }
+}
+
+impl<'a> Drop for CachedConnection<'a> {
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.take() {
+            let mut guard = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = Some(conn);
+        }
+    }
+}
+
 pub struct Database {
     db_path: PathBuf,
+    conn: Arc<Mutex<Option<Connection>>>,
+}
+
+impl Clone for Database {
+    fn clone(&self) -> Self {
+        Database {
+            db_path: self.db_path.clone(),
+            conn: Arc::clone(&self.conn),
+        }
+    }
 }
 
 impl Database {
     pub fn new(db_path: PathBuf) -> Self {
-        Database { db_path }
+        Database {
+            db_path,
+            conn: Arc::new(Mutex::new(None)),
+        }
     }
 
-    pub fn connection(&self) -> Result<Connection> {
-        let conn = Connection::open(&self.db_path)?;
+    /// Checks out a cached connection. On first call, opens the connection,
+    /// sets PRAGMAs, and runs migrations. Subsequent calls reuse the same
+    /// connection (checked back in when the returned guard is dropped).
+    pub fn connection(&self) -> Result<CachedConnection<'_>> {
+        let mut guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = match guard.take() {
+            Some(conn) => conn,
+            None => Self::open_connection(&self.db_path)?,
+        };
+        Ok(CachedConnection {
+            cache: &self.conn,
+            conn: Some(conn),
+        })
+    }
+
+    /// Opens a new connection, sets PRAGMAs, and runs migrations.
+    fn open_connection(db_path: &std::path::Path) -> Result<Connection> {
+        let conn = Connection::open(db_path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA foreign_keys=ON;
@@ -37,6 +96,18 @@ impl Database {
         )?;
         migrate(&conn)?;
         Ok(conn)
+    }
+
+    /// Lightweight query: returns just the working directory for a session
+    /// without loading workspaces or deserializing JSON.
+    pub fn get_working_directory(&self, session_id: &str) -> Result<String> {
+        let conn = self.connection()?;
+        let working_dir: String = conn.query_row(
+            "SELECT working_directory FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )?;
+        Ok(working_dir)
     }
 
     pub fn sessions<'a>(&self, conn: &'a Connection) -> SessionRepository<'a> {
@@ -132,5 +203,77 @@ mod tests {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
         let _repo = db.issues(&conn);
+    }
+
+    #[test]
+    fn test_connection_caching() {
+        let db = Database::new(":memory:".into());
+        // First call initializes the connection
+        {
+            let conn = db.connection().unwrap();
+            let version: i32 = conn
+                .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(version, schema::SCHEMA_VERSION);
+        } // conn dropped here, returned to cache
+
+        // Second call reuses the cached connection (no PRAGMAs/migration)
+        {
+            let conn = db.connection().unwrap();
+            let version: i32 = conn
+                .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(version, schema::SCHEMA_VERSION);
+        }
+    }
+
+    #[test]
+    fn test_sequential_connections_same_data() {
+        let db = Database::new(":memory:".into());
+        // Create a session with first connection checkout
+        let session_id = {
+            let conn = db.connection().unwrap();
+            let repo = db.sessions(&conn);
+            let session = repo.create("/tmp/test", "Test").unwrap();
+            session.id
+        }; // conn returned to cache
+
+        // Read the session with second connection checkout
+        {
+            let conn = db.connection().unwrap();
+            let repo = db.sessions(&conn);
+            let session = repo.get(&session_id).unwrap();
+            assert_eq!(session.working_directory, "/tmp/test");
+        }
+    }
+
+    #[test]
+    fn test_shared_connection_across_clones() {
+        let db1 = Database::new(":memory:".into());
+        let db2 = db1.clone();
+        // Both clones share the same underlying connection cache
+        let _conn1 = db1.connection().unwrap();
+        let _conn2 = db2.connection().unwrap();
+    }
+
+    #[test]
+    fn test_get_working_directory() {
+        let db = Database::new(":memory:".into());
+        let session_id = {
+            let conn = db.connection().unwrap();
+            let repo = db.sessions(&conn);
+            let session = repo.create("/tmp/test", "Test").unwrap();
+            session.id
+        }; // conn returned to cache
+
+        let working_dir = db.get_working_directory(&session_id).unwrap();
+        assert_eq!(working_dir, "/tmp/test");
+    }
+
+    #[test]
+    fn test_get_working_directory_not_found() {
+        let db = Database::new(":memory:".into());
+        let result = db.get_working_directory("nonexistent");
+        assert!(result.is_err());
     }
 }
