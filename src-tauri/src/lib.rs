@@ -5,7 +5,7 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, Screen, Issue, ChangeEvent, DomainEvent,
+    Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, DomainEvent,
 };
 
 mod pty;
@@ -35,6 +35,21 @@ fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
             }
             DomainEvent::IssuesChanged { session_id } => {
                 let _ = app.emit("issues-changed", serde_json::json!({ "session_id": session_id }));
+            }
+            DomainEvent::VisualCanvasesChanged { session_id } => {
+                let _ = app.emit("visual-canvases-changed", serde_json::json!({ "session_id": session_id }));
+            }
+            DomainEvent::CanvasNodesChanged { session_id, canvas_id } => {
+                let _ = app.emit("canvas-nodes-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+            }
+            DomainEvent::CanvasEdgesChanged { session_id, canvas_id } => {
+                let _ = app.emit("canvas-edges-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+            }
+            DomainEvent::CanvasGroupsChanged { session_id, canvas_id } => {
+                let _ = app.emit("canvas-groups-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+            }
+            DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
+                let _ = app.emit("canvas-tags-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
             }
         }
     }
@@ -223,6 +238,42 @@ workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id,
 
 command_handler!(list_issues, IssueList { session_id }, Issues, Vec<Issue>, session_id: String);
 command_handler!(get_issue, IssueGet { id, session_id }, Issue, Issue, id: String, session_id: Option<String>);
+
+// ── Visual Canvas commands ──────────────────────────────────────────
+
+command_handler!(list_visual_canvases, VisualCanvasList { session_id }, VisualCanvases, Vec<VisualCanvas>, session_id: String);
+
+// ── Canvas Node commands ────────────────────────────────────────────
+
+command_handler!(create_canvas_node, CanvasNodeCreate { canvas_id, content, x, y, width, height, metadata_json }, CanvasNode, CanvasNode, canvas_id: String, content: String, x: f64, y: f64, width: f64, height: f64, metadata_json: Option<String>);
+command_handler!(list_canvas_nodes, CanvasNodeList { canvas_id }, CanvasNodes, Vec<CanvasNode>, canvas_id: String);
+command_handler!(get_canvas_node, CanvasNodeGet { id }, CanvasNode, CanvasNode, id: String);
+command_handler!(update_canvas_node, CanvasNodeUpdate { id, content, x, y, width, height, metadata_json }, CanvasNode, CanvasNode, id: String, content: Option<String>, x: Option<f64>, y: Option<f64>, width: Option<f64>, height: Option<f64>, metadata_json: Option<String>);
+unit_return!(delete_canvas_node, CanvasNodeDelete { id }, id: String);
+
+// ── Canvas Edge commands ────────────────────────────────────────
+
+command_handler!(list_canvas_edges, CanvasEdgeList { canvas_id }, CanvasEdges, Vec<CanvasEdge>, canvas_id: String);
+command_handler!(get_canvas_edge, CanvasEdgeGet { id }, CanvasEdge, CanvasEdge, id: String);
+command_handler!(update_canvas_edge, CanvasEdgeUpdate { id, label, metadata_json }, CanvasEdge, CanvasEdge, id: String, label: Option<String>, metadata_json: Option<String>);
+unit_return!(delete_canvas_edge, CanvasEdgeDelete { id }, id: String);
+
+// ── Canvas Group commands ──────────────────────────────────────
+
+command_handler!(list_canvas_groups, CanvasGroupList { canvas_id }, CanvasGroups, Vec<CanvasGroup>, canvas_id: String);
+command_handler!(get_canvas_group, CanvasGroupGet { id }, CanvasGroup, CanvasGroup, id: String);
+command_handler!(update_canvas_group, CanvasGroupUpdate { id, label, node_ids_json, metadata_json }, CanvasGroup, CanvasGroup, id: String, label: Option<String>, node_ids_json: Option<String>, metadata_json: Option<String>);
+unit_return!(delete_canvas_group, CanvasGroupDelete { id }, id: String);
+
+// ── Canvas Tag commands ────────────────────────────────────────
+
+command_handler!(list_canvas_tags_by_node, CanvasTagListByNode { node_id }, CanvasTags, Vec<CanvasTag>, node_id: String);
+command_handler!(list_canvas_tags_by_canvas, CanvasTagListByCanvas { canvas_id }, CanvasTags, Vec<CanvasTag>, canvas_id: String);
+
+// ── Canvas View State commands ──────────────────────────────────
+
+command_handler!(get_canvas_view_state, CanvasViewStateGet { canvas_id }, CanvasViewState, CanvasViewState, canvas_id: String);
+command_handler!(update_canvas_view_state, CanvasViewStateUpdate { canvas_id, offset_x, offset_y, zoom }, CanvasViewState, CanvasViewState, canvas_id: String, offset_x: f64, offset_y: f64, zoom: f64);
 
 // ── Change event commands ──────────────────────────────────────
 
@@ -763,6 +814,24 @@ pub fn run() {
             change_panel_type,
             list_issues,
             get_issue,
+            list_visual_canvases,
+            create_canvas_node,
+            list_canvas_nodes,
+            get_canvas_node,
+            update_canvas_node,
+            delete_canvas_node,
+            list_canvas_edges,
+            get_canvas_edge,
+            update_canvas_edge,
+            delete_canvas_edge,
+            list_canvas_groups,
+            get_canvas_group,
+            update_canvas_group,
+            delete_canvas_group,
+            list_canvas_tags_by_node,
+            list_canvas_tags_by_canvas,
+            get_canvas_view_state,
+            update_canvas_view_state,
             list_change_events,
             mark_change_event_processed,
             open_preferences,

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use thiserror::Error;
 
-use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository};
+use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasTagRepository, CanvasViewStateRepository};
 use migrations::{migrate, MigrationError};
 
 #[derive(Debug, Error)]
@@ -129,6 +129,30 @@ impl Database {
     pub fn change_events<'a>(&self, conn: &'a Connection) -> ChangeEventRepository<'a> {
         ChangeEventRepository::new(&self.db_path, conn)
     }
+
+    pub fn visual_canvases<'a>(&self, conn: &'a Connection) -> VisualCanvasRepository<'a> {
+        VisualCanvasRepository::new(&self.db_path, conn)
+    }
+
+    pub fn canvas_nodes<'a>(&self, conn: &'a Connection) -> CanvasNodeRepository<'a> {
+        CanvasNodeRepository::new(&self.db_path, conn)
+    }
+
+    pub fn canvas_edges<'a>(&self, conn: &'a Connection) -> CanvasEdgeRepository<'a> {
+        CanvasEdgeRepository::new(&self.db_path, conn)
+    }
+
+    pub fn canvas_groups<'a>(&self, conn: &'a Connection) -> CanvasGroupRepository<'a> {
+        CanvasGroupRepository::new(&self.db_path, conn)
+    }
+
+    pub fn canvas_tags<'a>(&self, conn: &'a Connection) -> CanvasTagRepository<'a> {
+        CanvasTagRepository::new(&self.db_path, conn)
+    }
+
+    pub fn canvas_view_states<'a>(&self, conn: &'a Connection) -> CanvasViewStateRepository<'a> {
+        CanvasViewStateRepository::new(&self.db_path, conn)
+    }
 }
 
 #[cfg(test)]
@@ -199,10 +223,38 @@ mod tests {
     }
 
     #[test]
-    fn test_issues_repository_stub() {
+    fn test_canvas_nodes_repository_stub() {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
-        let _repo = db.issues(&conn);
+        let _repo = db.canvas_nodes(&conn);
+    }
+
+    #[test]
+    fn test_canvas_edges_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.canvas_edges(&conn);
+    }
+
+    #[test]
+    fn test_canvas_groups_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.canvas_groups(&conn);
+    }
+
+    #[test]
+    fn test_canvas_tags_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.canvas_tags(&conn);
+    }
+
+    #[test]
+    fn test_canvas_view_states_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.canvas_view_states(&conn);
     }
 
     #[test]

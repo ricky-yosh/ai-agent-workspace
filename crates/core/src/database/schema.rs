@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 11;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -65,6 +65,80 @@ CREATE TABLE IF NOT EXISTS change_events (
 
 CREATE INDEX IF NOT EXISTS idx_change_events_session_id ON change_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_change_events_unprocessed ON change_events(processed_at) WHERE processed_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS visual_canvases (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_visual_canvases_session_id ON visual_canvases(session_id);
+
+CREATE TABLE IF NOT EXISTS canvas_nodes (
+    id TEXT PRIMARY KEY,
+    canvas_id TEXT NOT NULL REFERENCES visual_canvases(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    x REAL NOT NULL DEFAULT 0,
+    y REAL NOT NULL DEFAULT 0,
+    width REAL NOT NULL DEFAULT 200,
+    height REAL NOT NULL DEFAULT 100,
+    metadata_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_nodes_canvas_id ON canvas_nodes(canvas_id);
+
+CREATE TABLE IF NOT EXISTS canvas_edges (
+    id TEXT PRIMARY KEY,
+    canvas_id TEXT NOT NULL REFERENCES visual_canvases(id) ON DELETE CASCADE,
+    source_node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+    target_node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+    label TEXT,
+    metadata_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_edges_canvas_id ON canvas_edges(canvas_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_edges_source_node_id ON canvas_edges(source_node_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_edges_target_node_id ON canvas_edges(target_node_id);
+
+CREATE TABLE IF NOT EXISTS canvas_groups (
+    id TEXT PRIMARY KEY,
+    canvas_id TEXT NOT NULL REFERENCES visual_canvases(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    node_ids_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_groups_canvas_id ON canvas_groups(canvas_id);
+
+CREATE TABLE IF NOT EXISTS canvas_tags (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_tags_node_id ON canvas_tags(node_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canvas_tags_node_id_tag ON canvas_tags(node_id, tag);
+
+CREATE TABLE IF NOT EXISTS canvas_view_states (
+    id TEXT PRIMARY KEY,
+    canvas_id TEXT NOT NULL UNIQUE REFERENCES visual_canvases(id) ON DELETE CASCADE,
+    offset_x REAL NOT NULL DEFAULT 0,
+    offset_y REAL NOT NULL DEFAULT 0,
+    zoom REAL NOT NULL DEFAULT 1.0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_view_states_canvas_id ON canvas_view_states(canvas_id);
 "#;
 
 #[cfg(test)]
@@ -77,8 +151,38 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_version_is_five() {
-        assert_eq!(SCHEMA_VERSION, 5);
+    fn test_create_tables_includes_visual_canvases() {
+        assert!(CREATE_TABLES.contains("visual_canvases"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_canvas_nodes() {
+        assert!(CREATE_TABLES.contains("canvas_nodes"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_canvas_edges() {
+        assert!(CREATE_TABLES.contains("canvas_edges"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_canvas_groups() {
+        assert!(CREATE_TABLES.contains("canvas_groups"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_canvas_tags() {
+        assert!(CREATE_TABLES.contains("canvas_tags"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_canvas_view_states() {
+        assert!(CREATE_TABLES.contains("canvas_view_states"));
+    }
+
+    #[test]
+    fn test_schema_version_is_eleven() {
+        assert_eq!(SCHEMA_VERSION, 11);
     }
 
     #[test]

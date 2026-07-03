@@ -64,6 +64,11 @@ fn invoke_callbacks(
     layouts_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     workspace_cb: &Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
     issues_cb: &Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    visual_canvases_cb: &Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    canvas_nodes_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_edges_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_groups_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_tags_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
 ) {
     for event in events {
         match event {
@@ -79,6 +84,21 @@ fn invoke_callbacks(
             DomainEvent::IssuesChanged { session_id } => {
                 if let Some(cb) = issues_cb { cb(session_id.clone()); }
             }
+            DomainEvent::VisualCanvasesChanged { session_id } => {
+                if let Some(cb) = visual_canvases_cb { cb(session_id.clone()); }
+            }
+            DomainEvent::CanvasNodesChanged { session_id, canvas_id } => {
+                if let Some(cb) = canvas_nodes_cb { cb(session_id.clone(), canvas_id.clone()); }
+            }
+            DomainEvent::CanvasEdgesChanged { session_id, canvas_id } => {
+                if let Some(cb) = canvas_edges_cb { cb(session_id.clone(), canvas_id.clone()); }
+            }
+            DomainEvent::CanvasGroupsChanged { session_id, canvas_id } => {
+                if let Some(cb) = canvas_groups_cb { cb(session_id.clone(), canvas_id.clone()); }
+            }
+            DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
+                if let Some(cb) = canvas_tags_cb { cb(session_id.clone(), canvas_id.clone()); }
+            }
         }
     }
 }
@@ -87,7 +107,7 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
                 Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -97,7 +117,47 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr, canvas_tags_cb: $tcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &$tcb);
                 Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -116,7 +176,7 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -126,7 +186,57 @@ macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb);
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                Ok(CallToolResult::success(vec![]))
+            }
+            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
+            Err(e) => Err(crate::error::to_mcp_error(e)),
+        }
+    };
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr, canvas_tags_cb: $tcb:expr) => {
+        match execute($cmd, $state) {
+            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
+                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &$tcb);
                 Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
@@ -163,6 +273,11 @@ pub struct McpHandler {
     pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
     pub on_layouts_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     pub on_issues_changed: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    pub on_visual_canvases_changed: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    pub on_canvas_nodes_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub on_canvas_edges_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub on_canvas_groups_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub on_canvas_tags_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     pub on_open_file_request: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     pub on_show_diff_request: Option<std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>>,
     pub resolved_session_id: Option<String>,
@@ -217,7 +332,30 @@ impl McpHandler {
         issue_get_next,
         issue_summarize_backlog,
         open_file,
-        show_diff
+        show_diff,
+        canvas_create,
+        canvas_list,
+        canvas_get,
+        canvas_delete,
+        canvas_rename,
+        node_create,
+        node_list,
+        node_get,
+        node_update,
+        node_delete,
+        edge_create,
+        edge_list,
+        edge_get,
+        edge_update,
+        edge_delete,
+        group_create,
+        group_list,
+        group_get,
+        group_update,
+        group_delete,
+        tag_add,
+        tag_remove,
+        tag_list
     });
 
     #[tool(description = "List all sessions")]
@@ -465,6 +603,156 @@ impl McpHandler {
         run_mcp_command!(Command::IssueSummarizeBacklog { session_id }, &state, IssueBacklogSummary, summary, json)
     }
 
+    #[tool(description = "Create a visual canvas in the current session")]
+    async fn canvas_create(&self, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::VisualCanvasCreate { session_id, name }, &state, VisualCanvas, canvas, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed)
+    }
+
+    #[tool(description = "List all visual canvases in the current session")]
+    async fn canvas_list(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::VisualCanvasList { session_id }, &state, VisualCanvases, canvases, json)
+    }
+
+    #[tool(description = "Get a visual canvas by ID")]
+    async fn canvas_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::VisualCanvasGet { id }, &state, VisualCanvas, canvas, json)
+    }
+
+    #[tool(description = "Delete a visual canvas")]
+    async fn canvas_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::VisualCanvasDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed)
+    }
+
+    #[tool(description = "Rename a visual canvas")]
+    async fn canvas_rename(&self, #[tool(param)] id: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::VisualCanvasRename { id, name }, &state, VisualCanvas, canvas, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed)
+    }
+
+    #[tool(description = "Create a node on a visual canvas with content, position, and optional metadata")]
+    async fn node_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] content: String, #[tool(param)] x: f64, #[tool(param)] y: f64, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        let w = width.unwrap_or(200.0);
+        let h = height.unwrap_or(100.0);
+        run_mcp_command!(Command::CanvasNodeCreate { canvas_id, content, x, y, width: w, height: h, metadata_json }, &state, CanvasNode, node, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed)
+    }
+
+    #[tool(description = "List all nodes on a visual canvas")]
+    async fn node_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasNodeList { canvas_id }, &state, CanvasNodes, nodes, json)
+    }
+
+    #[tool(description = "Get a canvas node by ID")]
+    async fn node_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasNodeGet { id }, &state, CanvasNode, node, json)
+    }
+
+    #[tool(description = "Update a canvas node's content, position, size, or metadata")]
+    async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] content: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json }, &state, CanvasNode, node, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed)
+    }
+
+    #[tool(description = "Delete a canvas node. Cascades to remove connected edges and remove the node from any groups.")]
+    async fn node_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasNodeDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "Create a directional edge between two canvas nodes with optional label and metadata")]
+    async fn edge_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] source_node_id: String, #[tool(param)] target_node_id: String, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json }, &state, CanvasEdge, edge, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "List all edges on a visual canvas")]
+    async fn edge_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasEdgeList { canvas_id }, &state, CanvasEdges, edges, json)
+    }
+
+    #[tool(description = "Get a canvas edge by ID")]
+    async fn edge_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasEdgeGet { id }, &state, CanvasEdge, edge, json)
+    }
+
+    #[tool(description = "Update a canvas edge's label or metadata")]
+    async fn edge_update(&self, #[tool(param)] id: String, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasEdgeUpdate { id, label, metadata_json }, &state, CanvasEdge, edge, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "Delete a canvas edge")]
+    async fn edge_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasEdgeDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed)
+    }
+
+    #[tool(description = "Create a group to visually cluster related nodes with a label and list of node IDs")]
+    async fn group_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] label: String, #[tool(param)] node_ids: Vec<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        let node_ids_json = serde_json::to_string(&node_ids).unwrap_or_else(|_| "[]".to_string());
+        run_mcp_command!(Command::CanvasGroupCreate { canvas_id, label, node_ids_json, metadata_json }, &state, CanvasGroup, group, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "List all groups on a visual canvas")]
+    async fn group_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasGroupList { canvas_id }, &state, CanvasGroups, groups, json)
+    }
+
+    #[tool(description = "Get a canvas group by ID")]
+    async fn group_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasGroupGet { id }, &state, CanvasGroup, group, json)
+    }
+
+    #[tool(description = "Update a canvas group's label, node IDs, or metadata")]
+    async fn group_update(&self, #[tool(param)] id: String, #[tool(param)] label: Option<String>, #[tool(param)] node_ids: Option<Vec<String>>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        let node_ids_json = node_ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
+        run_mcp_command!(Command::CanvasGroupUpdate { id, label, node_ids_json, metadata_json }, &state, CanvasGroup, group, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "Delete a canvas group")]
+    async fn group_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasGroupDelete { id }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed)
+    }
+
+    #[tool(description = "Add a tag to a canvas node for categorization")]
+    async fn tag_add(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasTagAdd { node_id, tag }, &state, CanvasTag, canvas_tag, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed, canvas_tags_cb: self.on_canvas_tags_changed)
+    }
+
+    #[tool(description = "Remove a tag from a canvas node")]
+    async fn tag_remove(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::CanvasTagRemove { node_id, tag }, &state, Unit, _, empty, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed, issues_cb: self.on_issues_changed, visual_canvases_cb: self.on_visual_canvases_changed, canvas_nodes_cb: self.on_canvas_nodes_changed, canvas_edges_cb: self.on_canvas_edges_changed, canvas_groups_cb: self.on_canvas_groups_changed, canvas_tags_cb: self.on_canvas_tags_changed)
+    }
+
+    #[tool(description = "List tags for a canvas node or all tags on a canvas. Provide node_id to list tags for a specific node, or canvas_id to list all tags on a canvas.")]
+    async fn tag_list(&self, #[tool(param)] node_id: Option<String>, #[tool(param)] canvas_id: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        if let Some(node_id) = node_id {
+            run_mcp_command!(Command::CanvasTagListByNode { node_id }, &state, CanvasTags, tags, json)
+        } else if let Some(canvas_id) = canvas_id {
+            run_mcp_command!(Command::CanvasTagListByCanvas { canvas_id }, &state, CanvasTags, tags, json)
+        } else {
+            Err(rmcp::Error::invalid_params("Either node_id or canvas_id must be provided", None))
+        }
+    }
+
     #[tool(description = "Open a file in the File Viewer Panel. Emits an event that the frontend handles by opening the file in the last-focused viewer (or creating one if none exists).")]
     async fn open_file(&self, #[tool(param)] file_path: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
@@ -508,6 +796,11 @@ mod tests {
             on_workspace_changed: None,
             on_layouts_changed: None,
             on_issues_changed: None,
+            on_visual_canvases_changed: None,
+            on_canvas_nodes_changed: None,
+            on_canvas_edges_changed: None,
+            on_canvas_groups_changed: None,
+            on_canvas_tags_changed: None,
             on_open_file_request: None,
             on_show_diff_request: None,
             resolved_session_id: None,
@@ -754,10 +1047,13 @@ mod tests {
 
     fn setup_with_session() -> (McpHandler, TempDir) {
         let (mut handler, dir) = setup();
-        let conn = handler.db.connection().unwrap();
-        let sessions = handler.db.sessions(&conn);
-        let session = sessions.create("/tmp/test", "Test Session").unwrap();
-        handler.resolved_session_id = Some(session.id);
+        let session_id = {
+            let conn = handler.db.connection().unwrap();
+            let sessions = handler.db.sessions(&conn);
+            let session = sessions.create("/tmp/test", "Test Session").unwrap();
+            session.id
+        };
+        handler.resolved_session_id = Some(session_id);
         (handler, dir)
     }
 
@@ -894,6 +1190,31 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let on_workspace_changed = make_workspace_change_callback(&handle, "workspace-changed");
             let on_layouts_changed = make_change_callback(&handle, "layouts-changed");
             let on_issues_changed = make_session_id_callback(&handle, "issues-changed");
+            let on_visual_canvases_changed = make_session_id_callback(&handle, "visual-canvases-changed");
+            let on_canvas_nodes_changed = {
+                let h = handle.clone();
+                Some(std::sync::Arc::new(move |session_id: String, canvas_id: String| {
+                    let _ = h.emit("canvas-nodes-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+                }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
+            };
+            let on_canvas_edges_changed = {
+                let h = handle.clone();
+                Some(std::sync::Arc::new(move |session_id: String, canvas_id: String| {
+                    let _ = h.emit("canvas-edges-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+                }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
+            };
+            let on_canvas_groups_changed = {
+                let h = handle.clone();
+                Some(std::sync::Arc::new(move |session_id: String, canvas_id: String| {
+                    let _ = h.emit("canvas-groups-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+                }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
+            };
+            let on_canvas_tags_changed = {
+                let h = handle.clone();
+                Some(std::sync::Arc::new(move |session_id: String, canvas_id: String| {
+                    let _ = h.emit("canvas-tags-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+                }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
+            };
             let on_open_file_request = make_open_file_callback(&handle);
             let on_show_diff_request = make_show_diff_callback(&handle);
 
@@ -907,6 +1228,11 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         on_workspace_changed,
                         on_layouts_changed,
                         on_issues_changed,
+                        on_visual_canvases_changed,
+                        on_canvas_nodes_changed,
+                        on_canvas_edges_changed,
+                        on_canvas_groups_changed,
+                        on_canvas_tags_changed,
                         on_open_file_request,
                         on_show_diff_request,
                         resolved_session_id: None,

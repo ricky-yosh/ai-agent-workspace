@@ -393,6 +393,250 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             events.mark_processed(&event_id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::IssuesChanged { session_id: String::new() }))
         }
+        Command::VisualCanvasCreate { session_id, name } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.create(&session_id, &name)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::VisualCanvas(canvas), DomainEvent::VisualCanvasesChanged { session_id }))
+        }
+        Command::VisualCanvasList { session_id } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let list = canvases.list_by_session(&session_id)?;
+            Ok(ExecutionOutcome::none(CommandResult::VisualCanvases(list)))
+        }
+        Command::VisualCanvasGet { id } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::VisualCanvas(canvas)))
+        }
+        Command::VisualCanvasDelete { id } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &id, e))?;
+            let session_id = canvas.session_id.clone();
+            canvases.delete(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::VisualCanvasesChanged { session_id }))
+        }
+        Command::VisualCanvasRename { id, name } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas = canvases.rename(&id, &name)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::VisualCanvas(canvas), DomainEvent::VisualCanvasesChanged { session_id }))
+        }
+        Command::CanvasNodeCreate { canvas_id, content, x, y, width, height, metadata_json } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.create(&canvas_id, &content, x, y, width, height, metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasNodeList { canvas_id } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let list = nodes.list_by_canvas(&canvas_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasNodes(list)))
+        }
+        Command::CanvasNodeGet { id } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasNode(node)))
+        }
+        Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let existing = nodes.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            let node = nodes.update(&id, content.as_deref(), x, y, width, height, metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasNodeDelete { id } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let existing = nodes.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            // Cascade: remove this node from all groups' node_ids_json
+            let groups = state.db.canvas_groups(&conn);
+            groups.remove_node_from_all_groups(&canvas_id, &id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            // Cascade: delete the node (DB FK cascades remove connected edges and tags)
+            nodes.delete(&id)?;
+            // Emit events for nodes, groups, and edges (all may have changed due to cascade)
+            let events = vec![
+                DomainEvent::CanvasNodesChanged { session_id: session_id.clone(), canvas_id: canvas_id.clone() },
+                DomainEvent::CanvasGroupsChanged { session_id: session_id.clone(), canvas_id: canvas_id.clone() },
+                DomainEvent::CanvasEdgesChanged { session_id, canvas_id },
+            ];
+            Ok(ExecutionOutcome::new(CommandResult::Unit(()), events))
+        }
+        Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let edges = state.db.canvas_edges(&conn);
+            let edge = edges.create(&canvas_id, &source_node_id, &target_node_id, label.as_deref(), metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasEdge(edge), DomainEvent::CanvasEdgesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasEdgeList { canvas_id } => {
+            let edges = state.db.canvas_edges(&conn);
+            let list = edges.list_by_canvas(&canvas_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasEdges(list)))
+        }
+        Command::CanvasEdgeGet { id } => {
+            let edges = state.db.canvas_edges(&conn);
+            let edge = edges.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_edge", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasEdge(edge)))
+        }
+        Command::CanvasEdgeUpdate { id, label, metadata_json } => {
+            let edges = state.db.canvas_edges(&conn);
+            let existing = edges.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_edge", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            let edge = edges.update(&id, label.as_deref(), metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasEdge(edge), DomainEvent::CanvasEdgesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasEdgeDelete { id } => {
+            let edges = state.db.canvas_edges(&conn);
+            let existing = edges.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_edge", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            edges.delete(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasEdgesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasGroupCreate { canvas_id, label, node_ids_json, metadata_json } => {
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let groups = state.db.canvas_groups(&conn);
+            let group = groups.create(&canvas_id, &label, &node_ids_json, metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasGroup(group), DomainEvent::CanvasGroupsChanged { session_id, canvas_id }))
+        }
+        Command::CanvasGroupList { canvas_id } => {
+            let groups = state.db.canvas_groups(&conn);
+            let list = groups.list_by_canvas(&canvas_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasGroups(list)))
+        }
+        Command::CanvasGroupGet { id } => {
+            let groups = state.db.canvas_groups(&conn);
+            let group = groups.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_group", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasGroup(group)))
+        }
+        Command::CanvasGroupUpdate { id, label, node_ids_json, metadata_json } => {
+            let groups = state.db.canvas_groups(&conn);
+            let existing = groups.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_group", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            let group = groups.update(&id, label.as_deref(), node_ids_json.as_deref(), metadata_json.as_deref())
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasGroup(group), DomainEvent::CanvasGroupsChanged { session_id, canvas_id }))
+        }
+        Command::CanvasGroupDelete { id } => {
+            let groups = state.db.canvas_groups(&conn);
+            let existing = groups.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_group", &id, e))?;
+            // Get the canvas to find session_id
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&existing.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = existing.canvas_id.clone();
+            groups.delete(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasGroupsChanged { session_id, canvas_id }))
+        }
+        Command::CanvasTagAdd { node_id, tag } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.get(&node_id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
+            let canvas_id = node.canvas_id.clone();
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let tags = state.db.canvas_tags(&conn);
+            let tag_result = tags.add(&node_id, &tag)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasTag(tag_result), DomainEvent::CanvasTagsChanged { session_id, canvas_id }))
+        }
+        Command::CanvasTagRemove { node_id, tag } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.get(&node_id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
+            let canvas_id = node.canvas_id.clone();
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let tags = state.db.canvas_tags(&conn);
+            tags.remove(&node_id, &tag)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasTagsChanged { session_id, canvas_id }))
+        }
+        Command::CanvasTagListByNode { node_id } => {
+            let tags = state.db.canvas_tags(&conn);
+            let list = tags.list_by_node(&node_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasTags(list)))
+        }
+        Command::CanvasTagListByCanvas { canvas_id } => {
+            let tags = state.db.canvas_tags(&conn);
+            let list = tags.list_by_canvas(&canvas_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasTags(list)))
+        }
+        Command::CanvasViewStateGet { canvas_id } => {
+            let view_states = state.db.canvas_view_states(&conn);
+            match view_states.get_by_canvas(&canvas_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))? {
+                Some(state) => Ok(ExecutionOutcome::none(CommandResult::CanvasViewState(state))),
+                None => Ok(ExecutionOutcome::none(CommandResult::Unit(()))),
+            }
+        }
+        Command::CanvasViewStateUpdate { canvas_id, offset_x, offset_y, zoom } => {
+            let view_states = state.db.canvas_view_states(&conn);
+            let state = view_states.upsert(&canvas_id, offset_x, offset_y, zoom)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasViewState(state)))
+        }
     }
 }
 
@@ -1435,5 +1679,510 @@ mod tests {
         // Vertical split → the internal edge is vertical → x should be ~0.7
         assert!((v1.x - 0.7).abs() < 0.01, "Vertex x should be ~0.7, got {}", v1.x);
         assert!((v2.x - 0.7).abs() < 0.01, "Vertex x should be ~0.7, got {}", v2.x);
+    }
+
+    #[test]
+    fn test_node_delete_cascades_to_edges() {
+        let (state, _tmp) = setup();
+
+        // Create a session and canvas
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::VisualCanvasCreate {
+                session_id: session.id.clone(),
+                name: "Test Canvas".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let canvas = match outcome.result {
+            CommandResult::VisualCanvas(c) => c,
+            _ => panic!("Expected VisualCanvas"),
+        };
+
+        // Create two nodes
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "Node A".to_string(),
+                x: 0.0, y: 0.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_a = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "Node B".to_string(),
+                x: 200.0, y: 200.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_b = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        // Create an edge from A to B
+        let outcome = execute(
+            Command::CanvasEdgeCreate {
+                canvas_id: canvas.id.clone(),
+                source_node_id: node_a.id.clone(),
+                target_node_id: node_b.id.clone(),
+                label: Some("connects".to_string()),
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let _edge = match outcome.result {
+            CommandResult::CanvasEdge(e) => e,
+            _ => panic!("Expected CanvasEdge"),
+        };
+
+        // Verify edge exists
+        let outcome = execute(
+            Command::CanvasEdgeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let edges = match outcome.result {
+            CommandResult::CanvasEdges(e) => e,
+            _ => panic!("Expected CanvasEdges"),
+        };
+        assert_eq!(edges.len(), 1);
+
+        // Delete node A — should cascade to remove the edge
+        let outcome = execute(
+            Command::CanvasNodeDelete { id: node_a.id.clone() },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+        // Should emit events for nodes, groups, and edges
+        assert_eq!(outcome.events.len(), 3);
+        assert!(outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasNodesChanged { .. })));
+        assert!(outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasEdgesChanged { .. })));
+        assert!(outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasGroupsChanged { .. })));
+
+        // Verify edge is gone
+        let outcome = execute(
+            Command::CanvasEdgeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let edges = match outcome.result {
+            CommandResult::CanvasEdges(e) => e,
+            _ => panic!("Expected CanvasEdges"),
+        };
+        assert!(edges.is_empty(), "Edge should be cascade-deleted when source node is deleted");
+
+        // Verify node A is gone, node B remains
+        let outcome = execute(
+            Command::CanvasNodeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let nodes = match outcome.result {
+            CommandResult::CanvasNodes(n) => n,
+            _ => panic!("Expected CanvasNodes"),
+        };
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].id, node_b.id);
+    }
+
+    #[test]
+    fn test_node_delete_cascades_to_groups() {
+        let (state, _tmp) = setup();
+
+        // Create a session and canvas
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::VisualCanvasCreate {
+                session_id: session.id.clone(),
+                name: "Test Canvas".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let canvas = match outcome.result {
+            CommandResult::VisualCanvas(c) => c,
+            _ => panic!("Expected VisualCanvas"),
+        };
+
+        // Create two nodes
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "Node A".to_string(),
+                x: 0.0, y: 0.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_a = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "Node B".to_string(),
+                x: 200.0, y: 200.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_b = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        // Create a group containing both nodes
+        let node_ids_json = serde_json::to_string(&vec![node_a.id.clone(), node_b.id.clone()]).unwrap();
+        let outcome = execute(
+            Command::CanvasGroupCreate {
+                canvas_id: canvas.id.clone(),
+                label: "Test Group".to_string(),
+                node_ids_json: node_ids_json.clone(),
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let group = match outcome.result {
+            CommandResult::CanvasGroup(g) => g,
+            _ => panic!("Expected CanvasGroup"),
+        };
+
+        // Verify group has both nodes
+        let outcome = execute(
+            Command::CanvasGroupGet { id: group.id.clone() },
+            &state,
+        ).unwrap();
+        let fetched_group = match outcome.result {
+            CommandResult::CanvasGroup(g) => g,
+            _ => panic!("Expected CanvasGroup"),
+        };
+        let ids: Vec<String> = serde_json::from_str(&fetched_group.node_ids_json).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&node_a.id));
+        assert!(ids.contains(&node_b.id));
+
+        // Delete node A — should cascade to remove it from the group
+        let outcome = execute(
+            Command::CanvasNodeDelete { id: node_a.id.clone() },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+
+        // Verify node A was removed from the group
+        let outcome = execute(
+            Command::CanvasGroupGet { id: group.id.clone() },
+            &state,
+        ).unwrap();
+        let updated_group = match outcome.result {
+            CommandResult::CanvasGroup(g) => g,
+            _ => panic!("Expected CanvasGroup"),
+        };
+        let ids: Vec<String> = serde_json::from_str(&updated_group.node_ids_json).unwrap();
+        assert_eq!(ids.len(), 1, "Group should only have node B after node A is deleted");
+        assert_eq!(ids[0], node_b.id, "Group should contain node B");
+
+        // Verify group itself still exists
+        let outcome = execute(
+            Command::CanvasGroupList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let groups = match outcome.result {
+            CommandResult::CanvasGroups(g) => g,
+            _ => panic!("Expected CanvasGroups"),
+        };
+        assert_eq!(groups.len(), 1, "Group should still exist after removing a member node");
+    }
+
+    #[test]
+    fn test_node_delete_emits_multiple_events() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::VisualCanvasCreate {
+                session_id: session.id.clone(),
+                name: "Test Canvas".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let canvas = match outcome.result {
+            CommandResult::VisualCanvas(c) => c,
+            _ => panic!("Expected VisualCanvas"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "Node".to_string(),
+                x: 0.0, y: 0.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        // Delete node — should emit all three canvas events
+        let outcome = execute(
+            Command::CanvasNodeDelete { id: node.id.clone() },
+            &state,
+        ).unwrap();
+        assert_eq!(outcome.events.len(), 3, "Should emit 3 events: nodes, groups, and edges changed");
+
+        // Verify the specific event types
+        let has_nodes_changed = outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasNodesChanged { .. }));
+        let has_groups_changed = outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasGroupsChanged { .. }));
+        let has_edges_changed = outcome.events.iter().any(|e| matches!(e, DomainEvent::CanvasEdgesChanged { .. }));
+        assert!(has_nodes_changed, "Should emit CanvasNodesChanged");
+        assert!(has_groups_changed, "Should emit CanvasGroupsChanged");
+        assert!(has_edges_changed, "Should emit CanvasEdgesChanged");
+    }
+
+    #[test]
+    fn test_edge_delete_removes_edge() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::VisualCanvasCreate {
+                session_id: session.id.clone(),
+                name: "Test Canvas".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let canvas = match outcome.result {
+            CommandResult::VisualCanvas(c) => c,
+            _ => panic!("Expected VisualCanvas"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "A".to_string(),
+                x: 0.0, y: 0.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_a = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "B".to_string(),
+                x: 200.0, y: 200.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_b = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let outcome = execute(
+            Command::CanvasEdgeCreate {
+                canvas_id: canvas.id.clone(),
+                source_node_id: node_a.id.clone(),
+                target_node_id: node_b.id.clone(),
+                label: None,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let edge = match outcome.result {
+            CommandResult::CanvasEdge(e) => e,
+            _ => panic!("Expected CanvasEdge"),
+        };
+
+        // Delete the edge
+        let outcome = execute(
+            Command::CanvasEdgeDelete { id: edge.id.clone() },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+        assert_eq!(outcome.events.len(), 1);
+        assert!(matches!(&outcome.events[0], DomainEvent::CanvasEdgesChanged { .. }));
+
+        // Verify edge is gone
+        let outcome = execute(
+            Command::CanvasEdgeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let edges = match outcome.result {
+            CommandResult::CanvasEdges(e) => e,
+            _ => panic!("Expected CanvasEdges"),
+        };
+        assert!(edges.is_empty());
+
+        // Nodes should still exist
+        let outcome = execute(
+            Command::CanvasNodeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let nodes = match outcome.result {
+            CommandResult::CanvasNodes(n) => n,
+            _ => panic!("Expected CanvasNodes"),
+        };
+        assert_eq!(nodes.len(), 2);
+    }
+
+    #[test]
+    fn test_group_delete_removes_group_not_nodes() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp/test".to_string(),
+                name: "Test".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+
+        let outcome = execute(
+            Command::VisualCanvasCreate {
+                session_id: session.id.clone(),
+                name: "Test Canvas".to_string(),
+            },
+            &state,
+        ).unwrap();
+        let canvas = match outcome.result {
+            CommandResult::VisualCanvas(c) => c,
+            _ => panic!("Expected VisualCanvas"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "A".to_string(),
+                x: 0.0, y: 0.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_a = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let outcome = execute(
+            Command::CanvasNodeCreate {
+                canvas_id: canvas.id.clone(),
+                content: "B".to_string(),
+                x: 200.0, y: 200.0, width: 100.0, height: 50.0,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let node_b = match outcome.result {
+            CommandResult::CanvasNode(n) => n,
+            _ => panic!("Expected CanvasNode"),
+        };
+
+        let node_ids_json = serde_json::to_string(&vec![node_a.id.clone(), node_b.id.clone()]).unwrap();
+        let outcome = execute(
+            Command::CanvasGroupCreate {
+                canvas_id: canvas.id.clone(),
+                label: "Test Group".to_string(),
+                node_ids_json,
+                metadata_json: None,
+            },
+            &state,
+        ).unwrap();
+        let group = match outcome.result {
+            CommandResult::CanvasGroup(g) => g,
+            _ => panic!("Expected CanvasGroup"),
+        };
+
+        // Delete the group
+        let outcome = execute(
+            Command::CanvasGroupDelete { id: group.id.clone() },
+            &state,
+        ).unwrap();
+        assert!(matches!(outcome.result, CommandResult::Unit(())));
+        assert_eq!(outcome.events.len(), 1);
+        assert!(matches!(&outcome.events[0], DomainEvent::CanvasGroupsChanged { .. }));
+
+        // Verify group is gone
+        let outcome = execute(
+            Command::CanvasGroupList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let groups = match outcome.result {
+            CommandResult::CanvasGroups(g) => g,
+            _ => panic!("Expected CanvasGroups"),
+        };
+        assert!(groups.is_empty());
+
+        // Nodes should still exist
+        let outcome = execute(
+            Command::CanvasNodeList { canvas_id: canvas.id.clone() },
+            &state,
+        ).unwrap();
+        let nodes = match outcome.result {
+            CommandResult::CanvasNodes(n) => n,
+            _ => panic!("Expected CanvasNodes"),
+        };
+        assert_eq!(nodes.len(), 2, "Deleting a group should not delete its member nodes");
     }
 }

@@ -42,6 +42,21 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
 
 
+    if current_version < 11 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS canvas_view_states (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL UNIQUE REFERENCES visual_canvases(id) ON DELETE CASCADE,
+                offset_x REAL NOT NULL DEFAULT 0,
+                offset_y REAL NOT NULL DEFAULT 0,
+                zoom REAL NOT NULL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_canvas_view_states_canvas_id ON canvas_view_states(canvas_id);"
+        )?;
+    }
+
     if current_version < SCHEMA_VERSION {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS change_events (
@@ -127,6 +142,9 @@ mod tests {
         assert!(tables.contains(&"workspaces".to_string()));
         assert!(tables.contains(&"layouts".to_string()));
         assert!(tables.contains(&"issues".to_string()));
+        assert!(tables.contains(&"canvas_edges".to_string()));
+        assert!(tables.contains(&"canvas_groups".to_string()));
+        assert!(tables.contains(&"canvas_tags".to_string()));
         assert!(tables.contains(&"schema_version".to_string()));
     }
 
