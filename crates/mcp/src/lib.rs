@@ -58,107 +58,93 @@ fn make_show_diff_callback(handle: &tauri::AppHandle) -> Option<std::sync::Arc<d
     }) as std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>)
 }
 
+fn none_ref<T>() -> &'static Option<T> {
+    &None
+}
+
+struct Callbacks<'a> {
+    session_cb: &'a Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    layouts_cb: &'a Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    workspace_cb: &'a Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
+    issues_cb: &'a Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    visual_canvases_cb: &'a Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    canvas_nodes_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_edges_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_groups_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    canvas_tags_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+}
+
+impl<'a> Callbacks<'a> {
+    fn none() -> Self {
+        Callbacks {
+            session_cb: none_ref(),
+            layouts_cb: none_ref(),
+            workspace_cb: none_ref(),
+            issues_cb: none_ref(),
+            visual_canvases_cb: none_ref(),
+            canvas_nodes_cb: none_ref(),
+            canvas_edges_cb: none_ref(),
+            canvas_groups_cb: none_ref(),
+            canvas_tags_cb: none_ref(),
+        }
+    }
+}
+
 fn invoke_callbacks(
     events: &[DomainEvent],
-    session_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    layouts_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
-    workspace_cb: &Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
-    issues_cb: &Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
-    visual_canvases_cb: &Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
-    canvas_nodes_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
-    canvas_edges_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
-    canvas_groups_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
-    canvas_tags_cb: &Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    cbs: &Callbacks<'_>,
 ) {
     for event in events {
         match event {
             DomainEvent::SessionsChanged => {
-                if let Some(cb) = session_cb { cb(); }
+                if let Some(cb) = cbs.session_cb { cb(); }
             }
             DomainEvent::WorkspaceChanged { session_id, workspace_id, screen } => {
-                if let Some(cb) = workspace_cb { cb(session_id.clone(), workspace_id.clone(), screen.clone()); }
+                if let Some(cb) = cbs.workspace_cb { cb(session_id.clone(), workspace_id.clone(), screen.clone()); }
             }
             DomainEvent::LayoutsChanged => {
-                if let Some(cb) = layouts_cb { cb(); }
+                if let Some(cb) = cbs.layouts_cb { cb(); }
             }
             DomainEvent::IssuesChanged { session_id } => {
-                if let Some(cb) = issues_cb { cb(session_id.clone()); }
+                if let Some(cb) = cbs.issues_cb { cb(session_id.clone()); }
             }
             DomainEvent::VisualCanvasesChanged { session_id } => {
-                if let Some(cb) = visual_canvases_cb { cb(session_id.clone()); }
+                if let Some(cb) = cbs.visual_canvases_cb { cb(session_id.clone()); }
             }
             DomainEvent::CanvasNodesChanged { session_id, canvas_id } => {
-                if let Some(cb) = canvas_nodes_cb { cb(session_id.clone(), canvas_id.clone()); }
+                if let Some(cb) = cbs.canvas_nodes_cb { cb(session_id.clone(), canvas_id.clone()); }
             }
             DomainEvent::CanvasEdgesChanged { session_id, canvas_id } => {
-                if let Some(cb) = canvas_edges_cb { cb(session_id.clone(), canvas_id.clone()); }
+                if let Some(cb) = cbs.canvas_edges_cb { cb(session_id.clone(), canvas_id.clone()); }
             }
             DomainEvent::CanvasGroupsChanged { session_id, canvas_id } => {
-                if let Some(cb) = canvas_groups_cb { cb(session_id.clone(), canvas_id.clone()); }
+                if let Some(cb) = cbs.canvas_groups_cb { cb(session_id.clone(), canvas_id.clone()); }
             }
             DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
-                if let Some(cb) = canvas_tags_cb { cb(session_id.clone(), canvas_id.clone()); }
+                if let Some(cb) = cbs.canvas_tags_cb { cb(session_id.clone(), canvas_id.clone()); }
             }
         }
     }
 }
 
 macro_rules! run_mcp_command {
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
+    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, $($key:ident : $val:expr),+) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
+                let callbacks = Callbacks { $($key: &$val,)+ ..Callbacks::none() };
+                invoke_callbacks(&events, &callbacks);
                 Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
             Err(e) => Err(crate::error::to_mcp_error(e)),
         }
     };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
+    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, $($key:ident : $val:expr),+) => {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr, canvas_tags_cb: $tcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &$tcb);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+                let callbacks = Callbacks { $($key: &$val,)+ ..Callbacks::none() };
+                invoke_callbacks(&events, &callbacks);
+                Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
             Err(e) => Err(crate::error::to_mcp_error(e)),
@@ -168,76 +154,6 @@ macro_rules! run_mcp_command {
         match execute($cmd, $state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), .. }) => {
                 Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &None::<std::sync::Arc<dyn Fn(String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &None::<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    };
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty, session_cb: $scb:expr, layouts_cb: $lcb:expr, workspace_cb: $wcb:expr, issues_cb: $icb:expr, visual_canvases_cb: $vcb:expr, canvas_nodes_cb: $ncb:expr, canvas_edges_cb: $ecb:expr, canvas_groups_cb: $gcb:expr, canvas_tags_cb: $tcb:expr) => {
-        match execute($cmd, $state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&events, &$scb, &$lcb, &$wcb, &$icb, &$vcb, &$ncb, &$ecb, &$gcb, &$tcb);
-                Ok(CallToolResult::success(vec![]))
             }
             Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
             Err(e) => Err(crate::error::to_mcp_error(e)),
