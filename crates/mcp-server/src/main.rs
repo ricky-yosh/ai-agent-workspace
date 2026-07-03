@@ -45,6 +45,8 @@ async fn main() {
         on_workspace_changed: None,
         on_layouts_changed: None,
         on_issues_changed: None,
+        on_open_file_request: None,
+        on_show_diff_request: None,
         resolved_session_id,
         resolution_source,
     };

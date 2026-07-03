@@ -35,6 +35,29 @@ fn make_session_id_callback(handle: &tauri::AppHandle, event: &'static str) -> O
     }) as std::sync::Arc<dyn Fn(String) + Send + Sync>)
 }
 
+#[cfg(feature = "tauri-integration")]
+fn make_open_file_callback(handle: &tauri::AppHandle) -> Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>> {
+    let h = handle.clone();
+    Some(std::sync::Arc::new(move |session_id: String, file_path: String| {
+        let _ = h.emit("open-file-request", serde_json::json!({
+            "session_id": session_id,
+            "file_path": file_path,
+        }));
+    }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
+}
+
+#[cfg(feature = "tauri-integration")]
+fn make_show_diff_callback(handle: &tauri::AppHandle) -> Option<std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>> {
+    let h = handle.clone();
+    Some(std::sync::Arc::new(move |session_id: String, file_path: Option<String>, staged: bool| {
+        let _ = h.emit("show-diff-request", serde_json::json!({
+            "session_id": session_id,
+            "file_path": file_path,
+            "staged": staged,
+        }));
+    }) as std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>)
+}
+
 fn invoke_callbacks(
     events: &[DomainEvent],
     session_cb: &Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
@@ -140,6 +163,8 @@ pub struct McpHandler {
     pub on_workspace_changed: Option<std::sync::Arc<dyn Fn(String, String, Screen) + Send + Sync>>,
     pub on_layouts_changed: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     pub on_issues_changed: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+    pub on_open_file_request: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub on_show_diff_request: Option<std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>>,
     pub resolved_session_id: Option<String>,
     pub resolution_source: String,
 }
@@ -190,7 +215,9 @@ impl McpHandler {
         issue_delete,
         issue_search,
         issue_get_next,
-        issue_summarize_backlog
+        issue_summarize_backlog,
+        open_file,
+        show_diff
     });
 
     #[tool(description = "List all sessions")]
@@ -437,6 +464,32 @@ impl McpHandler {
         let state = AppState { db: self.db.clone() };
         run_mcp_command!(Command::IssueSummarizeBacklog { session_id }, &state, IssueBacklogSummary, summary, json)
     }
+
+    #[tool(description = "Open a file in the File Viewer Panel. Emits an event that the frontend handles by opening the file in the last-focused viewer (or creating one if none exists).")]
+    async fn open_file(&self, #[tool(param)] file_path: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        if let Some(ref cb) = self.on_open_file_request {
+            cb(session_id.clone(), file_path.clone());
+        }
+        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
+            "success": true,
+            "file_path": file_path,
+        }))?]))
+    }
+
+    #[tool(description = "Show a diff in the Diff Viewer Panel. Emits an event that the frontend handles by opening the diff in the last-focused viewer (or creating one if none exists). Optionally filter by file_path and/or show staged changes.")]
+    async fn show_diff(&self, #[tool(param)] file_path: Option<String>, #[tool(param)] staged: Option<bool>) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let staged_val = staged.unwrap_or(false);
+        if let Some(ref cb) = self.on_show_diff_request {
+            cb(session_id.clone(), file_path.clone(), staged_val);
+        }
+        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
+            "success": true,
+            "file_path": file_path,
+            "staged": staged_val,
+        }))?]))
+    }
 }
 
 #[cfg(test)]
@@ -455,6 +508,8 @@ mod tests {
             on_workspace_changed: None,
             on_layouts_changed: None,
             on_issues_changed: None,
+            on_open_file_request: None,
+            on_show_diff_request: None,
             resolved_session_id: None,
             resolution_source: "env-var".to_string(),
         };
@@ -839,6 +894,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let on_workspace_changed = make_workspace_change_callback(&handle, "workspace-changed");
             let on_layouts_changed = make_change_callback(&handle, "layouts-changed");
             let on_issues_changed = make_session_id_callback(&handle, "issues-changed");
+            let on_open_file_request = make_open_file_callback(&handle);
+            let on_show_diff_request = make_show_diff_callback(&handle);
 
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new()
@@ -850,6 +907,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         on_workspace_changed,
                         on_layouts_changed,
                         on_issues_changed,
+                        on_open_file_request,
+                        on_show_diff_request,
                         resolved_session_id: None,
                         resolution_source: "env-var".to_string(),
                     };
