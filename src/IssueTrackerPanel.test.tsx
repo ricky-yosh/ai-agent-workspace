@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PanelContext, type PanelContextType } from "./PanelContext";
+import { PanelIdentityContext, PanelFocusContext, type PanelContextType } from "./PanelContext";
 
 // ── Mocks for Tauri-coupled modules ──────────────────────────
 const sampleIssues = [
@@ -52,9 +52,11 @@ const ctx: PanelContextType = {
 
 function renderPanel() {
   return render(
-    <PanelContext.Provider value={ctx}>
-      <IssueTrackerPanel panelType="issue-tracker" />
-    </PanelContext.Provider>,
+    <PanelIdentityContext.Provider value={ctx}>
+      <PanelFocusContext.Provider value={ctx}>
+        <IssueTrackerPanel panelType="issue-tracker" />
+      </PanelFocusContext.Provider>
+    </PanelIdentityContext.Provider>,
   );
 }
 

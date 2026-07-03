@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { PanelContext, type PanelContextType } from "../PanelContext";
+import { PanelIdentityContext, PanelFocusContext, type PanelContextType } from "../PanelContext";
 import type { SessionSummary } from "../SessionContext";
 
 // ---------------------------------------------------------------------------
@@ -79,9 +79,11 @@ const ctx: PanelContextType = {
 function renderPanel(overrides?: Partial<PanelContextType>) {
   const panelCtx = { ...ctx, ...overrides };
   return render(
-    <PanelContext.Provider value={panelCtx}>
-      <FileTreePanel panelType="file-tree" />
-    </PanelContext.Provider>,
+    <PanelIdentityContext.Provider value={{ workspaceId: panelCtx.workspaceId, sessionId: panelCtx.sessionId, areaId: panelCtx.areaId, terminalId: panelCtx.terminalId }}>
+      <PanelFocusContext.Provider value={{ focusedAreaId: panelCtx.focusedAreaId, onFocusedAreaChange: panelCtx.onFocusedAreaChange, onScreenChange: panelCtx.onScreenChange }}>
+        <FileTreePanel panelType="file-tree" />
+      </PanelFocusContext.Provider>
+    </PanelIdentityContext.Provider>,
   );
 }
 
