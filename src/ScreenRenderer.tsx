@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import type { Screen, Vertex, Edge, Area, Axis } from "./types/screen";
 import { getPanel } from "./panelRegistry";
-import { PanelContext } from "./PanelContext";
+import { PanelIdentityContext, PanelFocusContext } from "./PanelContext";
 import PanelTypeSelector from "./PanelTypeSelector";
 import { disposeTerminal } from "./TerminalPanel";
 import { safeInvoke } from "./safeInvoke";
@@ -75,6 +75,15 @@ export default function ScreenRenderer({
     onFocusedAreaChange?.(areaId);
   }, [onFocusedAreaChange]);
 
+  // ---------- Memoized focus context value (shared across all areas) ----------
+  // Only changes when focusedAreaId, handleFocusChange, or onScreenChange change.
+  // Panels consuming only PanelIdentityContext will NOT re-render on focus changes.
+  const focusValue = useMemo(() => ({
+    focusedAreaId,
+    onFocusedAreaChange: handleFocusChange,
+    onScreenChange,
+  }), [focusedAreaId, handleFocusChange, onScreenChange]);
+
   // ---------- Refs for stable closures ----------
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef(sessionId);
@@ -144,6 +153,23 @@ export default function ScreenRenderer({
   // Only geometry/layout reads switch to `activeScreen`; non-geometry reads of
   // `screen` (child props, terminal ids, join/split logic) stay on `screen`.
   const activeScreen = draftScreen ?? screen;
+
+  // ---------- Memoized identity context values (per area) ----------
+  // Prevents identity-context consumers from re-rendering when only focus changes.
+  // The map is rebuilt when the area set or identity props change — NOT when
+  // focusedAreaId changes.
+  const identityValues = useMemo(() => {
+    const map = new Map<string, { workspaceId: string; sessionId: string; areaId: string; terminalId: string | null }>();
+    for (const area of activeScreen.areas) {
+      map.set(area.id, {
+        workspaceId,
+        sessionId,
+        areaId: area.id,
+        terminalId: area.terminal_id,
+      });
+    }
+    return map;
+  }, [workspaceId, sessionId, activeScreen.areas]);
 
   // ---------- Vertex lookup ----------
   const vertexMap = useMemo(() => {
@@ -1134,27 +1160,21 @@ export default function ScreenRenderer({
           >
             {/* Panel content */}
             {PanelComponent ? (
-              <PanelContext.Provider
-                value={{
-                  workspaceId,
-                  sessionId,
-                  areaId: area.id,
-                  terminalId: area.terminal_id,
-                  focusedAreaId,
-                  onFocusedAreaChange: handleFocusChange,
-                  onScreenChange,
-                }}
+              <PanelIdentityContext.Provider
+                value={identityValues.get(area.id)!}
               >
-                <div className={"screen-area-content" + (area.panel_type === "terminal" ? " screen-area-content--terminal" : "")}>
-                  <PanelTypeSelector
-                    currentType={area.panel_type}
-                    onTypeSelect={(newType) =>
-                      handlePanelTypeChange(area, newType)
-                    }
-                  />
-                  <PanelComponent panelType={area.panel_type} />
-                </div>
-              </PanelContext.Provider>
+                <PanelFocusContext.Provider value={focusValue}>
+                  <div className={"screen-area-content" + (area.panel_type === "terminal" ? " screen-area-content--terminal" : "")}>
+                    <PanelTypeSelector
+                      currentType={area.panel_type}
+                      onTypeSelect={(newType) =>
+                        handlePanelTypeChange(area, newType)
+                      }
+                    />
+                    <PanelComponent panelType={area.panel_type} />
+                  </div>
+                </PanelFocusContext.Provider>
+              </PanelIdentityContext.Provider>
             ) : (
               <div className="screen-area-content">
                 <PanelTypeSelector

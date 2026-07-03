@@ -1,22 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
-import { createHighlighter, type Highlighter } from "shiki";
-import { BUNDLED_LANGUAGES, type ShikiLanguageId } from "../languageRegistry";
-
-// ---------------------------------------------------------------------------
-// Singleton Shiki highlighter (shared with CodeRenderer)
-// ---------------------------------------------------------------------------
-
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ["github-light"],
-      langs: BUNDLED_LANGUAGES,
-    });
-  }
-  return highlighterPromise;
-}
+import { getHighlighter } from "../shikiSingleton";
+import { type ShikiLanguageId } from "../languageRegistry";
 
 // ---------------------------------------------------------------------------
 // Diff line types

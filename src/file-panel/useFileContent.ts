@@ -25,6 +25,14 @@ interface ReadFileResponse {
  * @param sessionId  Current session ID (from PanelContext).
  * @param filePath   Path relative to the session working directory.
  */
+function fastFingerprint(content: string): string {
+  if (content.length < 100_000) return fnv1a(content);
+  // Hash: length + first 1KB + last 1KB
+  const head = content.slice(0, 1024);
+  const tail = content.slice(-1024);
+  return `${content.length}:${fnv1a(head)}:${fnv1a(tail)}`;
+}
+
 export function useFileContent(
   sessionId: string,
   filePath: string | null,
@@ -63,7 +71,7 @@ export function useFileContent(
       // Abort if a newer request superseded this one
       if (thisRequest !== requestIdRef.current) return;
 
-      const contentHash = fnv1a(result.content);
+      const contentHash = fastFingerprint(result.content);
 
       // Check the cache — if the entry is already there, the content hasn't
       // changed, so we just read from cache for consistency.

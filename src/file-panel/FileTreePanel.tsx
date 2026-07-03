@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, useLayoutEffect, memo } from "react";
+import type { CSSProperties } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
-import { usePanelContext } from "../PanelContext";
+import { usePanelIdentity, usePanelFocus } from "../PanelContext";
 import { safeInvoke } from "../safeInvoke";
 import {
   getLastFocusedViewer,
@@ -126,7 +127,31 @@ interface TreeNodeProps {
   showHidden: boolean;
 }
 
-function TreeNode({
+const areTreeNodePropsEqual = (prev: TreeNodeProps, next: TreeNodeProps): boolean => {
+  if (prev.entry !== next.entry) return false;
+  if (prev.depth !== next.depth) return false;
+  if (prev.showHidden !== next.showHidden) return false;
+  if (prev.onToggleDir !== next.onToggleDir) return false;
+  if (prev.onFileClick !== next.onFileClick) return false;
+
+  // Check derived boolean values instead of Set references
+  if (prev.expandedDirs.has(prev.entry.path) !== next.expandedDirs.has(next.entry.path)) return false;
+  if (prev.loadingDirs.has(prev.entry.path) !== next.loadingDirs.has(next.entry.path)) return false;
+
+  // For directories, check if children changed
+  if (prev.entry.is_dir) {
+    if (prev.dirCache.get(prev.entry.path) !== next.dirCache.get(next.entry.path)) return false;
+  }
+
+  // For files, check active state
+  if (!prev.entry.is_dir) {
+    if (prev.activeFilePath !== next.activeFilePath) return false;
+  }
+
+  return true;
+};
+
+function TreeNodeInner({
   entry,
   depth,
   expandedDirs,
@@ -151,7 +176,7 @@ function TreeNode({
       <div className="ft-node">
         <div
           className={`ft-row ft-row--dir ${isExpanded ? "ft-row--expanded" : ""}`}
-          style={{ paddingLeft: `${depth * 16 + 4}px` }}
+          style={{ '--depth': depth } as CSSProperties}
           onClick={() => onToggleDir(entry.path)}
           title={entry.path}
         >
@@ -193,7 +218,7 @@ function TreeNode({
   return (
     <div
       className={`ft-row ft-row--file ${isActive ? "ft-row--active" : ""}`}
-      style={{ paddingLeft: `${depth * 16 + 4}px` }}
+      style={{ '--depth': depth } as CSSProperties}
       onClick={() => onFileClick(entry.path)}
       title={entry.path}
     >
@@ -204,13 +229,16 @@ function TreeNode({
   );
 }
 
+const TreeNode = memo(TreeNodeInner, areTreeNodePropsEqual);
+
 // ---------------------------------------------------------------------------
 // FileTreePanel
 // ---------------------------------------------------------------------------
 
 function FileTreePanel({ panelType: _panelType }: PanelProps) {
-  const { sessionId, workspaceId, areaId, onScreenChange } =
-    usePanelContext();
+  const { sessionId, workspaceId, areaId } =
+    usePanelIdentity();
+  const { onScreenChange } = usePanelFocus();
 
   // State
   const [showHidden, setShowHidden] = useState(false);
@@ -233,6 +261,10 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
   areaIdRef.current = areaId;
   const onScreenChangeRef = useRef(onScreenChange);
   onScreenChangeRef.current = onScreenChange;
+  const dirCacheRef = useRef(dirCache);
+  useLayoutEffect(() => {
+    dirCacheRef.current = dirCache;
+  }, [dirCache]);
 
   // Subscribe to active file changes for highlighting
   useEffect(() => {
@@ -244,7 +276,7 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
   // Load directory contents
   const loadDirectory = useCallback(
     async (dirPath: string) => {
-      if (dirCache.has(dirPath)) return;
+      if (dirCacheRef.current.has(dirPath)) return;
       setLoadingDirs((prev) => new Set(prev).add(dirPath));
       setError(null);
       try {
@@ -264,7 +296,7 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
         });
       }
     },
-    [dirCache],
+    [],
   );
 
   // Load root directory on mount
@@ -282,14 +314,14 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
         } else {
           next.add(dirPath);
           // Load contents if not cached
-          if (!dirCache.has(dirPath)) {
+          if (!dirCacheRef.current.has(dirPath)) {
             loadDirectory(dirPath);
           }
         }
         return next;
       });
     },
-    [dirCache, loadDirectory],
+    [loadDirectory],
   );
 
   // Open file in viewer
@@ -346,9 +378,9 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
 
   // Root entries
   const rootEntries = dirCache.get("") ?? [];
-  const visibleRootEntries = showHidden
-    ? rootEntries
-    : rootEntries.filter((e) => !e.is_hidden);
+  const visibleRootEntries = useMemo(() => {
+    return showHidden ? rootEntries : rootEntries.filter((e) => !e.is_hidden);
+  }, [rootEntries, showHidden]);
 
   return (
     <div className="file-tree-panel">

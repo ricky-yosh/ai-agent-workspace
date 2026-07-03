@@ -10,7 +10,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./TerminalPanel.css";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
-import { usePanelContext } from "./PanelContext";
+import { usePanelIdentity, usePanelFocus } from "./PanelContext";
 import { matchesAnyShortcut, TERMINAL_PASSTHROUGH_SHORTCUTS } from "./App";
 import type { Screen } from "./types/screen";
 import { safeInvoke } from "./safeInvoke";
@@ -390,7 +390,8 @@ function usePty(
 }
 
 function useTerminalDragDrop(cacheKey: string): void {
-  const { areaId, focusedAreaId } = usePanelContext();
+  const { areaId } = usePanelIdentity();
+  const { focusedAreaId } = usePanelFocus();
   const focusedAreaIdRef = useRef(focusedAreaId);
   focusedAreaIdRef.current = focusedAreaId;
   const areaIdRef = useRef(areaId);
@@ -526,7 +527,8 @@ function useTerminalReveal(
 }
 
 function TerminalPanel({ panelType: _panelType }: PanelProps) {
-  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId, focusedAreaId, onFocusedAreaChange, onScreenChange } = usePanelContext();
+  const { workspaceId: _workspaceId, sessionId, areaId: _areaId, terminalId: contextTerminalId } = usePanelIdentity();
+  const { focusedAreaId, onFocusedAreaChange, onScreenChange } = usePanelFocus();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalIdRef = useRef(contextTerminalId ?? crypto.randomUUID());
   const terminalId = terminalIdRef.current;

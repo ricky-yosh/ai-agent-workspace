@@ -65,7 +65,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 6px;
+  padding: 2px 6px 2px calc(var(--depth, 0) * 16px + 4px);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;

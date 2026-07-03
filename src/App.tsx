@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { safeInvoke } from "./safeInvoke";
 import { SessionProvider, useSessions } from "./SessionContext";
 import SessionSidebar from "./SessionSidebar";
@@ -708,6 +708,17 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
     { key: "Tab", ctrl: true, shift: true, handler: () => handleCycleWorkspace(-1) },
   ]);
 
+  // Stable per-workspace onScreenChange handlers — prevents ScreenRenderer from
+  // receiving a new callback reference (and thus re-rendering) when only
+  // focusedAreaId changes.
+  const onScreenChangeHandlers = useMemo(() => {
+    const map = new Map<string, (screen: Screen) => void>();
+    for (const ws of workspaces) {
+      map.set(ws.id, (screen: Screen) => handleScreenChange(ws.id, screen));
+    }
+    return map;
+  }, [workspaces, handleScreenChange]);
+
   if (!activeSessionId) {
     return (
       <main className="main-content">
@@ -782,7 +793,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
                     focusedAreaId={focusedAreaId}
                     onFocusedAreaChange={setFocusedAreaId}
                     zoomedAreaId={zoomedAreaId}
-                    onScreenChange={(screen) => handleScreenChange(ws.id, screen)}
+                    onScreenChange={onScreenChangeHandlers.get(ws.id)!}
                     onError={onError}
                   />
                 </div>

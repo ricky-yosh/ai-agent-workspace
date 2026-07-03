@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
-import { usePanelContext } from "./PanelContext";
+import { usePanelIdentity, usePanelFocus } from "./PanelContext";
 
 function BlankPanel({ panelType }: PanelProps) {
-  const { focusedAreaId, areaId } = usePanelContext();
+  const { areaId } = usePanelIdentity();
+  const { focusedAreaId } = usePanelFocus();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

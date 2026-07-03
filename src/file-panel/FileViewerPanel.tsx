@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { FileText, X } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
-import { usePanelContext } from "../PanelContext";
+import { usePanelIdentity, usePanelFocus } from "../PanelContext";
 import { useSessions } from "../SessionContext";
 import { useFileContent } from "./useFileContent";
 import {
@@ -68,12 +68,15 @@ function nextTabId(): string {
 }
 
 function FileViewerPanel({ panelType: _panelType }: PanelProps) {
-  const { sessionId, areaId, workspaceId, focusedAreaId } = usePanelContext();
+  const { sessionId, areaId, workspaceId } = usePanelIdentity();
+  const { focusedAreaId } = usePanelFocus();
   const { sessions } = useSessions();
 
   // Tab state — local to this panel instance
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
@@ -92,7 +95,7 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
     if (!trimmed) return;
 
     // Check if this file is already open in this panel
-    const existing = tabs.find((t) => t.filePath === trimmed);
+    const existing = tabsRef.current.find((t) => t.filePath === trimmed);
     if (existing) {
       setActiveTabId(existing.id);
       return;
@@ -105,7 +108,7 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
-  }, [tabs]);
+  }, []);
 
   // --- Viewer registry integration ---
 

@@ -1,31 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { createHighlighter, type Highlighter } from "shiki";
+import { getHighlighter } from "../shikiSingleton";
 import { fileContentCache, fnv1a } from "../cache";
 import {
-  BUNDLED_LANGUAGES,
   languageForFile,
   type ShikiLanguageId,
 } from "../languageRegistry";
-
-// ---------------------------------------------------------------------------
-// Singleton Shiki highlighter
-// ---------------------------------------------------------------------------
-
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-/**
- * Lazily create (and cache) the Shiki highlighter instance.
- * Loads all bundled languages on first use.
- */
-function getHighlighter(): Promise<Highlighter> {
-  if (!highlighterPromise) {
-    highlighterPromise = createHighlighter({
-      themes: ["github-light"],
-      langs: BUNDLED_LANGUAGES,
-    });
-  }
-  return highlighterPromise;
-}
 
 // ---------------------------------------------------------------------------
 // Cache helpers for highlighted HTML

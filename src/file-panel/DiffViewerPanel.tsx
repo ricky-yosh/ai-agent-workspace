@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
-import { usePanelContext } from "../PanelContext";
+import { usePanelIdentity } from "../PanelContext";
 import { safeInvoke } from "../safeInvoke";
 import { registerShowDiffHandler } from "../panelActionBridge";
 import { parseUnifiedDiff } from "./renderers/DiffRenderer";
@@ -131,7 +131,7 @@ function flattenDiffFiles(files: ReturnType<typeof parseUnifiedDiff>): FlatItem[
 // ---------------------------------------------------------------------------
 
 function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
-  const { sessionId } = usePanelContext();
+  const { sessionId } = usePanelIdentity();
   const [activeTab, setActiveTab] = useState<DiffTab>("unstaged");
 
   // --- Bridge integration: listen for external show-diff requests ---
