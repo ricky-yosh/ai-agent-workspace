@@ -5,6 +5,7 @@ import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
+import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 
 // Undo/Redo command types
 type CanvasCommand =
@@ -155,6 +156,17 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   // Flag to prevent handleCanvasClick from clearing selection after box-select
   const justCompletedBoxSelectRef = useRef(false);
 
+  // Context menu state (right-click on empty canvas, node, edge, or group)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    canvasX: number;
+    canvasY: number;
+    nodeId?: string;
+    edgeId?: string;
+    groupId?: string;
+  } | null>(null);
+
   // Inline edit state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -173,6 +185,14 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [redoStack, setRedoStack] = useState<CanvasCommand[]>([]);
   const undoStackRef = useRef<CanvasCommand[]>([]);
   const redoStackRef = useRef<CanvasCommand[]>([]);
+
+  // Placement mode state (for ghost preview)
+  const [placementMode, setPlacementMode] = useState<{
+    type: 'node' | 'group';
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const [cursorCanvasPos, setCursorCanvasPos] = useState<{ x: number; y: number } | null>(null);
 
   // Toast notification state
   const [toast, setToast] = useState<string | null>(null);
@@ -864,6 +884,20 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   // Handle mouse move on canvas
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    // Handle placement mode (ghost preview)
+    if (placementMode) {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect) {
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        setCursorCanvasPos({
+          x: (screenX - offsetX) / zoom,
+          y: (screenY - offsetY) / zoom,
+        });
+      }
+      return;
+    }
+
     // Handle box-select rubber band
     if (boxSelect) {
       handleBoxSelectMove(e);
@@ -911,7 +945,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       );
       updateNodePosition(dragState.nodeId, newX, newY);
     }
-  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove]);
+  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode, offsetX, offsetY]);
 
   // Handle mouse up to end dragging
   const handleMouseUp = useCallback((e?: React.MouseEvent) => {
@@ -1070,14 +1104,448 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
   }, [confirmEdit, cancelEdit]);
 
+  // Add a node at a specific canvas position (enters placement mode)
+  const handleAddNodeAtPosition = useCallback((cx: number, cy: number) => {
+    setPlacementMode({ type: 'node', startX: cx, startY: cy });
+    setContextMenu(null);
+  }, []);
+
+  // Place the node at the current cursor position (called from placement mode)
+  const placeNodeAtCursor = useCallback((cx: number, cy: number) => {
+    if (!selectedCanvasId || !placementMode) return;
+
+    const defaultWidth = 200;
+    const defaultHeight = 60;
+
+    const defaultContent = "New node";
+
+    safeInvoke<CanvasNode>("create_canvas_node", {
+      canvasId: selectedCanvasId,
+      content: defaultContent,
+      x: cx - defaultWidth / 2,
+      y: cy - defaultHeight / 2,
+      width: defaultWidth,
+      height: defaultHeight,
+      metadataJson: null,
+    }).then((newNode) => {
+      setNodes((prev) => [...prev, newNode]);
+      // Push undo command
+      pushUndo({ type: "create_node", node: newNode });
+      // Trigger shockwave
+      setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
+      setTimeout(() => {
+        setNewlyCreatedNodeIds((prev) => {
+          const next = new Set(prev);
+          next.delete(newNode.id);
+          return next;
+        });
+      }, 1400);
+      // Enter edit mode on the new node
+      setEditingNodeId(newNode.id);
+      setEditingValue(newNode.content);
+      // Select the new node
+      setSelectedNodeIds(new Set([newNode.id]));
+      // Clear placement mode
+      setPlacementMode(null);
+      setCursorCanvasPos(null);
+    }).catch((err) => {
+      console.error("Failed to create node:", err);
+      showToast("Failed to create node");
+      setPlacementMode(null);
+      setCursorCanvasPos(null);
+    });
+  }, [selectedCanvasId, placementMode, pushUndo, showToast]);
+
+  // Place a group at the current cursor position (called from placement mode)
+  const placeGroupAtCursor = useCallback((_cx: number, _cy: number) => {
+    if (!selectedCanvasId || !placementMode || placementMode.type !== 'group') return;
+    if (selectedNodeIds.size === 0) {
+      showToast("Select nodes first to create a group");
+      setPlacementMode(null);
+      setCursorCanvasPos(null);
+      return;
+    }
+
+    const groupNodeIds = [...selectedNodeIds];
+    safeInvoke<CanvasGroup>("create_canvas_group", {
+      canvasId: selectedCanvasId,
+      label: "Group",
+      nodeIdsJson: JSON.stringify(groupNodeIds),
+      metadataJson: null,
+    }).then((newGroup) => {
+      setGroups((prev) => [...prev, newGroup]);
+      showToast("Group created");
+      setPlacementMode(null);
+      setCursorCanvasPos(null);
+    }).catch((err) => {
+      console.error("Failed to create group:", err);
+      showToast("Failed to create group");
+      setPlacementMode(null);
+      setCursorCanvasPos(null);
+    });
+  }, [selectedCanvasId, placementMode, selectedNodeIds, showToast]);
+
+  // Calculate ghost size based on selected nodes
+  const getGroupGhostSize = useCallback(() => {
+    if (selectedNodeIds.size === 0) return { width: 300, height: 200 };
+
+    const selectedNodes = nodes.filter(n => selectedNodeIds.has(n.id));
+    const padding = 20;
+    const minX = Math.min(...selectedNodes.map(n => n.x));
+    const minY = Math.min(...selectedNodes.map(n => n.y));
+    const maxX = Math.max(...selectedNodes.map(n => n.x + n.width));
+    const maxY = Math.max(...selectedNodes.map(n => n.y + n.height));
+
+    return { width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 };
+  }, [selectedNodeIds, nodes]);
+
   // Handle click on empty canvas to deselect and clear edit
-  const handleCanvasClick = useCallback(() => {
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     // Don't clear selection if we just completed a box-select
     if (justCompletedBoxSelectRef.current) return;
+
+    // If in placement mode, place the element at the click position
+    if (placementMode) {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect) {
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const canvasX = (screenX - offsetX) / zoom;
+        const canvasY = (screenY - offsetY) / zoom;
+
+        if (placementMode.type === 'node') {
+          placeNodeAtCursor(canvasX, canvasY);
+        } else if (placementMode.type === 'group') {
+          placeGroupAtCursor(canvasX, canvasY);
+        }
+      }
+      return;
+    }
+
     setSelectedNodeIds(new Set());
     setEditingNodeId(null);
     setEditingValue("");
-  }, []);
+    // Close context menu on any click
+    setContextMenu(null);
+  }, [placementMode, offsetX, zoom, placeNodeAtCursor, placeGroupAtCursor]);
+
+  // Find the nearest edge to a canvas point, returning edge ID if within threshold
+  const findNearestEdge = useCallback((cx: number, cy: number, threshold: number = 10): string | null => {
+    let nearestId: string | null = null;
+    let nearestDist = Infinity;
+
+    for (const edge of edges) {
+      const sourceNode = nodes.find(n => n.id === edge.source_node_id);
+      const targetNode = nodes.find(n => n.id === edge.target_node_id);
+      if (!sourceNode || !targetNode) continue;
+
+      // Reproduce the same geometry used for rendering
+      const srcCx = sourceNode.x + sourceNode.width / 2;
+      const srcCy = sourceNode.y + sourceNode.height / 2;
+      const tgtCx = targetNode.x + targetNode.width / 2;
+      const tgtCy = targetNode.y + targetNode.height / 2;
+
+      const ddx = tgtCx - srcCx;
+      const ddy = tgtCy - srcCy;
+      const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (dist === 0) continue;
+      const curvature = Math.min(dist * 0.2, 50);
+      const nx = -ddy / dist;
+      const ny = ddx / dist;
+      const cpX = (srcCx + tgtCx) / 2 + nx * curvature;
+      const cpY = (srcCy + tgtCy) / 2 + ny * curvature;
+
+      // Edge intersection with node boundaries
+      const getEdgePoint = (node: CanvasNode, tx: number, ty: number) => {
+        const ccx = node.x + node.width / 2;
+        const ccy = node.y + node.height / 2;
+        const edx = tx - ccx;
+        const edy = ty - ccy;
+        const angle = Math.atan2(edy, edx);
+        const hw = node.width / 2;
+        const hh = node.height / 2;
+        const tanAngle = Math.abs(Math.tan(angle));
+        let ix: number, iy: number;
+        if (tanAngle * hw <= hh) {
+          ix = edx > 0 ? hw : -hw;
+          iy = ix * Math.tan(angle);
+        } else {
+          iy = edy > 0 ? hh : -hh;
+          ix = iy / Math.tan(angle);
+        }
+        return { x: ccx + ix, y: ccy + iy };
+      };
+
+      const p0 = getEdgePoint(sourceNode, cpX, cpY);
+      const p2 = getEdgePoint(targetNode, cpX, cpY);
+      const p1 = { x: cpX, y: cpY };
+
+      // Sample the quadratic bezier at many t values and find min distance
+      const SAMPLES = 40;
+      for (let i = 0; i <= SAMPLES; i++) {
+        const t = i / SAMPLES;
+        const mt = 1 - t;
+        const bx = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x;
+        const by = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y;
+        const d = Math.sqrt((cx - bx) ** 2 + (cy - by) ** 2);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestId = edge.id;
+        }
+      }
+    }
+
+    return nearestDist <= threshold ? nearestId : null;
+  }, [edges, nodes]);
+
+  // Right-click handler on empty canvas, node, or edge
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    // Convert screen coordinates to canvas coordinates
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const canvasX = (screenX - offsetX) / zoom;
+    const canvasY = (screenY - offsetY) / zoom;
+
+    // Check if the click landed on a node (in canvas coordinates)
+    for (const node of nodes) {
+      if (
+        canvasX >= node.x &&
+        canvasX <= node.x + node.width &&
+        canvasY >= node.y &&
+        canvasY <= node.y + node.height
+      ) {
+        // Click was on a node — show node context menu
+        setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, nodeId: node.id });
+        return;
+      }
+    }
+
+    // Check if the click landed near an edge
+    const edgeId = findNearestEdge(canvasX, canvasY, 10);
+    if (edgeId) {
+      setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, edgeId });
+      return;
+    }
+
+    // Check if click landed inside any group's bounding box
+    for (const group of groups) {
+      const nodeIds: string[] = JSON.parse(group.node_ids_json || "[]");
+      const memberNodes = nodes.filter((n) => nodeIds.includes(n.id));
+      if (memberNodes.length === 0) continue;
+
+      const padding = 20;
+      const minX = Math.min(...memberNodes.map((n) => n.x)) - padding;
+      const minY = Math.min(...memberNodes.map((n) => n.y)) - padding;
+      const maxX = Math.max(...memberNodes.map((n) => n.x + n.width)) + padding;
+      const maxY = Math.max(...memberNodes.map((n) => n.y + n.height)) + padding;
+
+      if (canvasX >= minX && canvasX <= maxX && canvasY >= minY && canvasY <= maxY) {
+        // Click was on a group — show group context menu
+        setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, groupId: group.id });
+        return;
+      }
+    }
+
+    // Empty space — show canvas context menu
+    setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
+  }, [offsetX, offsetY, zoom, nodes, groups, findNearestEdge]);
+
+  // Add a group at a specific canvas position (enters placement mode)
+  const handleAddGroupAtPosition = useCallback((cx: number, cy: number) => {
+    if (selectedNodeIds.size === 0) {
+      showToast("Select nodes first to create a group");
+      return;
+    }
+    setPlacementMode({ type: 'group', startX: cx, startY: cy });
+    setContextMenu(null);
+  }, [selectedNodeIds, showToast]);
+
+  // Context menu items for the empty canvas
+  const canvasMenuItems: ContextMenuItem[] = [
+    { label: "Add Node", shortcut: "N", onClick: () => handleAddNodeAtPosition(contextMenu!.canvasX, contextMenu!.canvasY) },
+    { label: "", separator: true, onClick: () => {} },
+    { label: "Add Group", shortcut: "G", onClick: () => handleAddGroupAtPosition(contextMenu!.canvasX, contextMenu!.canvasY) },
+  ];
+
+  // Handle "Edit" from context menu — enters inline edit mode
+  const handleEditNode = useCallback((nodeId: string | undefined) => {
+    if (!nodeId) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    setEditingNodeId(node.id);
+    setEditingValue(node.content);
+    setSelectedNodeIds(new Set());
+  }, [nodes]);
+
+  // Handle "Add Edge" from context menu — starts edge creation from this node
+  const handleStartEdgeFromNode = useCallback((nodeId: string | undefined) => {
+    if (!nodeId) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    const sourceX = node.x + node.width / 2;
+    const sourceY = node.y + node.height / 2;
+    setEdgeDragState({
+      sourceNodeId: node.id,
+      sourceX,
+      sourceY,
+      targetX: sourceX,
+      targetY: sourceY,
+    });
+    setContextMenu(null);
+  }, [nodes]);
+
+  // Handle "Delete" from context menu — deletes the node
+  const handleDeleteNode = useCallback(async (nodeId: string | undefined) => {
+    if (!nodeId) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+
+    // Start fade-out animation
+    setDeletingNodeIds((prev) => new Set(prev).add(nodeId));
+    setSelectedNodeIds((prev) => {
+      const next = new Set(prev);
+      next.delete(nodeId);
+      return next;
+    });
+
+    try {
+      await safeInvoke("delete_canvas_node", { id: node.id });
+      pushUndo({ type: "delete_node", node });
+    } catch (err) {
+      console.error("Failed to delete node:", err);
+    }
+
+    // Remove from deleting set after animation completes
+    setTimeout(() => {
+      setDeletingNodeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }, 260);
+    setContextMenu(null);
+  }, [nodes, pushUndo]);
+
+  // Context menu items for a node
+  const nodeMenuItems: ContextMenuItem[] = [
+    { label: "Edit", shortcut: "Enter", onClick: () => handleEditNode(contextMenu?.nodeId) },
+    { label: "Add Edge", shortcut: "Alt+Click", onClick: () => handleStartEdgeFromNode(contextMenu?.nodeId) },
+    { label: "", separator: true, onClick: () => {} },
+    { label: "Add to Group", disabled: true, onClick: () => {} },
+    { label: "Add Tag", disabled: true, onClick: () => {} },
+    { label: "", separator: true, onClick: () => {} },
+    { label: "Delete", shortcut: "Del", onClick: () => handleDeleteNode(contextMenu?.nodeId) },
+  ];
+
+  // Handle "Edit Label" from edge context menu
+  const handleEditEdgeLabel = useCallback((edgeId: string | undefined) => {
+    if (!edgeId) return;
+    const edge = edges.find((e) => e.id === edgeId);
+    if (!edge) return;
+    const currentLabel = edge.label ?? "";
+    const newLabel = prompt("Edit edge label:", currentLabel);
+    if (newLabel === null) return; // user cancelled
+    const trimmed = newLabel.trim();
+    if (trimmed === currentLabel) return; // no change
+
+    safeInvoke<CanvasEdge>("update_canvas_edge", {
+      id: edgeId,
+      label: trimmed.length > 0 ? trimmed : null,
+      metadataJson: null,
+    }).then((updatedEdge) => {
+      setEdges((prev) => prev.map((e) => (e.id === edgeId ? updatedEdge : e)));
+      showToast(trimmed.length > 0 ? `Label updated to "${trimmed}"` : "Label removed");
+    }).catch((err) => {
+      console.error("Failed to update edge label:", err);
+      showToast("Failed to update edge label");
+    });
+    setContextMenu(null);
+  }, [edges, showToast]);
+
+  // Handle "Delete" from edge context menu
+  const handleDeleteEdge = useCallback(async (edgeId: string | undefined) => {
+    if (!edgeId) return;
+    const edge = edges.find((e) => e.id === edgeId);
+    if (!edge) return;
+
+    try {
+      await safeInvoke("delete_canvas_edge", { id: edgeId });
+      setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+      showToast("Edge deleted");
+    } catch (err) {
+      console.error("Failed to delete edge:", err);
+      showToast("Failed to delete edge");
+    }
+    setContextMenu(null);
+  }, [edges, showToast]);
+
+  // Context menu items for an edge
+  const edgeMenuItems: ContextMenuItem[] = [
+    { label: "Edit Label", onClick: () => handleEditEdgeLabel(contextMenu?.edgeId) },
+    { label: "", separator: true, onClick: () => {} },
+    { label: "Delete", shortcut: "Del", onClick: () => handleDeleteEdge(contextMenu?.edgeId) },
+  ];
+
+  // Handle "Rename" from group context menu
+  const handleRenameGroup = useCallback((groupId: string | undefined) => {
+    if (!groupId) return;
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+    const currentLabel = group.label;
+    const newLabel = prompt("Rename group:", currentLabel);
+    if (newLabel === null) return; // user cancelled
+    const trimmed = newLabel.trim();
+    if (trimmed.length === 0) return; // reject empty
+    if (trimmed === currentLabel) return; // no change
+
+    safeInvoke<CanvasGroup>("update_canvas_group", {
+      id: groupId,
+      label: trimmed,
+      nodeIdsJson: null,
+      metadataJson: null,
+    }).then((updatedGroup) => {
+      setGroups((prev) => prev.map((g) => (g.id === groupId ? updatedGroup : g)));
+      showToast(`Group renamed to "${trimmed}"`);
+    }).catch((err) => {
+      console.error("Failed to rename group:", err);
+      showToast("Failed to rename group");
+    });
+    setContextMenu(null);
+  }, [groups, showToast]);
+
+  // Handle "Dissolve" from group context menu — removes group, keeps nodes
+  const handleDissolveGroup = useCallback((groupId: string | undefined) => {
+    if (!groupId) return;
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    safeInvoke("delete_canvas_group", { id: groupId }).then(() => {
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      showToast("Group dissolved");
+    }).catch((err) => {
+      console.error("Failed to dissolve group:", err);
+      showToast("Failed to dissolve group");
+    });
+    setContextMenu(null);
+  }, [groups, showToast]);
+
+  // Handle "Delete" from group context menu — same as dissolve (safe default)
+  const handleDeleteGroup = useCallback((groupId: string | undefined) => {
+    handleDissolveGroup(groupId);
+  }, [handleDissolveGroup]);
+
+  // Context menu items for a group
+  const groupMenuItems: ContextMenuItem[] = [
+    { label: "Rename", onClick: () => handleRenameGroup(contextMenu?.groupId) },
+    { label: "", separator: true, onClick: () => {} },
+    { label: "Dissolve", onClick: () => handleDissolveGroup(contextMenu?.groupId) },
+    { label: "Delete", onClick: () => handleDeleteGroup(contextMenu?.groupId) },
+  ];
 
   // Delete selected node(s)
   const deleteSelectedNodes = useCallback(async () => {
@@ -1141,6 +1609,12 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       }
 
       if (e.key === "Escape") {
+        // Cancel placement mode if active
+        if (placementMode) {
+          setPlacementMode(null);
+          setCursorCanvasPos(null);
+          return;
+        }
         // Cancel edge drag if active
         if (edgeDragState) {
           setEdgeDragState(null);
@@ -1182,7 +1656,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState]);
+  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState, placementMode]);
 
   useEffect(() => {
     fetchCanvases();
@@ -1287,10 +1761,18 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   useEffect(() => {
     if (editingNodeId && editInputRef.current) {
       const input = editInputRef.current;
-      // Use requestAnimationFrame to ensure the input is mounted
+      // Use requestAnimationFrame to ensure the foreignObject input is mounted,
+      // then a micro-delay to handle cases where the DOM update hasn't propagated
       requestAnimationFrame(() => {
         input.focus();
         input.select();
+        // Fallback: if focus didn't take (foreignObject timing), retry once
+        if (document.activeElement !== input) {
+          setTimeout(() => {
+            input.focus();
+            input.select();
+          }, 16);
+        }
       });
     }
   }, [editingNodeId]);
@@ -1524,6 +2006,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           }
         }
 
+        .node-ghost {
+          animation: ghost-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes ghost-pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 0.7; }
+        }
+
         .tag-pill {
           padding: 1px 6px;
           border-radius: var(--canvas-radius-tag);
@@ -1668,6 +2159,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         onMouseUp={() => { handlePanEnd(); handleMouseUp(); }}
         onMouseLeave={() => { handlePanEnd(); handleMouseUp(); }}
         onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
       >
         <svg
           width="100%"
@@ -1843,6 +2335,60 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               className="edge-dragging"
               pointerEvents="none"
             />
+          )}
+
+          {/* Ghost preview for node placement */}
+          {placementMode && placementMode.type === 'node' && cursorCanvasPos && (
+            <g transform={`translate(${cursorCanvasPos.x - 100}, ${cursorCanvasPos.y - 30})`} className="node-ghost">
+              <rect
+                width={200}
+                height={60}
+                rx={10}
+                ry={10}
+                fill="var(--canvas-node-bg, #1f1828)"
+                fillOpacity={0.5}
+                stroke="var(--canvas-accent, #9b6cb9)"
+                strokeWidth={2}
+                strokeDasharray="6 3"
+              />
+              <text
+                x={100}
+                y={35}
+                textAnchor="middle"
+                fill="var(--canvas-accent-bright, #c6a7d8)"
+                fillOpacity={0.7}
+                fontSize={14}
+              >
+                Click to place
+              </text>
+            </g>
+          )}
+
+          {/* Ghost preview for group placement */}
+          {placementMode && placementMode.type === 'group' && cursorCanvasPos && (
+            <g transform={`translate(${cursorCanvasPos.x - getGroupGhostSize().width / 2}, ${cursorCanvasPos.y - getGroupGhostSize().height / 2})`} className="node-ghost">
+              <rect
+                width={getGroupGhostSize().width}
+                height={getGroupGhostSize().height}
+                rx={12}
+                ry={12}
+                fill="var(--canvas-accent, #9b6cb9)"
+                fillOpacity={0.1}
+                stroke="var(--canvas-accent, #9b6cb9)"
+                strokeWidth={1.5}
+                strokeDasharray="6 3"
+              />
+              <text
+                x={getGroupGhostSize().width / 2}
+                y={getGroupGhostSize().height / 2 + 5}
+                textAnchor="middle"
+                fill="var(--canvas-accent-bright, #c6a7d8)"
+                fillOpacity={0.7}
+                fontSize={14}
+              >
+                Click to place group
+              </text>
+            </g>
           )}
 
           {/* Groups - render behind nodes */}
@@ -2199,6 +2745,16 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Context menu (right-click on empty canvas, node, edge, or group) */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.nodeId ? nodeMenuItems : contextMenu.edgeId ? edgeMenuItems : contextMenu.groupId ? groupMenuItems : canvasMenuItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
