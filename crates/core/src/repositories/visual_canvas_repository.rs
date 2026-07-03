@@ -3,16 +3,7 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::domain::VisualCanvas;
-
-fn now_epoch_millis() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-
-fn epoch_millis_to_iso(millis: i64) -> String {
-    let dt = chrono::DateTime::from_timestamp_millis(millis)
-        .unwrap_or_default();
-    dt.to_rfc3339()
-}
+use super::timestamps::{now_epoch_millis, epoch_millis_to_iso};
 
 pub struct VisualCanvasRepository<'a> {
     _db_path: PathBuf,
@@ -100,11 +91,7 @@ impl<'a> VisualCanvasRepository<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::Database;
-
-    fn setup_db() -> Database {
-        Database::new(":memory:".into())
-    }
+    use crate::repositories::test_helpers::*;
 
     #[test]
     fn test_create_canvas_with_name() {

@@ -3,16 +3,7 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::domain::CanvasGroup;
-
-fn now_epoch_millis() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-
-fn epoch_millis_to_iso(millis: i64) -> String {
-    let dt = chrono::DateTime::from_timestamp_millis(millis)
-        .unwrap_or_default();
-    dt.to_rfc3339()
-}
+use super::timestamps::{now_epoch_millis, epoch_millis_to_iso};
 
 pub struct CanvasGroupRepository<'a> {
     _db_path: PathBuf,
@@ -145,20 +136,7 @@ impl<'a> CanvasGroupRepository<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::Database;
-
-    fn setup_db() -> Database {
-        Database::new(":memory:".into())
-    }
-
-    fn create_test_canvas(db: &Database) -> (String, String) {
-        let conn = db.connection().unwrap();
-        let sessions = db.sessions(&conn);
-        let session = sessions.create("/tmp", "Test").unwrap();
-        let canvases = db.visual_canvases(&conn);
-        let canvas = canvases.create(&session.id, "Test Canvas").unwrap();
-        (session.id, canvas.id)
-    }
+    use crate::repositories::test_helpers::*;
 
     #[test]
     fn test_create_group_with_label_and_node_ids() {

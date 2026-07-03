@@ -3,16 +3,7 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::domain::CanvasEdge;
-
-fn now_epoch_millis() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-
-fn epoch_millis_to_iso(millis: i64) -> String {
-    let dt = chrono::DateTime::from_timestamp_millis(millis)
-        .unwrap_or_default();
-    dt.to_rfc3339()
-}
+use super::timestamps::{now_epoch_millis, epoch_millis_to_iso};
 
 pub struct CanvasEdgeRepository<'a> {
     _db_path: PathBuf,
@@ -153,23 +144,7 @@ impl<'a> CanvasEdgeRepository<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::Database;
-
-    fn setup_db() -> Database {
-        Database::new(":memory:".into())
-    }
-
-    fn create_test_canvas_with_nodes(db: &Database) -> (String, String, String, String) {
-        let conn = db.connection().unwrap();
-        let sessions = db.sessions(&conn);
-        let session = sessions.create("/tmp", "Test").unwrap();
-        let canvases = db.visual_canvases(&conn);
-        let canvas = canvases.create(&session.id, "Test Canvas").unwrap();
-        let nodes = db.canvas_nodes(&conn);
-        let node1 = nodes.create(&canvas.id, "Node 1", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        let node2 = nodes.create(&canvas.id, "Node 2", 200.0, 200.0, 100.0, 50.0, None).unwrap();
-        (session.id, canvas.id, node1.id, node2.id)
-    }
+    use crate::repositories::test_helpers::*;
 
     #[test]
     fn test_create_edge_with_valid_nodes() {

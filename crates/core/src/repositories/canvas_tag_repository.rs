@@ -3,16 +3,7 @@ use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::domain::CanvasTag;
-
-fn now_epoch_millis() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-
-fn epoch_millis_to_iso(millis: i64) -> String {
-    let dt = chrono::DateTime::from_timestamp_millis(millis)
-        .unwrap_or_default();
-    dt.to_rfc3339()
-}
+use super::timestamps::{now_epoch_millis, epoch_millis_to_iso};
 
 pub struct CanvasTagRepository<'a> {
     _db_path: PathBuf,
@@ -127,27 +118,7 @@ impl<'a> CanvasTagRepository<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::Database;
-
-    fn setup_db() -> Database {
-        Database::new(":memory:".into())
-    }
-
-    fn create_test_canvas(db: &Database) -> (String, String) {
-        let conn = db.connection().unwrap();
-        let sessions = db.sessions(&conn);
-        let session = sessions.create("/tmp", "Test").unwrap();
-        let canvases = db.visual_canvases(&conn);
-        let canvas = canvases.create(&session.id, "Test Canvas").unwrap();
-        (session.id, canvas.id)
-    }
-
-    fn create_test_node(db: &Database, canvas_id: &str) -> String {
-        let conn = db.connection().unwrap();
-        let nodes = db.canvas_nodes(&conn);
-        let node = nodes.create(canvas_id, "Test Node", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        node.id
-    }
+    use crate::repositories::test_helpers::*;
 
     #[test]
     fn test_add_tag() {
