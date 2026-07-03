@@ -269,6 +269,191 @@ fn open_preferences(app: tauri::AppHandle) -> Result<(), String> {
     focus_or_open_preferences(&app)
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+struct ReadFileResult {
+    content: String,
+    size: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct GitDiffResult {
+    diff: String,
+    staged: bool,
+}
+
+#[tauri::command]
+fn read_file(
+    state: tauri::State<AppState>,
+    session_id: String,
+    file_path: String,
+) -> Result<ReadFileResult, String> {
+    // Resolve the session's working directory
+    let working_dir = {
+        let conn = state.db.connection().map_err(|e| e.to_string())?;
+        let sessions = state.db.sessions(&conn);
+        let session = sessions.get(&session_id)
+            .map_err(|e| format!("Session not found: {}", e))?;
+        session.working_directory
+    };
+
+    // Resolve the file path relative to the working directory
+    let base = std::path::Path::new(&working_dir);
+    let resolved = base.join(&file_path);
+
+    // Security: ensure the resolved path is within the working directory
+    let canonical_base = base.canonicalize()
+        .map_err(|e| format!("Failed to resolve working directory: {}", e))?;
+    let canonical_resolved = resolved.canonicalize()
+        .map_err(|e| format!("Failed to resolve file path: {}", e))?;
+
+    if !canonical_resolved.starts_with(&canonical_base) {
+        return Err("Access denied: path escapes the working directory".to_string());
+    }
+
+    // Read the file as bytes first to check for binary content
+    let bytes = std::fs::read(&canonical_resolved)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let size = bytes.len() as u64;
+
+    // Attempt to interpret as UTF-8; reject binary files
+    let content = String::from_utf8(bytes)
+        .map_err(|e| format!("Binary file detected: {}", e))?;
+
+    Ok(ReadFileResult { content, size })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct DirectoryEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
+    is_hidden: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct DirectoryListing {
+    entries: Vec<DirectoryEntry>,
+}
+
+const DEFAULT_EXCLUDES: &[&str] = &[
+    "node_modules", ".git", "target", "dist", ".next",
+    "__pycache__", ".cache", "build", "out", ".turbo", ".parcel-cache",
+];
+
+#[tauri::command]
+fn list_directory(
+    state: tauri::State<AppState>,
+    session_id: String,
+    dir_path: String,
+) -> Result<DirectoryListing, String> {
+    // Resolve the session's working directory
+    let working_dir = {
+        let conn = state.db.connection().map_err(|e| e.to_string())?;
+        let sessions = state.db.sessions(&conn);
+        let session = sessions.get(&session_id)
+            .map_err(|e| format!("Session not found: {}", e))?;
+        session.working_directory
+    };
+
+    // Resolve the directory path relative to the working directory
+    let base = std::path::Path::new(&working_dir);
+    let resolved = if dir_path.is_empty() {
+        base.to_path_buf()
+    } else {
+        base.join(&dir_path)
+    };
+
+    // Security: ensure the resolved path is within the working directory
+    let canonical_base = base.canonicalize()
+        .map_err(|e| format!("Failed to resolve working directory: {}", e))?;
+    let canonical_resolved = resolved.canonicalize()
+        .map_err(|e| format!("Failed to resolve directory path: {}", e))?;
+
+    if !canonical_resolved.starts_with(&canonical_base) {
+        return Err("Access denied: path escapes the working directory".to_string());
+    }
+
+    // Read directory entries
+    let read_dir = std::fs::read_dir(&canonical_resolved)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    let mut entries: Vec<DirectoryEntry> = Vec::new();
+
+    for entry in read_dir {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_hidden = name.starts_with('.');
+        let metadata = entry.metadata()
+            .map_err(|e| format!("Failed to read entry metadata: {}", e))?;
+        let is_dir = metadata.is_dir();
+
+        // Filter default excludes
+        if DEFAULT_EXCLUDES.contains(&name.as_str()) {
+            continue;
+        }
+
+        // Compute relative path
+        let full_path = entry.path();
+        let path = full_path.strip_prefix(&canonical_base)
+            .unwrap_or(&full_path)
+            .to_string_lossy()
+            .to_string();
+
+        entries.push(DirectoryEntry { name, path, is_dir, is_hidden });
+    }
+
+    // Sort: directories first, then alphabetical
+    entries.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(DirectoryListing { entries })
+}
+
+#[tauri::command]
+fn get_git_diff(
+    state: tauri::State<AppState>,
+    session_id: String,
+    staged: bool,
+) -> Result<GitDiffResult, String> {
+    // Resolve the session's working directory
+    let working_dir = {
+        let conn = state.db.connection().map_err(|e| e.to_string())?;
+        let sessions = state.db.sessions(&conn);
+        let session = sessions.get(&session_id)
+            .map_err(|e| format!("Session not found: {}", e))?;
+        session.working_directory
+    };
+
+    let base = std::path::Path::new(&working_dir);
+    if !base.join(".git").exists() {
+        return Err("Not a git repository".to_string());
+    }
+
+    let mut args = vec!["diff".to_string()];
+    if staged {
+        args.push("--staged".to_string());
+    }
+
+    let output = std::process::Command::new("git")
+        .args(&args)
+        .current_dir(&working_dir)
+        .output()
+        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git diff failed: {}", stderr));
+    }
+
+    let diff = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Failed to parse git diff output: {}", e))?;
+
+    Ok(GitDiffResult { diff, staged })
+}
+
 #[tauri::command]
 fn open_in_app(path: String, app_name: String) -> Result<(), String> {
     use std::process::Command;
@@ -586,6 +771,9 @@ pub fn run() {
             pty_ack,
             pty_resize,
             pty_kill,
+            read_file,
+            list_directory,
+            get_git_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
