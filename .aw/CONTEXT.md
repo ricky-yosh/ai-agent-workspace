@@ -18,6 +18,10 @@
 | **Issue Tracker** | The panel type that displays a session's Issues in a GitHub-style list. | |
 | **ChangeEvent** | A row in the `change_events` table recording an entity mutation (created, updated, deleted), written by a SQLite trigger. Contains the full entity snapshot as JSON so the frontend can animate changes even after the source row is gone. | Event, Notification |
 | **CDC (Change Data Capture)** | The pattern of using database triggers to write mutation events into a queue table, decoupling data changes from their visual representation. | |
+| **File Viewer Panel** | A panel type that displays file contents (markdown or code) with syntax highlighting. Each instance has its own tab state. | |
+| **File Tree Panel** | A panel type that displays the session's working directory as a navigable tree. Clicking a file opens it in the last-focused File Viewer Panel. | |
+| **Diff Viewer Panel** | A panel type that displays git diffs in a unified view with syntax highlighting. | |
+| **Content Fingerprint** | A hash of file content used as a cache key for syntax highlighting results, preventing redundant work when file content hasn't changed. | |
 
 ## Relationships
 
