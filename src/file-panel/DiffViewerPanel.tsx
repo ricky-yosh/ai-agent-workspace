@@ -3,7 +3,7 @@ import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelIdentity } from "../PanelContext";
 import { safeInvoke } from "../safeInvoke";
-import { registerShowDiffHandler } from "../panelActionBridge";
+import { usePanelActionBridge } from "../providers/PanelActionBridgeProvider";
 import { parseUnifiedDiff } from "./renderers/DiffRenderer";
 import { useVirtualRows } from "./virtualizer";
 
@@ -132,16 +132,17 @@ function flattenDiffFiles(files: ReturnType<typeof parseUnifiedDiff>): FlatItem[
 
 function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelIdentity();
+  const bridge = usePanelActionBridge();
   const [activeTab, setActiveTab] = useState<DiffTab>("unstaged");
 
   // --- Bridge integration: listen for external show-diff requests ---
   useEffect(() => {
-    return registerShowDiffHandler((payload) => {
+    return bridge.registerShowDiffHandler((payload) => {
       if (payload.staged !== undefined) {
         setActiveTab(payload.staged ? "staged" : "unstaged");
       }
     });
-  }, []);
+  }, [bridge]);
 
   const isStaged = activeTab === "staged";
   const { diff, loading, error, refetch } = useGitDiff(sessionId, isStaged);

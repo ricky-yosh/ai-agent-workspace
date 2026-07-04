@@ -6,13 +6,7 @@ import { registerPanel } from "../panelRegistry";
 import { usePanelIdentity, usePanelFocus } from "../PanelContext";
 import { useSessions } from "../SessionContext";
 import { useFileContent } from "./useFileContent";
-import {
-  registerViewer,
-  unregisterViewer,
-  focusViewer,
-  consumePendingFile,
-  setActiveFilePath,
-} from "./viewerRegistry";
+import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
 import { MarkdownRenderer } from "./renderers/MarkdownRenderer";
 import { PlainTextRenderer } from "./renderers/PlainTextRenderer";
 import "./FileViewerPanel.css";
@@ -112,18 +106,20 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
 
   // --- Viewer registry integration ---
 
+  const registry = useViewerRegistry();
+
   // Register/unregister with the viewer registry
   useEffect(() => {
-    registerViewer(areaId, openTab, workspaceId);
-    return () => unregisterViewer(areaId);
-  }, [areaId, openTab, workspaceId]);
+    registry.registerViewer(areaId, openTab, workspaceId);
+    return () => registry.unregisterViewer(areaId);
+  }, [registry, areaId, openTab, workspaceId]);
 
   // Focus viewer when this panel becomes focused
   useEffect(() => {
     if (focusedAreaId === areaId) {
-      focusViewer(areaId);
+      registry.focusViewer(areaId);
     }
-  }, [focusedAreaId, areaId]);
+  }, [registry, focusedAreaId, areaId]);
 
   // Listen for external file open requests (from FileTreePanel, etc.)
   useEffect(() => {
@@ -139,17 +135,17 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
 
   // Open pending file (for create-then-open flow from FileTreePanel)
   useEffect(() => {
-    const pending = consumePendingFile();
+    const pending = registry.consumePendingFile();
     if (pending) {
       openTab(pending);
     }
-  }, [openTab]);
+  }, [registry, openTab]);
 
   // Track active file in registry for tree highlighting
   useEffect(() => {
     const activePath = activeTab?.filePath ?? null;
-    setActiveFilePath(activePath);
-  }, [activeTab?.filePath]);
+    registry.setActiveFilePath(activePath);
+  }, [registry, activeTab?.filePath]);
 
   const closeTab = useCallback((tabId: string) => {
     setTabs((prev) => {

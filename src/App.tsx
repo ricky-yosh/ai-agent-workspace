@@ -10,8 +10,11 @@ import ShortcutsModal from "./ShortcutsModal";
 import { ToastProvider, useToast } from "./ToastContext";
 import { ToastContainer } from "./Toast";
 import StatusBoard from "./StatusBoard";
-import { useEventListener } from "./hooks/useEventListener";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { useWorkspaceManager } from "./hooks/useWorkspaceManager";
+import { useMcpEventRouting } from "./hooks/useMcpEventRouting";
 import { useTauriEvent } from "./hooks/useTauriEvent";
+import type { WorkspaceInstance } from "./hooks/useWorkspaceManager";
 import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./BlankPanel";
@@ -25,359 +28,18 @@ import "./panels/C4DiagramPanel";
 import "./App.css";
 import "./Toast.css";
 import "./Dialog.css";
-import { disposeTerminal } from "./TerminalPanel";
-import { getAdjacency } from "./screenGeometry";
-import type { Adjacency } from "./screenGeometry";
+import { getAdjacency } from "./screenLayout";
+import type { Adjacency } from "./screenLayout";
 import { isMac } from "./utils/platform";
-import { getLastFocusedViewer, setPendingFile } from "./file-panel/viewerRegistry";
-import { requestShowDiff, hasDiffViewerHandler } from "./panelActionBridge";
-
-export interface WorkspaceInstance {
-  id: string;
-  name: string;
-  template_id: string;
-  current_screen: Screen;
-}
-
-export interface ShortcutSpec {
-  key?: string;
-  code?: string;
-  ctrl?: boolean;
-  meta?: boolean;
-  shift?: boolean;
-  alt?: boolean;
-}
-
-interface Shortcut extends ShortcutSpec {
-  handler: () => void;
-  ignoreInputs?: boolean;
-}
+import { TerminalCacheProvider, useTerminalCache } from "./providers/TerminalCacheProvider";
+import { WebGLPoolProvider } from "./providers/WebGLPoolProvider";
+import { ViewerRegistryProvider } from "./providers/ViewerRegistryProvider";
+import { PanelActionBridgeProvider } from "./providers/PanelActionBridgeProvider";
 
 interface PanelActions {
   navigateFocus: (direction: 'up' | 'down' | 'left' | 'right') => void;
   splitFocused: (axis: 'horizontal' | 'vertical') => void;
   closePanel: () => void;
-}
-
-export function matchesShortcut(e: KeyboardEvent, spec: ShortcutSpec): boolean {
-  if ((spec.ctrl ?? false) !== e.ctrlKey) return false;
-  if ((spec.meta ?? false) !== e.metaKey) return false;
-  if ((spec.shift ?? false) !== e.shiftKey) return false;
-  if ((spec.alt ?? false) !== e.altKey) return false;
-  if (spec.key !== undefined && e.key !== spec.key) return false;
-  if (spec.code !== undefined && e.code !== spec.code) return false;
-  return true;
-}
-
-export function matchesAnyShortcut(e: KeyboardEvent, specs: ShortcutSpec[]): boolean {
-  return specs.some(s => matchesShortcut(e, s));
-}
-
-export const TERMINAL_PASSTHROUGH_SHORTCUTS: ShortcutSpec[] = [
-  { code: "BracketRight", meta: true, shift: true },
-  { code: "BracketLeft", meta: true, shift: true },
-  { key: "ArrowDown", meta: true, shift: true },
-  { key: "ArrowUp", meta: true, shift: true },
-  { key: "ArrowLeft", meta: true, shift: true },
-  { key: "ArrowRight", meta: true, shift: true },
-  { key: "Enter", meta: true, shift: true },
-  { key: "n", meta: true },
-  { key: "t", meta: true },
-  { key: "w", meta: true },
-  { key: "d", meta: true },
-  { key: "d", meta: true, shift: true },
-  { code: "Backslash", meta: true },
-  { key: "Tab", ctrl: true },
-  { key: "Tab", ctrl: true, shift: true },
-  { key: "'", meta: true },
-];
-
-function useKeyboardShortcuts(shortcuts: Shortcut[]) {
-  const shortcutsRef = useRef(shortcuts);
-  shortcutsRef.current = shortcuts;
-
-  const handler = useCallback((e: KeyboardEvent) => {
-    for (const s of shortcutsRef.current) {
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      // Ignore inputs that are inside a real input/textarea/contenteditable,
-      // but NOT when the input is part of an xterm terminal (its hidden
-      // helper textarea should not suppress host shortcuts).
-      const inInput = !!(
-        target &&
-        target.closest?.("input, textarea, [contenteditable]") &&
-        !target.closest?.(".xterm")
-      );
-      if (s.ignoreInputs && inInput) continue;
-      if (!matchesShortcut(e, s)) continue;
-      e.preventDefault();
-      s.handler();
-      return;
-    }
-  }, []);
-
-  useEventListener(document, "keydown", handler, []);
-}
-
-interface SessionWorkspaceData {
-  workspaces: WorkspaceInstance[];
-  activeWorkspace: WorkspaceInstance | null;
-  loading: boolean;
-}
-
-function useWorkspaceManager(onError?: (msg: string) => void) {
-  const { sessions, activeSessionId } = useSessions();
-  const [sessionData, setSessionData] = useState<Map<string, SessionWorkspaceData>>(new Map());
-  const loadedSessionsRef = useRef<Set<string>>(new Set());
-
-  const activeSessionIdRef = useRef(activeSessionId);
-  activeSessionIdRef.current = activeSessionId;
-
-  const sessionIdsStr = sessions.map(s => s.id).sort().join(',');
-
-  useEffect(() => {
-    const ids = new Set(sessions.map(s => s.id));
-
-    for (const sid of ids) {
-      if (!loadedSessionsRef.current.has(sid)) {
-        loadedSessionsRef.current.add(sid);
-
-        setSessionData(prev => {
-          const next = new Map(prev);
-          next.set(sid, { workspaces: [], activeWorkspace: null, loading: true });
-          return next;
-        });
-
-        Promise.all([
-          safeInvoke<WorkspaceInstance[]>("get_session_workspaces", { sessionId: sid }, onError),
-          safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError),
-        ]).then(([wsList, active]) => {
-          setSessionData(prev => {
-            const next = new Map(prev);
-            next.set(sid, {
-              workspaces: wsList,
-              activeWorkspace: active ?? null,
-              loading: false,
-            });
-            return next;
-          });
-        }).catch(() => {
-          setSessionData(prev => {
-            const next = new Map(prev);
-            next.set(sid, { workspaces: [], activeWorkspace: null, loading: false });
-            return next;
-          });
-        });
-      }
-    }
-
-    for (const sid of loadedSessionsRef.current) {
-      if (!ids.has(sid)) {
-        loadedSessionsRef.current.delete(sid);
-        setSessionData(prev => {
-          const next = new Map(prev);
-          next.delete(sid);
-          return next;
-        });
-      }
-    }
-  }, [sessionIdsStr]);
-
-  const currentData = activeSessionId ? sessionData.get(activeSessionId) : undefined;
-  const workspaces = currentData?.workspaces ?? [];
-  const activeWorkspace = currentData?.activeWorkspace ?? null;
-  const loading = currentData?.loading ?? false;
-
-  const workspacesRef = useRef(workspaces);
-  workspacesRef.current = workspaces;
-  const activeWorkspaceRef = useRef(activeWorkspace);
-  activeWorkspaceRef.current = activeWorkspace;
-
-  /** Update local screen state without persisting (backend already persists). */
-  const handleScreenChange = useCallback((workspaceId: string, newScreen: Screen) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    setSessionData(prev => {
-      const next = new Map(prev);
-      const sd = next.get(sid);
-      if (!sd) return prev;
-      next.set(sid, {
-        ...sd,
-        workspaces: sd.workspaces.map(w =>
-          w.id === workspaceId ? { ...w, current_screen: newScreen } : w
-        ),
-        activeWorkspace: sd.activeWorkspace?.id === workspaceId
-          ? { ...sd.activeWorkspace, current_screen: newScreen }
-          : sd.activeWorkspace,
-      });
-      return next;
-    });
-  }, []);
-
-  /** Handle a `workspace-changed` event from the backend.
-   *  Routes by explicit workspace_id — never by "current active workspace". */
-  const handleExternalScreenChange = useCallback((sessionId: string, workspaceId: string, newScreen: Screen) => {
-    setSessionData(prev => {
-      const next = new Map(prev);
-      const sd = next.get(sessionId);
-      const targetWs = sd?.workspaces.find(w => w.id === workspaceId);
-      if (!sd) return prev;           // session not loaded yet — ignore
-      if (!targetWs) {
-        return prev; // workspace not in list — leave state unchanged
-      }
-      next.set(sessionId, {
-        ...sd,
-        workspaces: sd.workspaces.map(w =>
-          w.id === workspaceId ? { ...w, current_screen: newScreen } : w
-        ),
-        activeWorkspace: sd.activeWorkspace?.id === workspaceId
-          ? { ...sd.activeWorkspace, current_screen: newScreen }
-          : sd.activeWorkspace,
-      });
-      return next;
-    });
-  }, []);
-
-  const handleWorkspaceSwitch = useCallback((workspaceId: string) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    safeInvoke("set_active_workspace", { sessionId: sid, workspaceId }, onError)
-      .then(() => {
-        return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError);
-      })
-      .then((active) => {
-        setSessionData(prev => {
-          const next = new Map(prev);
-          const sd = next.get(sid);
-          if (!sd) return prev;
-          next.set(sid, { ...sd, activeWorkspace: active });
-          return next;
-        });
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleAddWorkspace = useCallback((templateId: string) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    safeInvoke<WorkspaceInstance>("add_workspace", { sessionId: sid, templateId }, onError)
-      .then((ws) => {
-        return safeInvoke("set_active_workspace", { sessionId: sid, workspaceId: ws.id }, onError)
-          .then(() => safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError))
-          .then((active) => {
-            setSessionData(prev => {
-              const next = new Map(prev);
-              const sd = next.get(sid);
-              if (!sd) return prev;
-              next.set(sid, { ...sd, workspaces: [...sd.workspaces, ws], activeWorkspace: active });
-              return next;
-            });
-          });
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleCloseWorkspace = useCallback((workspaceId: string) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    const aw = activeWorkspaceRef.current;
-    safeInvoke("remove_workspace", { sessionId: sid, workspaceId }, onError)
-      .then(() => {
-        setSessionData(prev => {
-          const next = new Map(prev);
-          const sd = next.get(sid);
-          if (!sd) return prev;
-          next.set(sid, {
-            ...sd,
-            workspaces: sd.workspaces.filter(w => w.id !== workspaceId),
-            activeWorkspace: sd.activeWorkspace?.id === workspaceId ? null : sd.activeWorkspace,
-          });
-          return next;
-        });
-        if (aw?.id === workspaceId) {
-          return safeInvoke<WorkspaceInstance | null>("get_active_workspace", { sessionId: sid }, onError);
-        }
-        return null;
-      })
-      .then((newActive) => {
-        if (newActive !== null) {
-          setSessionData(prev => {
-            const next = new Map(prev);
-            const sd = next.get(sid!);
-            if (!sd) return prev;
-            next.set(sid!, { ...sd, activeWorkspace: newActive as WorkspaceInstance | null });
-            return next;
-          });
-        }
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleRenameWorkspace = useCallback((workspaceId: string, newName: string) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    safeInvoke("rename_workspace", { sessionId: sid, workspaceId, newName }, onError)
-      .then(() => {
-        setSessionData(prev => {
-          const next = new Map(prev);
-          const sd = next.get(sid);
-          if (!sd) return prev;
-          next.set(sid, {
-            ...sd,
-            workspaces: sd.workspaces.map(w => w.id === workspaceId ? { ...w, name: newName } : w),
-            activeWorkspace: sd.activeWorkspace?.id === workspaceId
-              ? { ...sd.activeWorkspace, name: newName }
-              : sd.activeWorkspace,
-          });
-          return next;
-        });
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleResetToTemplate = useCallback((workspaceId: string) => {
-    const sid = activeSessionIdRef.current;
-    if (!sid) return;
-    safeInvoke<WorkspaceInstance>("reset_workspace_to_template", { sessionId: sid, workspaceId }, onError)
-      .then((ws) => {
-        setSessionData(prev => {
-          const next = new Map(prev);
-          const sd = next.get(sid);
-          if (!sd) return prev;
-          next.set(sid, {
-            ...sd,
-            workspaces: sd.workspaces.map(w => w.id === ws.id ? ws : w),
-            activeWorkspace: sd.activeWorkspace?.id === ws.id ? ws : sd.activeWorkspace,
-          });
-          return next;
-        });
-      })
-      .catch(console.error);
-  }, []);
-
-  const handleCycleWorkspace = useCallback((dir: 1 | -1) => {
-    const ws = workspacesRef.current;
-    const aw = activeWorkspaceRef.current;
-    if (ws.length < 2 || !aw) return;
-    const idx = ws.findIndex(w => w.id === aw.id);
-    if (idx < 0) return;
-    const next = ws[(idx + dir + ws.length) % ws.length];
-    handleWorkspaceSwitch(next.id);
-  }, [handleWorkspaceSwitch]);
-
-  return {
-    workspaces,
-    activeWorkspace,
-    loading,
-    sessionData,
-    handleScreenChange,
-    handleExternalScreenChange,
-    handleWorkspaceSwitch,
-    handleAddWorkspace,
-    handleCloseWorkspace,
-    handleRenameWorkspace,
-    handleResetToTemplate,
-    handleCycleWorkspace,
-  };
 }
 
 function SaveAsTemplateDialog({
@@ -417,6 +79,7 @@ function SaveAsTemplateDialog({
 function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTabActionsRef, closeTabActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null>; openNewWorkspaceRef: React.RefObject<(() => void) | null>; openTabActionsRef: React.RefObject<(() => void) | null>; closeTabActionsRef: React.RefObject<(() => void) | null> }) {
   const { activeSessionId, sessions } = useSessions();
   const { addToast } = useToast();
+  const { disposeTerminal } = useTerminalCache();
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
   const {
     workspaces, activeWorkspace, loading, sessionData,
@@ -584,101 +247,16 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
     }, [handleExternalScreenChange]),
   );
 
-  // --- MCP Integration: open-file-request ---
-  // When an AI agent calls the open_file MCP tool, the backend emits this event.
-  // Route the file open to the last-focused File Viewer panel, or create one if none exists.
-  useTauriEvent<{ session_id: string; file_path: string }>(
-    "open-file-request",
-    useCallback((payload) => {
-      const { session_id, file_path } = payload;
-      const ctx = panelContextRef.current;
-      if (!ctx.sessionId || session_id !== ctx.sessionId) return;
-
-      const viewer = getLastFocusedViewer(ctx.workspaceId);
-      if (viewer) {
-        // Focus the viewer's area and open the file
-        setFocusedAreaId(viewer.areaId);
-        viewer.openFile(file_path);
-      } else {
-        // No file viewer exists — create one by splitting the focused area
-        const focusedId = focusedAreaIdRef.current;
-        if (!focusedId || !ctx.workspaceId || !ctx.screen) return;
-
-        const oldAreaIds = new Set(ctx.screen.areas.map(a => a.id));
-        safeInvoke<WorkspaceInstance>("split_area", {
-          sessionId: ctx.sessionId,
-          workspaceId: ctx.workspaceId,
-          areaId: focusedId,
-          axis: "vertical",
-          factor: 0.6,
-        }, onError)
-          .then(r => {
-            handleScreenChange(ctx.workspaceId, r.current_screen);
-            const newArea = r.current_screen.areas.find(a => !oldAreaIds.has(a.id));
-            if (!newArea) return;
-            return safeInvoke<WorkspaceInstance>("change_panel_type", {
-              sessionId: ctx.sessionId,
-              workspaceId: ctx.workspaceId,
-              areaId: newArea.id,
-              panelType: "file-viewer",
-            }, onError).then(r2 => {
-              handleScreenChange(ctx.workspaceId, r2.current_screen);
-              setFocusedAreaId(newArea.id);
-              setPendingFile(file_path);
-            });
-          })
-          .catch(console.error);
-      }
-    }, [onError, handleScreenChange]),
-  );
-
-  // --- MCP Integration: show-diff-request ---
-  // When an AI agent calls the show_diff MCP tool, the backend emits this event.
-  // Route to the Diff Viewer panel, or create one if none exists.
-  useTauriEvent<{ session_id: string; file_path?: string; staged?: boolean }>(
-    "show-diff-request",
-    useCallback((payload) => {
-      const { session_id, file_path, staged } = payload;
-      const ctx = panelContextRef.current;
-      if (!ctx.sessionId || session_id !== ctx.sessionId) return;
-
-      if (hasDiffViewerHandler()) {
-        // A diff viewer is mounted — deliver the command directly
-        requestShowDiff(file_path, staged);
-      } else {
-        // No diff viewer exists — create one by splitting the focused area
-        const focusedId = focusedAreaIdRef.current;
-        if (!focusedId || !ctx.workspaceId || !ctx.screen) return;
-
-        const oldAreaIds = new Set(ctx.screen.areas.map(a => a.id));
-        safeInvoke<WorkspaceInstance>("split_area", {
-          sessionId: ctx.sessionId,
-          workspaceId: ctx.workspaceId,
-          areaId: focusedId,
-          axis: "vertical",
-          factor: 0.6,
-        }, onError)
-          .then(r => {
-            handleScreenChange(ctx.workspaceId, r.current_screen);
-            const newArea = r.current_screen.areas.find(a => !oldAreaIds.has(a.id));
-            if (!newArea) return;
-            return safeInvoke<WorkspaceInstance>("change_panel_type", {
-              sessionId: ctx.sessionId,
-              workspaceId: ctx.workspaceId,
-              areaId: newArea.id,
-              panelType: "diff-viewer",
-            }, onError).then(r2 => {
-              handleScreenChange(ctx.workspaceId, r2.current_screen);
-              setFocusedAreaId(newArea.id);
-              // The DiffViewerPanel will mount and register its handler,
-              // then pick up the pending show-diff action.
-              requestShowDiff(file_path, staged);
-            });
-          })
-          .catch(console.error);
-      }
-    }, [onError, handleScreenChange]),
-  );
+  // MCP event routing (open-file-request, show-diff-request)
+  useMcpEventRouting({
+    sessionId: activeSessionId,
+    workspaceId: activeWorkspace?.id ?? '',
+    screen: activeWorkspace?.current_screen ?? null,
+    focusedAreaIdRef,
+    onError,
+    handleScreenChange,
+    setFocusedAreaId,
+  });
 
   const handleSaveAsTemplate = useCallback((screen: Screen) => {
     setSaveAsTarget(screen);
@@ -865,20 +443,28 @@ function App() {
   const closeTabActionsRef = useRef<(() => void) | null>(null);
 
   return (
-    <ToastProvider>
-      <SessionProvider>
-        <div className="app-layout">
-          <ErrorBoundary name="Sidebar">
-            <SessionSidebar openActionsRef={openSessionActionsRef} closeActionsRef={closeSessionActionsRef} />
-          </ErrorBoundary>
-          <ErrorBoundary name="Workspace">
-            <MainArea toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
-          </ErrorBoundary>
-        </div>
-        <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openSessionActionsRef={openSessionActionsRef} closeSessionActionsRef={closeSessionActionsRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
-      </SessionProvider>
-      <ToastContainer />
-    </ToastProvider>
+    <TerminalCacheProvider>
+      <WebGLPoolProvider>
+        <ViewerRegistryProvider>
+          <PanelActionBridgeProvider>
+            <ToastProvider>
+              <SessionProvider>
+                <div className="app-layout">
+                  <ErrorBoundary name="Sidebar">
+                    <SessionSidebar openActionsRef={openSessionActionsRef} closeActionsRef={closeSessionActionsRef} />
+                  </ErrorBoundary>
+                  <ErrorBoundary name="Workspace">
+                    <MainArea toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
+                  </ErrorBoundary>
+                </div>
+                <KeyboardShortcutsHandler toggleZoomRef={toggleZoomRef} panelActionsRef={panelActionsRef} openNewWorkspaceRef={openNewWorkspaceRef} openSessionActionsRef={openSessionActionsRef} closeSessionActionsRef={closeSessionActionsRef} openTabActionsRef={openTabActionsRef} closeTabActionsRef={closeTabActionsRef} />
+              </SessionProvider>
+              <ToastContainer />
+            </ToastProvider>
+          </PanelActionBridgeProvider>
+        </ViewerRegistryProvider>
+      </WebGLPoolProvider>
+    </TerminalCacheProvider>
   );
 }
 

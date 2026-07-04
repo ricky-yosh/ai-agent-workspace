@@ -12,8 +12,11 @@ vi.mock("../safeInvoke", () => ({
 }));
 
 const mockRegisterShowDiffHandler = vi.fn(() => () => {});
-vi.mock("../panelActionBridge", () => ({
-  registerShowDiffHandler: (...args: unknown[]) => mockRegisterShowDiffHandler(...args),
+vi.mock("../providers/PanelActionBridgeProvider", () => ({
+  PanelActionBridgeProvider: ({ children }: { children: React.ReactNode }) => children,
+  usePanelActionBridge: () => ({
+    registerShowDiffHandler: mockRegisterShowDiffHandler,
+  }),
 }));
 
 const mockParseUnifiedDiff = vi.fn();

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { listPanelTypes, getPanelLabel } from "./panelRegistry";
 import { useClickOutside } from "./hooks/useClickOutside";
-import { prefersReducedMotion } from "./screenMotion";
+import { prefersReducedMotion } from "./screenLayout";
 
 interface PanelTypeSelectorProps {
   currentType: string;

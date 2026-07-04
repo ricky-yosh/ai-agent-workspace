@@ -12,33 +12,15 @@ import {
   type CanvasEdge,
   type CanvasGroup,
 } from "../components/CanvasRenderer";
-
-// Undo/Redo command types
-type CanvasCommand =
-  | {
-      type: "create_node";
-      node: CanvasNode;
-    }
-  | {
-      type: "update_node";
-      nodeId: string;
-      before: { content: string; x: number; y: number };
-      after: { content: string; x: number; y: number };
-    }
-  | {
-      type: "delete_node";
-      node: CanvasNode;
-    }
-  | {
-      type: "move_node";
-      nodeId: string;
-      beforeX: number;
-      beforeY: number;
-      afterX: number;
-      afterY: number;
-    };
-
-const MAX_UNDO_STACK = 50;
+import {
+  useCanvasToast,
+  useCanvasViewport,
+  useCanvasUndoRedo,
+  useCanvasSelection,
+  useCanvasEdgeCreation,
+  useCanvasInlineEdit,
+  useCanvasNodeDrag,
+} from "../hooks/canvas";
 
 interface VisualCanvas {
   id: string;
@@ -67,54 +49,100 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Viewport state (pan and zoom)
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  // Shockwave effect: track newly created node IDs
+  const [newlyCreatedNodeIds, setNewlyCreatedNodeIds] = useState<Set<string>>(new Set());
+  const prevNodeIdsRef = useRef<Set<string>>(new Set());
 
-  // Drag state
-  const [dragState, setDragState] = useState<{
-    nodeId: string;
+  // Tag enter animation: track newly added tag IDs
+  const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
+  const prevTagIdsRef = useRef<Set<string>>(new Set());
+
+  // ── Hooks ──────────────────────────────────────────────────────────────
+
+  // Toast
+  const { toast, showToast } = useCanvasToast();
+
+  // Viewport (pan and zoom)
+  const {
+    offsetX, offsetY, zoom,
+    setOffsetX, setOffsetY, setZoom,
+    saveViewState,
+  } = useCanvasViewport(selectedCanvasId);
+
+  // Undo/Redo — needs nodesRef for reading current nodes in executeUndo/executeRedo
+  const nodesRef = useRef<CanvasNode[]>([]);
+  nodesRef.current = nodes;
+
+  const {
+    undoStack, redoStack,
+    pushUndo, handleUndo, handleRedo,
+  } = useCanvasUndoRedo({
+    selectedCanvasId,
+    nodesRef,
+    setNodes,
+    setNewlyCreatedNodeIds,
+    showToast,
+  });
+
+  // Selection (multi-select, box-select, delete)
+  const {
+    selectedNodeIds, setSelectedNodeIds,
+    deletingNodeIds, setDeletingNodeIds,
+    boxSelect,
+    justCompletedBoxSelectRef,
+    handleNodeClick,
+    handleBoxSelectMove,
+    handleBoxSelectEnd,
+    deleteSelectedNodes,
+  } = useCanvasSelection({
+    nodes, offsetX, offsetY, zoom, pushUndo,
+  });
+
+  // Edge creation
+  const {
+    edgeDragState, setEdgeDragState,
+    isAltPressed, hoveredNodeId, setHoveredNodeId,
+    handleEdgeDragStart,
+    handleEdgeDragMove,
+    handleEdgeDragEnd,
+  } = useCanvasEdgeCreation({
+    nodes, selectedCanvasId, showToast, setEdges,
+  });
+
+  // Inline edit
+  const {
+    editingNodeId, setEditingNodeId, editingValue, setEditingValue,
+    editInputRef,
+    handleNodeDoubleClick,
+    confirmEdit, handleEditKeyDown,
+  } = useCanvasInlineEdit({
+    nodes, pushUndo, setNodes, setSelectedNodeIds,
+  });
+
+  // Node drag
+  const {
+    dragState, draggedNodeId,
+    handleNodeMouseDown: dragHandleNodeMouseDown,
+    handleDragMove,
+    handleDragEnd,
+    dragThrottleRef,
+    batchUpdatePositionsRef,
+  } = useCanvasNodeDrag({
+    nodes, selectedNodeIds, zoom, setNodes,
+  });
+
+  // Clear selection when switching canvases
+  useEffect(() => {
+    setSelectedNodeIds(new Set());
+  }, [selectedCanvasId]);
+
+  // Placement mode state (for ghost preview)
+  const [placementMode, setPlacementMode] = useState<{
+    type: 'node' | 'group';
     startX: number;
     startY: number;
-    nodeStartX: number;
-    nodeStartY: number;
-    // For multi-node drag: store original positions of all selected nodes
-    multiNodeStarts?: Map<string, { x: number; y: number }>;
   } | null>(null);
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const dragThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Selection state (multi-select)
-  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
-  const [deletingNodeIds, setDeletingNodeIds] = useState<Set<string>>(new Set());
-
-  // Box-select (rubber band) state
-  const [boxSelect, setBoxSelect] = useState<{
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-  } | null>(null);
-
-  // Edge drag state (for creating new edges)
-  const [edgeDragState, setEdgeDragState] = useState<{
-    sourceNodeId: string;
-    sourceX: number;
-    sourceY: number;
-    targetX: number;
-    targetY: number;
-  } | null>(null);
-
-  // Alt key held for edge creation mode
-  const isAltPressedRef = useRef(false);
-  const [isAltPressed, setIsAltPressed] = useState(false);
-
-  // Hovered node id (for connection source breathe effect)
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-
-  // Flag to prevent handleCanvasClick from clearing selection after box-select
-  const justCompletedBoxSelectRef = useRef(false);
+  const [cursorCanvasPos, setCursorCanvasPos] = useState<{ x: number; y: number } | null>(null);
 
   // Context menu state (right-click on empty canvas, node, edge, or group)
   const [contextMenu, setContextMenu] = useState<{
@@ -127,275 +155,106 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     groupId?: string;
   } | null>(null);
 
-  // Inline edit state
-  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const [editingValue, setEditingValue] = useState("");
-  const editInputRef = useRef<HTMLInputElement>(null);
+  // ── Node drag with edge creation routing ────────────────────────────────
 
-  // Shockwave effect: track newly created node IDs
-  const [newlyCreatedNodeIds, setNewlyCreatedNodeIds] = useState<Set<string>>(new Set());
-  const prevNodeIdsRef = useRef<Set<string>>(new Set());
-
-  // Tag enter animation: track newly added tag IDs
-  const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
-  const prevTagIdsRef = useRef<Set<string>>(new Set());
-
-  // Undo/Redo state
-  const [undoStack, setUndoStack] = useState<CanvasCommand[]>([]);
-  const [redoStack, setRedoStack] = useState<CanvasCommand[]>([]);
-  const undoStackRef = useRef<CanvasCommand[]>([]);
-  const redoStackRef = useRef<CanvasCommand[]>([]);
-
-  // Placement mode state (for ghost preview)
-  const [placementMode, setPlacementMode] = useState<{
-    type: 'node' | 'group';
-    startX: number;
-    startY: number;
-  } | null>(null);
-  const [cursorCanvasPos, setCursorCanvasPos] = useState<{ x: number; y: number } | null>(null);
-
-  // Toast notification state
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = useCallback((message: string) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
+  // Handle node mouse down — route to edge creation (Alt) or drag
+  const handleNodeMouseDown = useCallback((
+    nodeId: string,
+    e: React.MouseEvent
+  ) => {
+    if (e.altKey) {
+      // Start edge creation instead of drag
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const sourceX = node.x + node.width / 2;
+      const sourceY = node.y + node.height / 2;
+      handleEdgeDragStart(nodeId, sourceX, sourceY);
+      return;
     }
-    setToast(message);
-    toastTimerRef.current = setTimeout(() => setToast(null), 1500);
-  }, []);
+    dragHandleNodeMouseDown(nodeId, e);
+  }, [nodes, handleEdgeDragStart, dragHandleNodeMouseDown]);
 
-  // Clear undo/redo stacks and selection when switching canvases
-  useEffect(() => {
-    setUndoStack([]);
-    setRedoStack([]);
-    undoStackRef.current = [];
-    redoStackRef.current = [];
-    setSelectedNodeIds(new Set());
-  }, [selectedCanvasId]);
+  // Handle mouse move on canvas (dispatcher)
+  const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
+    // Handle placement mode (ghost preview)
+    if (placementMode) {
+      setCursorCanvasPos({ x: canvasX, y: canvasY });
+      return;
+    }
 
-  // Push command to undo stack
-  const pushUndo = useCallback((command: CanvasCommand) => {
-    setUndoStack((prev) => {
-      const next = [...prev, command].slice(-MAX_UNDO_STACK);
-      undoStackRef.current = next;
-      return next;
-    });
-    // Clear redo stack on new command
-    setRedoStack([]);
-    redoStackRef.current = [];
-  }, []);
+    // Handle box-select rubber band
+    if (boxSelect) {
+      handleBoxSelectMove(viewportX, viewportY);
+      return;
+    }
 
-  // Execute an undo command (reverse)
-  const executeUndo = useCallback(async (command: CanvasCommand): Promise<boolean> => {
-    try {
-      switch (command.type) {
-        case "create_node": {
-          // Undo create = delete the node
-          await safeInvoke("delete_canvas_node", { id: command.node.id });
-          setNodes((prev) => prev.filter((n) => n.id !== command.node.id));
-          return true;
-        }
-        case "update_node":
-        case "move_node": {
-          // Undo update/move = restore previous state
-          const nodeId = command.type === "update_node" ? command.nodeId : command.nodeId;
-          const before = command.type === "update_node" ? command.before : { content: "", x: command.beforeX, y: command.beforeY };
+    // Handle edge drag
+    if (edgeDragState) {
+      handleEdgeDragMove(canvasX, canvasY);
+      return;
+    }
 
-          // For update_node, we need to find the current node to get its content for non-updated fields
-          let contentToRestore = before.content;
-          let xToRestore = before.x;
-          let yToRestore = before.y;
+    if (!dragState) return;
+    handleDragMove(e.clientX, e.clientY);
+  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode]);
 
-          if (command.type === "update_node") {
-            // For update commands, before contains the old content and position
-            // We need the current node's content/position for fields that weren't changed
-            const currentNode = nodes.find((n) => n.id === nodeId);
-            if (currentNode) {
-              contentToRestore = before.content;
-              xToRestore = before.x;
-              yToRestore = before.y;
+  // Handle mouse up to end dragging
+  const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
+    // Complete edge drag if active
+    if (edgeDragState) {
+      handleEdgeDragEnd(canvasX, canvasY);
+      return;
+    }
+
+    // Complete box-select if active
+    if (boxSelect) {
+      handleBoxSelectEnd();
+    }
+
+    // If we were dragging, record the move(s) for undo
+    const dragSnapshot = handleDragEnd();
+    if (dragSnapshot) {
+      if (dragSnapshot.multiNodeStarts) {
+        // Multi-node drag undo: record moves for all dragged nodes
+        for (const [nodeId, startPos] of dragSnapshot.multiNodeStarts) {
+          const currentNode = nodes.find((n) => n.id === nodeId);
+          if (currentNode) {
+            const moved = currentNode.x !== startPos.x || currentNode.y !== startPos.y;
+            if (moved) {
+              pushUndo({
+                type: "move_node",
+                nodeId,
+                beforeX: startPos.x,
+                beforeY: startPos.y,
+                afterX: currentNode.x,
+                afterY: currentNode.y,
+              });
             }
           }
-
-          await safeInvoke("update_canvas_node", {
-            id: nodeId,
-            content: contentToRestore,
-            x: xToRestore,
-            y: yToRestore,
-            width: null,
-            height: null,
-            metadataJson: null,
-          });
-
-          setNodes((prev) =>
-            prev.map((n) =>
-              n.id === nodeId
-                ? { ...n, content: contentToRestore, x: xToRestore, y: yToRestore }
-                : n
-            )
-          );
-          return true;
         }
-        case "delete_node": {
-          // Undo delete = recreate the node
-          const newNode = await safeInvoke<CanvasNode>("create_canvas_node", {
-            canvasId: command.node.canvas_id,
-            content: command.node.content,
-            x: command.node.x,
-            y: command.node.y,
-            width: command.node.width,
-            height: command.node.height,
-            metadataJson: command.node.metadata_json,
-          });
-          setNodes((prev) => [...prev, newNode]);
-          // Trigger shockwave for recreated node
-          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
-          setTimeout(() => {
-            setNewlyCreatedNodeIds((prev) => {
-              const next = new Set(prev);
-              next.delete(newNode.id);
-              return next;
+      } else {
+        // Single node drag undo
+        const currentNode = nodes.find((n) => n.id === dragSnapshot.nodeId);
+        if (currentNode) {
+          const moved = currentNode.x !== dragSnapshot.nodeStartX || currentNode.y !== dragSnapshot.nodeStartY;
+          if (moved) {
+            pushUndo({
+              type: "move_node",
+              nodeId: dragSnapshot.nodeId,
+              beforeX: dragSnapshot.nodeStartX,
+              beforeY: dragSnapshot.nodeStartY,
+              afterX: currentNode.x,
+              afterY: currentNode.y,
             });
-          }, 1400);
-          return true;
-        }
-      }
-    } catch (err) {
-      console.error("Failed to execute undo:", err);
-      showToast("Undo failed");
-      return false;
-    }
-    return false;
-  }, [nodes, showToast]);
-
-  // Execute a redo command (reapply)
-  const executeRedo = useCallback(async (command: CanvasCommand): Promise<boolean> => {
-    try {
-      switch (command.type) {
-        case "create_node": {
-          // Redo create = recreate the node
-          const newNode = await safeInvoke<CanvasNode>("create_canvas_node", {
-            canvasId: command.node.canvas_id,
-            content: command.node.content,
-            x: command.node.x,
-            y: command.node.y,
-            width: command.node.width,
-            height: command.node.height,
-            metadataJson: command.node.metadata_json,
-          });
-          setNodes((prev) => [...prev, newNode]);
-          // Trigger shockwave for recreated node
-          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
-          setTimeout(() => {
-            setNewlyCreatedNodeIds((prev) => {
-              const next = new Set(prev);
-              next.delete(newNode.id);
-              return next;
-            });
-          }, 1400);
-          return true;
-        }
-        case "update_node":
-        case "move_node": {
-          // Redo update/move = apply the after state
-          const nodeId = command.nodeId;
-          let contentToApply: string;
-          let xToApply: number;
-          let yToApply: number;
-
-          if (command.type === "update_node") {
-            contentToApply = command.after.content;
-            xToApply = command.after.x;
-            yToApply = command.after.y;
-          } else {
-            // move_node: get current node content, apply new position
-            const currentNode = nodes.find((n) => n.id === nodeId);
-            contentToApply = currentNode?.content ?? "";
-            xToApply = command.afterX;
-            yToApply = command.afterY;
           }
-
-          await safeInvoke("update_canvas_node", {
-            id: nodeId,
-            content: contentToApply,
-            x: xToApply,
-            y: yToApply,
-            width: null,
-            height: null,
-            metadataJson: null,
-          });
-
-          setNodes((prev) =>
-            prev.map((n) =>
-              n.id === nodeId
-                ? { ...n, content: contentToApply, x: xToApply, y: yToApply }
-                : n
-            )
-          );
-          return true;
-        }
-        case "delete_node": {
-          // Redo delete = delete the node
-          await safeInvoke("delete_canvas_node", { id: command.node.id });
-          setNodes((prev) => prev.filter((n) => n.id !== command.node.id));
-          return true;
         }
       }
-    } catch (err) {
-      console.error("Failed to execute redo:", err);
-      showToast("Redo failed");
-      return false;
     }
-    return false;
-  }, [nodes, showToast]);
+  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, edgeDragState, handleEdgeDragEnd, handleDragEnd]);
 
-  // Undo handler
-  const handleUndo = useCallback(async () => {
-    const currentUndo = undoStackRef.current;
-    if (currentUndo.length === 0) return;
-
-    const command = currentUndo[currentUndo.length - 1];
-    const success = await executeUndo(command);
-
-    if (success) {
-      setUndoStack((prev) => {
-        const next = prev.slice(0, -1);
-        undoStackRef.current = next;
-        return next;
-      });
-      setRedoStack((prev) => {
-        const next = [...prev, command];
-        redoStackRef.current = next;
-        return next;
-      });
-      showToast(`Undid ${command.type.replace(/_/g, " ")}`);
-    }
-  }, [executeUndo, showToast]);
-
-  // Redo handler
-  const handleRedo = useCallback(async () => {
-    const currentRedo = redoStackRef.current;
-    if (currentRedo.length === 0) return;
-
-    const command = currentRedo[currentRedo.length - 1];
-    const success = await executeRedo(command);
-
-    if (success) {
-      setRedoStack((prev) => {
-        const next = prev.slice(0, -1);
-        redoStackRef.current = next;
-        return next;
-      });
-      setUndoStack((prev) => {
-        const next = [...prev, command];
-        undoStackRef.current = next;
-        return next;
-      });
-      showToast(`Redid ${command.type.replace(/_/g, " ")}`);
-    }
-  }, [executeRedo, showToast]);
+  // ── Data fetching ──────────────────────────────────────────────────────
 
   const fetchCanvases = useCallback(() => {
     if (!sessionId) return;
@@ -496,7 +355,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               for (const id of newIds) next.delete(id);
               return next;
             });
-          }, 300); // Slightly longer than 0.26s to ensure animation completes
+          }, 300);
         }
         prevTagIdsRef.current = new Set(data.map((t) => t.id));
         setTags(data);
@@ -506,464 +365,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       });
   }, [selectedCanvasId]);
 
-  // Load view state for the selected canvas
-  const loadViewState = useCallback(() => {
-    if (!selectedCanvasId) return;
-    safeInvoke<{ offset_x: number; offset_y: number; zoom: number } | null>(
-      "get_canvas_view_state",
-      { canvasId: selectedCanvasId },
-    ).then((state) => {
-      if (state) {
-        setOffsetX(state.offset_x);
-        setOffsetY(state.offset_y);
-        setZoom(state.zoom);
-      } else {
-        setOffsetX(0);
-        setOffsetY(0);
-        setZoom(1);
-      }
-    }).catch((err) => {
-      console.error("Failed to load view state:", err);
-    });
-  }, [selectedCanvasId]);
+  // ── Placement mode handlers ────────────────────────────────────────────
 
-  // Debounced view state save
-  const viewStateSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveViewState = useCallback((ox: number, oy: number, z: number) => {
-    if (!selectedCanvasId) return;
-    if (viewStateSaveRef.current) {
-      clearTimeout(viewStateSaveRef.current);
-    }
-    viewStateSaveRef.current = setTimeout(() => {
-      safeInvoke("update_canvas_view_state", {
-        canvasId: selectedCanvasId,
-        offsetX: ox,
-        offsetY: oy,
-        zoom: z,
-      }).catch((err) => {
-        console.error("Failed to save view state:", err);
-      });
-    }, 300); // 300ms debounce
-  }, [selectedCanvasId]);
-
-  // Box-select: update rubber band on mouse move
-  const handleBoxSelectMove = useCallback((viewportX: number, viewportY: number) => {
-    if (!boxSelect) return;
-    setBoxSelect((prev) => prev ? { ...prev, endX: viewportX, endY: viewportY } : null);
-  }, [boxSelect]);
-
-  // Box-select: complete selection on mouse up
-  const handleBoxSelectEnd = useCallback(() => {
-    if (!boxSelect) return;
-
-    // Convert box coordinates (viewport-relative) to canvas coordinates
-    const left = (Math.min(boxSelect.startX, boxSelect.endX) - offsetX) / zoom;
-    const top = (Math.min(boxSelect.startY, boxSelect.endY) - offsetY) / zoom;
-    const right = (Math.max(boxSelect.startX, boxSelect.endX) - offsetX) / zoom;
-    const bottom = (Math.max(boxSelect.startY, boxSelect.endY) - offsetY) / zoom;
-
-    // Only select if the box has meaningful size (dragged at least 5px)
-    const boxWidth = Math.abs(boxSelect.endX - boxSelect.startX);
-    const boxHeight = Math.abs(boxSelect.endY - boxSelect.startY);
-
-    if (boxWidth > 5 || boxHeight > 5) {
-      // Select nodes that intersect with the selection rectangle
-      const newSelection = new Set<string>();
-      for (const node of nodes) {
-        const nodeRight = node.x + node.width;
-        const nodeBottom = node.y + node.height;
-        // Check intersection: node overlaps with selection rectangle
-        if (node.x < right && nodeRight > left && node.y < bottom && nodeBottom > top) {
-          newSelection.add(node.id);
-        }
-      }
-      setSelectedNodeIds(newSelection);
-    }
-
-    setBoxSelect(null);
-    // Set a flag to prevent handleCanvasClick from clearing selection
-    justCompletedBoxSelectRef.current = true;
-    setTimeout(() => { justCompletedBoxSelectRef.current = false; }, 50);
-  }, [boxSelect, offsetX, offsetY, zoom, nodes]);
-
-  // Load view state when canvas is selected
-  useEffect(() => {
-    loadViewState();
-  }, [loadViewState]);
-
-  // Reset view state when deselecting canvas
-  useEffect(() => {
-    if (!selectedCanvasId) {
-      setOffsetX(0);
-      setOffsetY(0);
-      setZoom(1);
-    }
-  }, [selectedCanvasId]);
-
-  // Debounced node position update
-  const updateNodePosition = useCallback((nodeId: string, x: number, y: number) => {
-    if (dragThrottleRef.current) {
-      clearTimeout(dragThrottleRef.current);
-    }
-    dragThrottleRef.current = setTimeout(() => {
-      safeInvoke<CanvasNode>("update_canvas_node", {
-        id: nodeId,
-        content: null,
-        x,
-        y,
-        width: null,
-        height: null,
-        metadataJson: null,
-      }).catch((err) => {
-        console.error("Failed to update node position:", err);
-      });
-    }, 100); // 100ms debounce
-  }, []);
-
-  // Batch update positions for multiple nodes (debounced)
-  const batchUpdatePositionsRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const batchUpdatePositions = useCallback((updates: { id: string; x: number; y: number }[]) => {
-    if (batchUpdatePositionsRef.current) {
-      clearTimeout(batchUpdatePositionsRef.current);
-    }
-    batchUpdatePositionsRef.current = setTimeout(() => {
-      for (const { id, x, y } of updates) {
-        safeInvoke<CanvasNode>("update_canvas_node", {
-          id,
-          content: null,
-          x,
-          y,
-          width: null,
-          height: null,
-          metadataJson: null,
-        }).catch((err) => {
-          console.error("Failed to update node position:", err);
-        });
-      }
-    }, 100);
-  }, []);
-
-  // Start edge creation (called from node mouse down with Alt key)
-  const handleEdgeDragStart = useCallback((e: React.MouseEvent, node: CanvasNode) => {
-    e.stopPropagation();
-    e.preventDefault();
-    // Calculate source point (center of node)
-    const sourceX = node.x + node.width / 2;
-    const sourceY = node.y + node.height / 2;
-    setEdgeDragState({
-      sourceNodeId: node.id,
-      sourceX,
-      sourceY,
-      targetX: sourceX,
-      targetY: sourceY,
-    });
-  }, []);
-
-  // Update edge drag position
-  const handleEdgeDragMove = useCallback((canvasX: number, canvasY: number) => {
-    if (!edgeDragState) return;
-    setEdgeDragState((prev) => prev ? { ...prev, targetX: canvasX, targetY: canvasY } : null);
-  }, [edgeDragState]);
-
-  // Complete edge creation
-  const handleEdgeDragEnd = useCallback((canvasX: number, canvasY: number) => {
-    if (!edgeDragState) return;
-
-    // Check if dropped on a node
-    for (const node of nodes) {
-      if (node.id === edgeDragState.sourceNodeId) continue;
-      if (
-        canvasX >= node.x &&
-        canvasX <= node.x + node.width &&
-        canvasY >= node.y &&
-        canvasY <= node.y + node.height
-      ) {
-        // Create the edge
-        safeInvoke<CanvasEdge>("create_canvas_edge", {
-          canvasId: selectedCanvasId,
-          sourceNodeId: edgeDragState.sourceNodeId,
-          targetNodeId: node.id,
-          label: null,
-          metadataJson: null,
-        }).then((newEdge) => {
-          setEdges((prev) => [...prev, newEdge]);
-          showToast("Edge created");
-        }).catch((err) => {
-          console.error("Failed to create edge:", err);
-          showToast("Failed to create edge");
-        });
-        break;
-      }
-    }
-    setEdgeDragState(null);
-  }, [edgeDragState, nodes, selectedCanvasId, showToast]);
-
-  // Handle mouse down on a node to start dragging or edge creation
-  const handleNodeMouseDown = useCallback((
-    nodeId: string,
-    e: React.MouseEvent
-  ) => {
-    e.stopPropagation();
-    e.preventDefault();
-
-    // Only start drag with left mouse button
-    if (e.button !== 0) return;
-
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-
-    // Alt + left click starts edge creation
-    if (e.altKey) {
-      handleEdgeDragStart(e, node);
-      return;
-    }
-
-    // Determine which nodes to drag: if node is in selection, drag all selected; otherwise just this one
-    const isDraggingSelected = selectedNodeIds.has(node.id);
-    const nodesToDrag = isDraggingSelected
-      ? nodes.filter((n) => selectedNodeIds.has(n.id))
-      : [node];
-
-    // Store original positions for all nodes being dragged
-    const multiNodeStarts = new Map<string, { x: number; y: number }>();
-    for (const n of nodesToDrag) {
-      multiNodeStarts.set(n.id, { x: n.x, y: n.y });
-    }
-
-    setDragState({
-      nodeId: node.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      nodeStartX: node.x,
-      nodeStartY: node.y,
-      multiNodeStarts: nodesToDrag.length > 1 ? multiNodeStarts : undefined,
-    });
-    setDraggedNodeId(node.id);
-  }, [selectedNodeIds, nodes, handleEdgeDragStart]);
-
-  // Handle mouse move on canvas
-  const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
-    // Handle placement mode (ghost preview)
-    if (placementMode) {
-      setCursorCanvasPos({ x: canvasX, y: canvasY });
-      return;
-    }
-
-    // Handle box-select rubber band
-    if (boxSelect) {
-      handleBoxSelectMove(viewportX, viewportY);
-      return;
-    }
-
-    // Handle edge drag
-    if (edgeDragState) {
-      handleEdgeDragMove(canvasX, canvasY);
-      return;
-    }
-
-    if (!dragState) return;
-
-    const dx = (e.clientX - dragState.startX) / zoom;
-    const dy = (e.clientY - dragState.startY) / zoom;
-
-    if (dragState.multiNodeStarts) {
-      // Multi-node drag: move all selected nodes by the same delta
-      const updates: { id: string; x: number; y: number }[] = [];
-      setNodes((prev) =>
-        prev.map((node) => {
-          const startPos = dragState.multiNodeStarts!.get(node.id);
-          if (startPos) {
-            const newX = startPos.x + dx;
-            const newY = startPos.y + dy;
-            updates.push({ id: node.id, x: newX, y: newY });
-            return { ...node, x: newX, y: newY };
-          }
-          return node;
-        })
-      );
-      batchUpdatePositions(updates);
-    } else {
-      // Single node drag
-      const newX = dragState.nodeStartX + dx;
-      const newY = dragState.nodeStartY + dy;
-
-      setNodes((prev) =>
-        prev.map((node) =>
-          node.id === dragState.nodeId
-            ? { ...node, x: newX, y: newY }
-            : node
-        )
-      );
-      updateNodePosition(dragState.nodeId, newX, newY);
-    }
-  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode]);
-
-  // Handle mouse up to end dragging
-  const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
-    if (dragThrottleRef.current) {
-      clearTimeout(dragThrottleRef.current);
-    }
-    if (batchUpdatePositionsRef.current) {
-      clearTimeout(batchUpdatePositionsRef.current);
-    }
-
-    // Complete edge drag if active
-    if (edgeDragState) {
-      handleEdgeDragEnd(canvasX, canvasY);
-      return;
-    }
-
-    // Complete box-select if active
-    if (boxSelect) {
-      handleBoxSelectEnd();
-    }
-
-    // If we were dragging, record the move(s) for undo
-    if (dragState) {
-      if (dragState.multiNodeStarts) {
-        // Multi-node drag undo: record moves for all dragged nodes
-        for (const [nodeId, startPos] of dragState.multiNodeStarts) {
-          const currentNode = nodes.find((n) => n.id === nodeId);
-          if (currentNode) {
-            const moved = currentNode.x !== startPos.x || currentNode.y !== startPos.y;
-            if (moved) {
-              pushUndo({
-                type: "move_node",
-                nodeId,
-                beforeX: startPos.x,
-                beforeY: startPos.y,
-                afterX: currentNode.x,
-                afterY: currentNode.y,
-              });
-            }
-          }
-        }
-      } else {
-        // Single node drag undo
-        const currentNode = nodes.find((n) => n.id === dragState.nodeId);
-        if (currentNode) {
-          const moved = currentNode.x !== dragState.nodeStartX || currentNode.y !== dragState.nodeStartY;
-          if (moved) {
-            pushUndo({
-              type: "move_node",
-              nodeId: dragState.nodeId,
-              beforeX: dragState.nodeStartX,
-              beforeY: dragState.nodeStartY,
-              afterX: currentNode.x,
-              afterY: currentNode.y,
-            });
-          }
-        }
-      }
-    }
-
-    setDragState(null);
-    setDraggedNodeId(null);
-  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, edgeDragState, handleEdgeDragEnd]);
-
-  // Handle node click to select
-  const handleNodeClick = useCallback((nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (e.shiftKey) {
-      // Shift+click: toggle this node in the selection
-      setSelectedNodeIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(nodeId)) {
-          next.delete(nodeId);
-        } else {
-          next.add(nodeId);
-        }
-        return next;
-      });
-    } else {
-      // Regular click: select only this node
-      setSelectedNodeIds(new Set([nodeId]));
-    }
-  }, []);
-
-  // Enter edit mode on double-click
-  const handleNodeDoubleClick = useCallback((nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-    setEditingNodeId(node.id);
-    setEditingValue(node.content);
-    // Clear selection when entering edit mode
-    setSelectedNodeIds(new Set());
-  }, [nodes]);
-
-  // Confirm edit: save to database if content changed and is non-empty
-  const confirmEdit = useCallback(() => {
-    if (!editingNodeId) return;
-    const node = nodes.find((n) => n.id === editingNodeId);
-    if (!node) return;
-
-    const trimmed = editingValue.trim();
-    // Reject empty content
-    if (trimmed.length === 0) {
-      // Revert to original content
-      setEditingNodeId(null);
-      setEditingValue("");
-      return;
-    }
-
-    // Only update if content actually changed
-    if (trimmed !== node.content) {
-      const oldContent = node.content;
-      safeInvoke<CanvasNode>("update_canvas_node", {
-        id: editingNodeId,
-        content: trimmed,
-        x: null,
-        y: null,
-        width: null,
-        height: null,
-        metadataJson: null,
-      }).then((updatedNode) => {
-        // Update local state with the saved content
-        setNodes((prev) =>
-          prev.map((n) => (n.id === editingNodeId ? updatedNode : n))
-        );
-        // Push undo command
-        pushUndo({
-          type: "update_node",
-          nodeId: editingNodeId,
-          before: { content: oldContent, x: node.x, y: node.y },
-          after: { content: trimmed, x: node.x, y: node.y },
-        });
-      }).catch((err) => {
-        console.error("Failed to update node content:", err);
-      });
-    }
-
-    setEditingNodeId(null);
-    setEditingValue("");
-  }, [editingNodeId, editingValue, nodes, pushUndo]);
-
-  // Cancel edit: revert to original content
-  const cancelEdit = useCallback(() => {
-    setEditingNodeId(null);
-    setEditingValue("");
-  }, []);
-
-  // Handle keyboard in edit input
-  const handleEditKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      confirmEdit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      cancelEdit();
-    }
-  }, [confirmEdit, cancelEdit]);
-
-  // Add a node at a specific canvas position (enters placement mode)
   const handleAddNodeAtPosition = useCallback((cx: number, cy: number) => {
     setPlacementMode({ type: 'node', startX: cx, startY: cy });
     setContextMenu(null);
   }, []);
 
-  // Place the node at the current cursor position (called from placement mode)
   const placeNodeAtCursor = useCallback((cx: number, cy: number) => {
     if (!selectedCanvasId || !placementMode) return;
 
@@ -1007,9 +415,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       setPlacementMode(null);
       setCursorCanvasPos(null);
     });
-  }, [selectedCanvasId, placementMode, pushUndo, showToast]);
+  }, [selectedCanvasId, placementMode, pushUndo, showToast, setNodes, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
 
-  // Place a group at the current cursor position (called from placement mode)
   const placeGroupAtCursor = useCallback((_cx: number, _cy: number) => {
     if (!selectedCanvasId || !placementMode || placementMode.type !== 'group') return;
     if (selectedNodeIds.size === 0) {
@@ -1072,7 +479,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     setEditingValue("");
     // Close context menu on any click
     setContextMenu(null);
-  }, [placementMode, placeNodeAtCursor, placeGroupAtCursor]);
+  }, [placementMode, placeNodeAtCursor, placeGroupAtCursor, justCompletedBoxSelectRef, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
 
   // Add a group at a specific canvas position (enters placement mode)
   const handleAddGroupAtPosition = useCallback((cx: number, cy: number) => {
@@ -1083,6 +490,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     setPlacementMode({ type: 'group', startX: cx, startY: cy });
     setContextMenu(null);
   }, [selectedNodeIds, showToast]);
+
+  // ── Context menu handlers ──────────────────────────────────────────────
 
   // Context menu items for the empty canvas
   const canvasMenuItems: ContextMenuItem[] = [
@@ -1099,7 +508,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     setEditingNodeId(node.id);
     setEditingValue(node.content);
     setSelectedNodeIds(new Set());
-  }, [nodes]);
+  }, [nodes, setEditingNodeId, setEditingValue, setSelectedNodeIds]);
 
   // Handle "Add Edge" from context menu — starts edge creation from this node
   const handleStartEdgeFromNode = useCallback((nodeId: string | undefined) => {
@@ -1116,7 +525,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       targetY: sourceY,
     });
     setContextMenu(null);
-  }, [nodes]);
+  }, [nodes, setEdgeDragState]);
 
   // Handle "Delete" from context menu — deletes the node
   const handleDeleteNode = useCallback(async (nodeId: string | undefined) => {
@@ -1148,7 +557,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       });
     }, 260);
     setContextMenu(null);
-  }, [nodes, pushUndo]);
+  }, [nodes, pushUndo, setSelectedNodeIds]);
 
   // Context menu items for a node
   const nodeMenuItems: ContextMenuItem[] = [
@@ -1168,9 +577,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     if (!edge) return;
     const currentLabel = edge.label ?? "";
     const newLabel = prompt("Edit edge label:", currentLabel);
-    if (newLabel === null) return; // user cancelled
+    if (newLabel === null) return;
     const trimmed = newLabel.trim();
-    if (trimmed === currentLabel) return; // no change
+    if (trimmed === currentLabel) return;
 
     safeInvoke<CanvasEdge>("update_canvas_edge", {
       id: edgeId,
@@ -1217,10 +626,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     if (!group) return;
     const currentLabel = group.label;
     const newLabel = prompt("Rename group:", currentLabel);
-    if (newLabel === null) return; // user cancelled
+    if (newLabel === null) return;
     const trimmed = newLabel.trim();
-    if (trimmed.length === 0) return; // reject empty
-    if (trimmed === currentLabel) return; // no change
+    if (trimmed.length === 0) return;
+    if (trimmed === currentLabel) return;
 
     safeInvoke<CanvasGroup>("update_canvas_group", {
       id: groupId,
@@ -1266,43 +675,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     { label: "Delete", onClick: () => handleDeleteGroup(contextMenu?.groupId) },
   ];
 
-  // Delete selected node(s)
-  const deleteSelectedNodes = useCallback(async () => {
-    if (selectedNodeIds.size === 0) return;
-    const nodeIdsToDelete = [...selectedNodeIds];
-    const nodesToDelete = nodeIdsToDelete
-      .map((id) => nodes.find((n) => n.id === id))
-      .filter((n): n is CanvasNode => n !== undefined);
-    if (nodesToDelete.length === 0) return;
+  // ── Keyboard effect ────────────────────────────────────────────────────
 
-    // Start fade-out animation
-    setDeletingNodeIds((prev) => {
-      const next = new Set(prev);
-      for (const id of nodeIdsToDelete) next.add(id);
-      return next;
-    });
-    setSelectedNodeIds(new Set());
-
-    try {
-      for (const node of nodesToDelete) {
-        await safeInvoke("delete_canvas_node", { id: node.id });
-        pushUndo({ type: "delete_node", node });
-      }
-    } catch (err) {
-      console.error("Failed to delete nodes:", err);
-    }
-
-    // Remove from deleting set after animation completes
-    setTimeout(() => {
-      setDeletingNodeIds((prev) => {
-        const next = new Set(prev);
-        for (const id of nodeIdsToDelete) next.delete(id);
-        return next;
-      });
-    }, 260); // Match animation duration
-  }, [selectedNodeIds, nodes, pushUndo]);
-
-  // Keyboard listener for Delete key, Escape, and undo/redo shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Undo/Redo shortcuts (Cmd+Z, Cmd+Shift+Z)
@@ -1343,28 +717,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         setEditingNodeId(null);
         setEditingValue("");
       }
-
-      if (e.key === "Alt") {
-        isAltPressedRef.current = true;
-        setIsAltPressed(true);
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Alt") {
-        isAltPressedRef.current = false;
-        setIsAltPressed(false);
-        setHoveredNodeId(null);
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState, placementMode]);
+  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState, placementMode, setSelectedNodeIds, setEditingNodeId, setEditingValue, setEdgeDragState]);
+
+  // ── Effects ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     fetchCanvases();
@@ -1399,8 +760,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         handleBoxSelectEnd();
       }
       setEdgeDragState(null);
-      setDragState(null);
-      setDraggedNodeId(null);
+      handleDragEnd();
     };
 
     window.addEventListener("mouseup", handleGlobalMouseUp);
@@ -1413,7 +773,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         clearTimeout(batchUpdatePositionsRef.current);
       }
     };
-  }, [boxSelect, handleBoxSelectEnd]);
+  }, [boxSelect, handleBoxSelectEnd, setEdgeDragState, handleDragEnd]);
 
   useTauriEvent<{ session_id: string }>(
     "visual-canvases-changed",
@@ -1460,25 +820,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }, [sessionId, selectedCanvasId, fetchTags]),
   );
 
-  // Auto-focus and select all text when entering edit mode
-  useEffect(() => {
-    if (editingNodeId && editInputRef.current) {
-      const input = editInputRef.current;
-      // Use requestAnimationFrame to ensure the foreignObject input is mounted,
-      // then a micro-delay to handle cases where the DOM update hasn't propagated
-      requestAnimationFrame(() => {
-        input.focus();
-        input.select();
-        // Fallback: if focus didn't take (foreignObject timing), retry once
-        if (document.activeElement !== input) {
-          setTimeout(() => {
-            input.focus();
-            input.select();
-          }, 16);
-        }
-      });
-    }
-  }, [editingNodeId]);
+  // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading && canvases.length === 0) {
     return (
@@ -1868,7 +1210,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         }}
         onNodeClick={handleNodeClick}
         onNodeMouseDown={handleNodeMouseDown}
-        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeDoubleClick={(nodeId, e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          handleNodeDoubleClick(nodeId);
+        }}
         onNodeHover={setHoveredNodeId}
         onNodeContextMenu={(nodeId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, nodeId })}
         onEdgeClick={() => {}}

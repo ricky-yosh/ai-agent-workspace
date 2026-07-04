@@ -3,12 +3,13 @@ import type { Screen, Vertex, Edge, Area, Axis } from "./types/screen";
 import { getPanel } from "./panelRegistry";
 import { PanelIdentityContext, PanelFocusContext } from "./PanelContext";
 import PanelTypeSelector from "./PanelTypeSelector";
-import { disposeTerminal } from "./TerminalPanel";
+import { useTerminalCache } from "./providers/TerminalCacheProvider";
 import { safeInvoke } from "./safeInvoke";
-import { resizeEdgeLocal, classifyCornerDrag } from "./screenGeometry";
-import type { Adjacency, CornerDragMode } from "./screenGeometry";
-import { areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse } from "./screenMotion";
-import type { AreaRect, SeamSide } from "./screenMotion";
+import {
+  resizeEdgeLocal, classifyCornerDrag,
+  areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse,
+} from "./screenLayout";
+import type { Adjacency, CornerDragMode, AreaRect, SeamSide } from "./screenLayout";
 import "./ScreenRenderer.css";
 
 const EPSILON = 0.0001;
@@ -71,6 +72,7 @@ export default function ScreenRenderer({
   onScreenChange,
   onError,
 }: ScreenRendererProps) {
+  const { disposeTerminal } = useTerminalCache();
   const handleFocusChange = useCallback((areaId: string) => {
     onFocusedAreaChange?.(areaId);
   }, [onFocusedAreaChange]);

@@ -19,13 +19,7 @@ import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelIdentity, usePanelFocus } from "../PanelContext";
 import { safeInvoke } from "../safeInvoke";
-import {
-  getLastFocusedViewer,
-  openFileInViewer,
-  setPendingFile,
-  getActiveFilePath,
-  onActiveFilePathChange,
-} from "./viewerRegistry";
+import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
 import "./FileTreePanel.css";
 
 // ---------------------------------------------------------------------------
@@ -247,8 +241,9 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
     new Map(),
   );
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
+  const registry = useViewerRegistry();
   const [activeFilePath, setActiveFilePath] = useState<string | null>(
-    getActiveFilePath(),
+    registry.getActiveFilePath(),
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -268,10 +263,10 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
 
   // Subscribe to active file changes for highlighting
   useEffect(() => {
-    return onActiveFilePathChange(() => {
-      setActiveFilePath(getActiveFilePath());
+    return registry.onActiveFilePathChange(() => {
+      setActiveFilePath(registry.getActiveFilePath());
     });
-  }, []);
+  }, [registry]);
 
   // Load directory contents
   const loadDirectory = useCallback(
@@ -327,15 +322,15 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
   // Open file in viewer
   const handleFileClick = useCallback(
     (filePath: string) => {
-      const viewer = getLastFocusedViewer(workspaceIdRef.current);
+      const viewer = registry.getLastFocusedViewer(workspaceIdRef.current);
       if (viewer) {
-        openFileInViewer(filePath);
+        registry.openFileInViewer(filePath);
       } else {
         // No viewer exists — split this panel and create one
         splitAndCreateViewer(filePath);
       }
     },
-    [],
+    [registry],
   );
 
   // Split this panel to create a new File Viewer panel
@@ -360,7 +355,7 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
       if (!newArea) return;
 
       // Set pending file so the viewer opens it on mount
-      setPendingFile(filePath);
+      registry.setPendingFile(filePath);
 
       // Change the new area's panel type to file-viewer
       const updatedResult = await safeInvoke<{ current_screen: import("../types/screen").Screen }>(

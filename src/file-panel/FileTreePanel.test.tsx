@@ -40,28 +40,21 @@ vi.mock("../SessionContext", () => ({
   }),
 }));
 
-const mockRegisterViewer = vi.fn();
-const mockUnregisterViewer = vi.fn();
-const mockFocusViewer = vi.fn();
 const mockGetLastFocusedViewer = vi.fn();
 const mockOpenFileInViewer = vi.fn();
 const mockSetPendingFile = vi.fn();
-const mockConsumePendingFile = vi.fn();
-const mockSetActiveFilePath = vi.fn();
 const mockGetActiveFilePath = vi.fn();
-const mockOnActiveFilePathChange = vi.fn();
+const mockOnActiveFilePathChange = vi.fn(() => () => {});
 
-vi.mock("./viewerRegistry", () => ({
-  registerViewer: (...args: unknown[]) => mockRegisterViewer(...args),
-  unregisterViewer: (...args: unknown[]) => mockUnregisterViewer(...args),
-  focusViewer: (...args: unknown[]) => mockFocusViewer(...args),
-  getLastFocusedViewer: (...args: unknown[]) => mockGetLastFocusedViewer(...args),
-  openFileInViewer: (...args: unknown[]) => mockOpenFileInViewer(...args),
-  setPendingFile: (...args: unknown[]) => mockSetPendingFile(...args),
-  consumePendingFile: (...args: unknown[]) => mockConsumePendingFile(...args),
-  setActiveFilePath: (...args: unknown[]) => mockSetActiveFilePath(...args),
-  getActiveFilePath: (...args: unknown[]) => mockGetActiveFilePath(...args),
-  onActiveFilePathChange: (...args: unknown[]) => mockOnActiveFilePathChange(...args),
+vi.mock("../providers/ViewerRegistryProvider", () => ({
+  ViewerRegistryProvider: ({ children }: { children: React.ReactNode }) => children,
+  useViewerRegistry: () => ({
+    getLastFocusedViewer: mockGetLastFocusedViewer,
+    openFileInViewer: mockOpenFileInViewer,
+    setPendingFile: mockSetPendingFile,
+    getActiveFilePath: mockGetActiveFilePath,
+    onActiveFilePathChange: mockOnActiveFilePathChange,
+  }),
 }));
 
 import FileTreePanel from "./FileTreePanel";

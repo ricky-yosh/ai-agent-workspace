@@ -55,6 +55,7 @@ vi.mock("../SessionContext", () => ({
 }));
 
 import FileViewerPanel from "./FileViewerPanel";
+import { ViewerRegistryProvider } from "../providers/ViewerRegistryProvider";
 
 const ctx: PanelContextType = {
   workspaceId: "w1", sessionId: "s1", areaId: "area1", terminalId: null,
@@ -64,11 +65,13 @@ const ctx: PanelContextType = {
 function renderPanel(overrides?: Partial<PanelContextType>) {
   const panelCtx = { ...ctx, ...overrides };
   return render(
-    <PanelIdentityContext.Provider value={{ workspaceId: panelCtx.workspaceId, sessionId: panelCtx.sessionId, areaId: panelCtx.areaId, terminalId: panelCtx.terminalId }}>
-      <PanelFocusContext.Provider value={{ focusedAreaId: panelCtx.focusedAreaId, onFocusedAreaChange: panelCtx.onFocusedAreaChange, onScreenChange: panelCtx.onScreenChange }}>
-        <FileViewerPanel panelType="file-viewer" />
-      </PanelFocusContext.Provider>
-    </PanelIdentityContext.Provider>,
+    <ViewerRegistryProvider>
+      <PanelIdentityContext.Provider value={{ workspaceId: panelCtx.workspaceId, sessionId: panelCtx.sessionId, areaId: panelCtx.areaId, terminalId: panelCtx.terminalId }}>
+        <PanelFocusContext.Provider value={{ focusedAreaId: panelCtx.focusedAreaId, onFocusedAreaChange: panelCtx.onFocusedAreaChange, onScreenChange: panelCtx.onScreenChange }}>
+          <FileViewerPanel panelType="file-viewer" />
+        </PanelFocusContext.Provider>
+      </PanelIdentityContext.Provider>
+    </ViewerRegistryProvider>,
   );
 }
 
@@ -271,18 +274,22 @@ describe("FileViewerPanel", () => {
     const ctx2: PanelContextType = { ...ctx, areaId: "area2" };
 
     const { unmount: u1 } = render(
-      <PanelIdentityContext.Provider value={{ workspaceId: ctx1.workspaceId, sessionId: ctx1.sessionId, areaId: ctx1.areaId, terminalId: ctx1.terminalId }}>
-        <PanelFocusContext.Provider value={{ focusedAreaId: ctx1.focusedAreaId, onFocusedAreaChange: ctx1.onFocusedAreaChange, onScreenChange: ctx1.onScreenChange }}>
-          <FileViewerPanel panelType="file-viewer" />
-        </PanelFocusContext.Provider>
-      </PanelIdentityContext.Provider>,
+      <ViewerRegistryProvider>
+        <PanelIdentityContext.Provider value={{ workspaceId: ctx1.workspaceId, sessionId: ctx1.sessionId, areaId: ctx1.areaId, terminalId: ctx1.terminalId }}>
+          <PanelFocusContext.Provider value={{ focusedAreaId: ctx1.focusedAreaId, onFocusedAreaChange: ctx1.onFocusedAreaChange, onScreenChange: ctx1.onScreenChange }}>
+            <FileViewerPanel panelType="file-viewer" />
+          </PanelFocusContext.Provider>
+        </PanelIdentityContext.Provider>
+      </ViewerRegistryProvider>,
     );
     const { unmount: u2 } = render(
-      <PanelIdentityContext.Provider value={{ workspaceId: ctx2.workspaceId, sessionId: ctx2.sessionId, areaId: ctx2.areaId, terminalId: ctx2.terminalId }}>
-        <PanelFocusContext.Provider value={{ focusedAreaId: ctx2.focusedAreaId, onFocusedAreaChange: ctx2.onFocusedAreaChange, onScreenChange: ctx2.onScreenChange }}>
-          <FileViewerPanel panelType="file-viewer" />
-        </PanelFocusContext.Provider>
-      </PanelIdentityContext.Provider>,
+      <ViewerRegistryProvider>
+        <PanelIdentityContext.Provider value={{ workspaceId: ctx2.workspaceId, sessionId: ctx2.sessionId, areaId: ctx2.areaId, terminalId: ctx2.terminalId }}>
+          <PanelFocusContext.Provider value={{ focusedAreaId: ctx2.focusedAreaId, onFocusedAreaChange: ctx2.onFocusedAreaChange, onScreenChange: ctx2.onScreenChange }}>
+            <FileViewerPanel panelType="file-viewer" />
+          </PanelFocusContext.Provider>
+        </PanelIdentityContext.Provider>
+      </ViewerRegistryProvider>,
     );
 
     // Both have + buttons
