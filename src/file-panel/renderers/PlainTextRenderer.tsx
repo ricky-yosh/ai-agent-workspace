@@ -42,7 +42,7 @@ export function PlainTextRenderer({ content }: PlainTextRendererProps) {
                 flexShrink: 0,
                 textAlign: "right",
                 paddingRight: 12,
-                color: "var(--text-muted, #666)",
+                color: "var(--text-muted)",
                 userSelect: "none",
               }}
             >

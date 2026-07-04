@@ -6,8 +6,8 @@
 .issue-row {
   padding: 8px 12px;
   border-radius: 6px;
-  background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border, #3c3c3c);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   font-size: 13px;
   cursor: pointer;
   outline: none;
@@ -56,11 +56,11 @@
   overflow: hidden;
   height: 0;
   border-radius: 0 0 6px 6px;
-  background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border, #3c3c3c);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-top: none;
   font-size: 12px;
-  color: var(--text-secondary, #aaa);
+  color: var(--text-secondary);
   margin-bottom: 0;
 }
 

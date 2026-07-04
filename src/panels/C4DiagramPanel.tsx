@@ -321,7 +321,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               style={{
                 fontSize: 11,
                 fontWeight: 600,
-                color: "var(--canvas-accent-bright, #c6a7d8)",
+                color: "var(--canvas-accent-bright)",
                 marginBottom: 4,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
@@ -334,7 +334,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               style={{
                 fontSize: 9,
                 fontFamily: "var(--font-mono, monospace)",
-                color: "var(--text-muted, #888)",
+                color: "var(--text-muted)",
                 margin: 0,
                 overflow: "hidden",
                 whiteSpace: "pre",
@@ -375,7 +375,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             style={{
               fontSize: 12,
               fontWeight: 600,
-              color: "var(--text-primary, #fff)",
+              color: "var(--text-primary)",
               textAlign: "center",
               lineHeight: 1.3,
               wordBreak: "break-word",
@@ -386,7 +386,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           <div
             style={{
               fontSize: 10,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               textTransform: "capitalize",
             }}
           >
@@ -396,7 +396,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             <div
               style={{
                 fontSize: 9,
-                color: "var(--canvas-accent, #9b6cb9)",
+                color: "var(--canvas-accent)",
                 marginTop: 2,
               }}
             >
@@ -468,7 +468,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       <div
         style={{
           padding: 16,
-          color: "var(--text-muted, #888)",
+          color: "var(--text-muted)",
           fontSize: 13,
         }}
       >
@@ -484,7 +484,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         id="c4-diagram-panel-container"
         style={{
           padding: 16,
-          color: "var(--text-muted, #888)",
+          color: "var(--text-muted)",
           fontSize: 13,
           display: "flex",
           flexDirection: "column",
@@ -504,17 +504,17 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           style={{
             padding: "10px 14px",
             borderRadius: 8,
-            border: "1px solid var(--border, #3c3c3c)",
-            background: "var(--bg-secondary, #222)",
+            border: "1px solid var(--border)",
+            background: "var(--bg-secondary)",
             fontFamily: "var(--font-mono, monospace)",
             fontSize: 11,
-            color: "var(--text-primary, #fff)",
+            color: "var(--text-primary)",
             maxWidth: 400,
             wordBreak: "break-word",
             lineHeight: 1.5,
           }}
         >
-          Use the aiaw <code style={{ color: "var(--canvas-accent, #9b6cb9)" }}>generate_c4_diagram</code>{" "}
+          Use the aiaw <code style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</code>{" "}
           tool to create a C4 diagram of the codebase
         </div>
       </div>
@@ -533,7 +533,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             padding: "8px 4px",
             fontSize: 12,
             fontWeight: 600,
-            color: "var(--text-primary, #fff)",
+            color: "var(--text-primary)",
             marginBottom: 4,
           }}
         >
@@ -556,8 +556,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                 padding: "8px 12px",
                 marginBottom: 4,
                 borderRadius: 6,
-                border: "1px solid var(--border, #3c3c3c)",
-                background: "var(--bg-secondary, #222)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -583,10 +583,10 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                     onClick={(e) => e.stopPropagation()}
                     style={{
                       flex: 1,
-                      background: "var(--bg-primary, #1a1a1a)",
-                      border: "1px solid var(--canvas-accent, #9b6cb9)",
+                      background: "var(--bg-primary)",
+                      border: "1px solid var(--canvas-accent)",
                       borderRadius: 4,
-                      color: "var(--text-primary, #fff)",
+                      color: "var(--text-primary)",
                       fontSize: 13,
                       padding: "2px 6px",
                       outline: "none",
@@ -600,7 +600,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                 <div
                   style={{
                     fontSize: 11,
-                    color: "var(--text-muted, #888)",
+                    color: "var(--text-muted)",
                     whiteSpace: "nowrap",
                   }}
                 >
@@ -615,7 +615,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                   style={{
                     background: "none",
                     border: "none",
-                    color: "var(--text-muted, #888)",
+                    color: "var(--text-muted)",
                     cursor: "pointer",
                     padding: "2px 4px",
                     fontSize: 12,
@@ -632,7 +632,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                         handleDeleteDiagram(diagram.id);
                       }}
                       style={{
-                        background: "var(--error, #f48771)",
+                        background: "var(--danger)",
                         border: "none",
                         color: "#fff",
                         cursor: "pointer",
@@ -650,8 +650,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                       }}
                       style={{
                         background: "none",
-                        border: "1px solid var(--border, #3c3c3c)",
-                        color: "var(--text-muted, #888)",
+                        border: "1px solid var(--border)",
+                        color: "var(--text-muted)",
                         cursor: "pointer",
                         padding: "2px 6px",
                         borderRadius: 4,
@@ -670,7 +670,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                     style={{
                       background: "none",
                       border: "none",
-                      color: "var(--text-muted, #888)",
+                      color: "var(--text-muted)",
                       cursor: "pointer",
                       padding: "2px 4px",
                       fontSize: 12,
@@ -703,13 +703,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       {/* ── Design tokens ── */}
       <style>{`
         .c4-diagram-panel {
-          --canvas-bg: #0b090f;
-          --canvas-node-bg: #1f1828;
-          --canvas-node-border: #7c3aed55;
-          --canvas-node-selected: #7c3aed;
-          --canvas-edge-color: #7c3aed;
-          --canvas-accent: #9b6cb9;
-          --canvas-accent-bright: #c6a7d8;
+          /* Colors are now provided by the theme system via applyTheme().
+             Canvas-specific tokens (--canvas-*) are set in the theme files. */
         }
       `}</style>
 
@@ -717,7 +712,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       <div
         style={{
           padding: "8px 12px",
-          borderBottom: "1px solid var(--border, #3c3c3c)",
+          borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
           gap: 8,
@@ -728,7 +723,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           style={{
             background: "none",
             border: "none",
-            color: "var(--text-muted, #888)",
+            color: "var(--text-muted)",
             cursor: "pointer",
             padding: 4,
             fontSize: 14,
@@ -746,7 +741,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             alignItems: "center",
             gap: 6,
             fontSize: 11,
-            color: "var(--text-muted, #888)",
+            color: "var(--text-muted)",
           }}
         >
           <span>{Math.round(zoom * 100)}%</span>
@@ -754,9 +749,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             onClick={resetView}
             style={{
               background: "none",
-              border: "1px solid var(--border, #3c3c3c)",
+              border: "1px solid var(--border)",
               borderRadius: 4,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               cursor: "pointer",
               padding: "2px 6px",
               fontSize: 11,
@@ -772,7 +767,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         <div
           style={{
             padding: "6px 12px",
-            borderBottom: "1px solid var(--border, #3c3c3c)",
+            borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
             gap: 4,
@@ -783,9 +778,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             onClick={handleBack}
             style={{
               background: "none",
-              border: "1px solid var(--border, #3c3c3c)",
+              border: "1px solid var(--border)",
               borderRadius: 4,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               cursor: "pointer",
               padding: "2px 8px",
               fontSize: 11,
@@ -797,7 +792,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           <span
             onClick={navigateToRoot}
             style={{
-              color: "var(--canvas-accent, #9b6cb9)",
+              color: "var(--canvas-accent)",
               cursor: "pointer",
               fontWeight: 500,
             }}
@@ -806,14 +801,14 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           </span>
           {drillPath.map((crumb, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ color: "var(--text-muted, #888)" }}> &gt; </span>
+              <span style={{ color: "var(--text-muted)" }}> &gt; </span>
               <span
                 onClick={() => navigateToLevel(i + 1)}
                 style={{
                   color:
                     i === drillPath.length - 1
-                      ? "var(--text-primary, #fff)"
-                      : "var(--canvas-accent, #9b6cb9)",
+                      ? "var(--text-primary)"
+                      : "var(--canvas-accent)",
                   cursor: "pointer",
                   fontWeight: i === drillPath.length - 1 ? 600 : 400,
                 }}

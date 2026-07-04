@@ -2,8 +2,11 @@ import React, { useEffect, useState, useCallback } from "react";
 import ReactDOM from "react-dom/client";
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { initMotion, type MotionPreference, resolveMotion, applyMotion, osPrefersReduced } from "./motionPreference";
+import { applyTheme, type ThemeName } from "./themes";
+import { setShikiTheme } from "./file-panel/shikiSingleton";
 import "./Preferences.css";
 import "./Dialog.css";
 
@@ -59,6 +62,7 @@ function usePreferences() {
     external_terminal: "",
     pty_command: "$SHELL",
     motion: "system",
+    theme: "dark" as ThemeName,
   });
   const [loading, setLoading] = useState(true);
 
@@ -70,23 +74,27 @@ function usePreferences() {
           autoSave: 300,
         });
         setStore(s);
-        const [editor, diffTool, terminal, ptyCommand, motion] = await Promise.all([
+        const [editor, diffTool, terminal, ptyCommand, motion, theme] = await Promise.all([
           s.get<string>("external_editor"),
           s.get<string>("external_diff_tool"),
           s.get<string>("external_terminal"),
           s.get<string>("pty_command"),
           s.get<string>("motion"),
+          s.get<string>("theme"),
         ]);
+        const themeName = (theme as ThemeName) || "dark";
         setPrefs({
           external_editor: editor ?? "",
           external_diff_tool: diffTool ?? "",
           external_terminal: terminal ?? "",
           pty_command: ptyCommand ?? "$SHELL",
           motion: motion ?? "system",
+          theme: themeName,
         });
+        // Apply theme immediately on load
+        applyTheme(themeName);
       } catch (err) {
         console.error("Failed to load preferences:", err);
-        // TODO: Wire toast notification when ToastContext is available (task 3)
       } finally {
         setLoading(false);
       }
@@ -197,9 +205,11 @@ function ExternalToolsForm({ toolPrefs, setToolPrefs }: {
   );
 }
 
-function AppearanceSection({ motionPref, setMotionPref }: {
+function AppearanceSection({ motionPref, setMotionPref, themePref, setThemePref }: {
   motionPref: string;
   setMotionPref: (key: string, value: string) => Promise<void>;
+  themePref: string;
+  setThemePref: (key: string, value: string) => Promise<void>;
 }) {
   const handleMotionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
@@ -207,9 +217,41 @@ function AppearanceSection({ motionPref, setMotionPref }: {
     applyMotion(resolveMotion(value as MotionPreference, osPrefersReduced()));
   };
 
+  const handleThemeChange = (themeName: ThemeName) => {
+    setThemePref("theme", themeName);
+    applyTheme(themeName);
+    setShikiTheme(themeName);
+    emit("theme-changed", { theme: themeName });
+  };
+
+  const themes: { value: ThemeName; label: string; colors: string[] }[] = [
+    { value: "dark", label: "Dark", colors: ["#1e1e1e", "#0078d4", "#cccccc"] },
+    { value: "light", label: "Light", colors: ["#f5f5f5", "#0078d4", "#222222"] },
+    { value: "catppuccin", label: "Catppuccin", colors: ["#1e1e2e", "#cba6f7", "#cdd6f4"] },
+  ];
+
   return (
     <div>
-      <div className="tool-row">
+      <div className="theme-section">
+        <div className="tool-label" style={{ marginBottom: 12 }}>Theme</div>
+        <div className="theme-grid">
+          {themes.map((t) => (
+            <button
+              key={t.value}
+              className={`theme-card ${themePref === t.value ? "theme-card--active" : ""}`}
+              onClick={() => handleThemeChange(t.value)}
+            >
+              <div className="theme-swatch">
+                {t.colors.map((c, i) => (
+                  <div key={i} className="theme-swatch-color" style={{ background: c }} />
+                ))}
+              </div>
+              <span className="theme-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="tool-row" style={{ marginTop: 20 }}>
         <span className="tool-label">Animations</span>
         <select className="tool-select" value={motionPref} onChange={handleMotionChange}>
           <option value="system">Follow system</option>
@@ -356,7 +398,7 @@ function PreferencesForm() {
       )}
 
       {activeTab === "appearance" && (
-        <AppearanceSection motionPref={prefs.motion} setMotionPref={updatePref} />
+        <AppearanceSection motionPref={prefs.motion} setMotionPref={updatePref} themePref={prefs.theme} setThemePref={updatePref} />
       )}
 
       {activeTab === "danger-zone" && <DangerZoneSection />}
@@ -366,8 +408,19 @@ function PreferencesForm() {
 
 initMotion();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <PreferencesForm />
-  </React.StrictMode>,
-);
+// Apply theme before rendering the preferences window
+(async () => {
+  try {
+    const store = await Store.load("preferences.json", { defaults: {}, autoSave: 300 });
+    const savedTheme = await store.get<string>("theme");
+    applyTheme((savedTheme as ThemeName) || "dark");
+  } catch {
+    applyTheme("dark");
+  }
+
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <PreferencesForm />
+    </React.StrictMode>,
+  );
+})();

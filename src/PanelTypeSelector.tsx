@@ -52,9 +52,9 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
           gap: 2,
           padding: "2px 6px",
           fontSize: 11,
-          background: "var(--bg-secondary, #252526)",
-          color: "var(--text-primary, #e0e0e0)",
-          border: "1px solid var(--border-color, #333)",
+          background: "var(--bg-secondary)",
+          color: "var(--text-primary)",
+          border: "1px solid var(--border)",
           borderRadius: 4,
           cursor: "pointer",
           whiteSpace: "nowrap",
@@ -82,8 +82,8 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
             left: 0,
             marginTop: 2,
             minWidth: 120,
-            background: "var(--bg-secondary, #252526)",
-            border: "1px solid var(--border-color, #333)",
+            background: "var(--bg-secondary)",
+            border: "1px solid var(--border)",
             borderRadius: 4,
             boxShadow: "0 6px 20px rgba(0,0,0,.5)",
             zIndex: 30,
@@ -106,10 +106,10 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
                 padding: "4px 10px",
                 fontSize: 12,
                 cursor: "pointer",
-                background: type === currentType ? "var(--accent-color, #0078d4)" : "transparent",
-                color: type === currentType ? "#fff" : "var(--text-primary, #e0e0e0)",
+                background: type === currentType ? "var(--accent)" : "transparent",
+                color: type === currentType ? "#fff" : "var(--text-primary)",
               }}
-              onMouseEnter={(e) => { if (type !== currentType) e.currentTarget.style.background = "var(--bg-hover, #2a2a2a)"; }}
+              onMouseEnter={(e) => { if (type !== currentType) e.currentTarget.style.background = "var(--bg-hover)"; }}
               onMouseLeave={(e) => { if (type !== currentType) e.currentTarget.style.background = "transparent"; }}
             >
               {label}

@@ -1,30 +1,5 @@
-:root {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #252526;
-  --bg-active: #37373d;
-  --bg-hover: #2a2a2a;
-  --text-primary: #cccccc;
-  --text-muted: #6e6e6e;
-  --text-dim: #888888;
-  --border-color: #3c3c3c;
-  --accent-color: #0078d4;
-  --accent-color-hover: #1a8cff;
-  --danger-color: #d32f2f;
-  --danger-color-dark: #b71c1c;
-  --bg-input: #3c3c3c;
-  --bg-input-hover: #4a4a4a;
-  --dot-running: #4caf50;
-  --dot-paused: #ff9800;
-  --dot-missing: #f44336;
-  --canvas-bg: #121212;
-  --bg-panel: #232324;
-  --bg-panel-raised: #2c2c2e;
-  --gutter: 8px;
-  --radius-island: 8px;
-  --shadow-island: 0 1px 3px rgba(0,0,0,0.2);
-  --radius-control: 6px;
-  --noise-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-}
+/* All color/layout tokens are set by applyTheme() in src/themes/index.ts.
+   The :root block is intentionally empty — themes inject values at runtime. */
 
 * {
   margin: 0;
@@ -66,8 +41,8 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.07;
-  mix-blend-mode: screen;
+  opacity: var(--noise-opacity, 0.07);
+  mix-blend-mode: var(--noise-blend, screen);
   background-image: var(--noise-img);
   background-repeat: repeat;
   background-size: 200px 200px;

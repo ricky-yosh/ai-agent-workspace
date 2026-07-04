@@ -60,15 +60,15 @@
 
 .context-menu-divider {
   height: 1px;
-  background: var(--border-color);
+  background: var(--border);
   margin: 4px 0;
 }
 
 /* ── Canvas-themed variant ── */
 
 .context-menu--canvas {
-  background: var(--canvas-node-bg, #1f1828);
-  border: 1px solid var(--canvas-node-border, #7c3aed55);
+  background: var(--canvas-node-bg);
+  border: 1px solid var(--canvas-node-border);
   border-radius: 8px;
   padding: 4px 0;
   min-width: 180px;
@@ -80,7 +80,7 @@
 
 .context-menu--canvas .context-menu-item {
   padding: 8px 12px;
-  color: var(--canvas-accent-bright, #c6a7d8);
+  color: var(--canvas-accent-bright);
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -110,7 +110,7 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  color: var(--canvas-accent, #9b6cb9);
+  color: var(--canvas-accent);
 }
 
 .context-menu--canvas .context-menu-item-label {
@@ -120,14 +120,14 @@
 
 .context-menu--canvas .context-menu-item-shortcut {
   font-size: 11px;
-  color: var(--text-muted, #6e6e6e);
+  color: var(--text-muted);
   margin-left: auto;
   padding-left: 16px;
   font-family: inherit;
 }
 
 .context-menu--canvas .context-menu-divider {
-  background: var(--canvas-node-border, #7c3aed55);
+  background: var(--canvas-node-border);
   margin: 4px 8px;
 }
 

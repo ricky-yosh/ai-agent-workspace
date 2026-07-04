@@ -577,7 +577,7 @@ export function CanvasRenderer({
         <motion.path
           d={path}
           fill="none"
-          stroke="var(--canvas-edge-color)"
+          stroke="var(--canvas-edge)"
           strokeWidth={2}
           strokeLinecap="round"
           initial={{ pathLength: 0 }}
@@ -590,7 +590,7 @@ export function CanvasRenderer({
             ${end.x - arrowSize * Math.cos(arrowAngle - Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle - Math.PI / 6)}
             ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
           `}
-          fill="var(--canvas-edge-color)"
+          fill="var(--canvas-edge)"
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
@@ -599,14 +599,14 @@ export function CanvasRenderer({
           cx={start.x}
           cy={start.y}
           r={4}
-          fill="var(--canvas-edge-color)"
+          fill="var(--canvas-edge)"
           className="edge-handle"
         />
         <circle
           cx={end.x}
           cy={end.y}
           r={4}
-          fill="var(--canvas-edge-color)"
+          fill="var(--canvas-edge)"
           className="edge-handle"
         />
         {edge.label && (
@@ -614,7 +614,7 @@ export function CanvasRenderer({
             x={cpX}
             y={cpY - 8}
             textAnchor="middle"
-            fill="var(--text-muted, #888)"
+            fill="var(--text-muted)"
             fontSize={12}
             fontFamily="var(--font-family, sans-serif)"
           >
@@ -667,7 +667,7 @@ export function CanvasRenderer({
               <path
                 d="M 20 0 L 0 0 0 20"
                 fill="none"
-                stroke="var(--border, #3c3c3c)"
+                stroke="var(--border)"
                 strokeWidth="0.5"
                 opacity="0.3"
               />
@@ -690,7 +690,7 @@ export function CanvasRenderer({
               y1={edgeDragSource.y}
               x2={edgeDragTarget.x}
               y2={edgeDragTarget.y}
-              stroke="var(--canvas-edge-color)"
+              stroke="var(--canvas-edge)"
               strokeWidth={2}
               strokeLinecap="round"
               className="edge-dragging"
@@ -860,7 +860,7 @@ export function CanvasRenderer({
                           border: "none",
                           outline: "none",
                           background: "transparent",
-                          color: "var(--text-primary, #fff)",
+                          color: "var(--text-primary)",
                           fontSize: 13,
                           lineHeight: 1.4,
                           fontFamily: "var(--font-family, sans-serif)",
@@ -874,7 +874,7 @@ export function CanvasRenderer({
                     ) : (
                       <div
                         style={{
-                          color: "var(--text-primary, #fff)",
+                          color: "var(--text-primary)",
                           fontSize: 13,
                           lineHeight: 1.4,
                           overflow: "hidden",
@@ -914,7 +914,7 @@ export function CanvasRenderer({
                               <span
                                 style={{
                                   fontSize: 9,
-                                  color: "var(--text-muted, #888)",
+                                  color: "var(--text-muted)",
                                   alignSelf: "center",
                                 }}
                               >
@@ -939,7 +939,7 @@ export function CanvasRenderer({
               y="50%"
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="var(--text-muted, #888)"
+              fill="var(--text-muted)"
               fontSize={14}
             >
               No nodes yet. Ask the AI to create some.
@@ -954,9 +954,9 @@ export function CanvasRenderer({
             y={Math.min(boxSelect.startY, boxSelect.endY)}
             width={Math.abs(boxSelect.endX - boxSelect.startX)}
             height={Math.abs(boxSelect.endY - boxSelect.startY)}
-            fill="var(--canvas-edge-color)"
+            fill="var(--canvas-edge)"
             fillOpacity={0.08}
-            stroke="var(--canvas-edge-color)"
+            stroke="var(--canvas-edge)"
             strokeWidth={1}
             strokeOpacity={0.5}
             strokeDasharray="4 2"

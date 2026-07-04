@@ -175,15 +175,15 @@
 }
 
 .session-state-dot-running {
-  background: var(--dot-running);
+  background: var(--status-running);
 }
 
 .session-state-dot-paused {
-  background: var(--dot-paused);
+  background: var(--status-paused);
 }
 
 .session-state-dot-missing {
-  background: var(--dot-missing);
+  background: var(--status-missing);
 }
 
 .sidebar-collapsed-session:hover {
@@ -248,7 +248,7 @@
 }
 
 .sidebar-title-back:hover .sidebar-title-back-icon {
-  color: var(--accent-color);
+  color: var(--accent);
 }
 
 .new-session-btn {
@@ -259,7 +259,7 @@
   justify-content: center;
   position: relative;
   background: none;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
   font-size: 16px;

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { getHighlighter } from "../shikiSingleton";
+import { getHighlighter, getShikiTheme } from "../shikiSingleton";
 import { type ShikiLanguageId } from "../languageRegistry";
 
 // ---------------------------------------------------------------------------
@@ -146,12 +146,12 @@ const STYLES: Record<DiffLineType, React.CSSProperties> = {
   },
   "hunk-header": {
     background: "rgba(56, 132, 255, 0.08)",
-    color: "var(--text-muted, #888)",
+    color: "var(--text-muted)",
     fontStyle: "italic",
   },
   "file-header": {
     background: "rgba(56, 132, 255, 0.08)",
-    color: "var(--text-muted, #888)",
+    color: "var(--text-muted)",
     fontWeight: 600,
   },
 };
@@ -187,7 +187,7 @@ function HighlightedDiffLine({ content, language }: HighlightedDiffLineProps) {
         if (cancelled) return;
         const result = highlighter.codeToHtml(content, {
           lang: language as string,
-          theme: "github-light",
+          theme: getShikiTheme(),
         });
         if (!cancelled) setHtml(result);
       } catch {
@@ -233,7 +233,7 @@ export function DiffRenderer({ diffText, language }: DiffRendererProps) {
 
   if (files.length === 0) {
     return (
-      <div style={{ padding: 16, color: "var(--text-muted, #888)", fontSize: 13 }}>
+      <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
         No changes to display.
       </div>
     );
@@ -256,7 +256,7 @@ function DiffFileSection({ file, language }: { file: DiffFile; language: ShikiLa
         style={{
           ...STYLES["file-header"],
           padding: "4px 12px",
-          borderBottom: "1px solid var(--border-color, #333)",
+          borderBottom: "1px solid var(--border)",
           position: "sticky",
           top: 0,
           zIndex: 1,
@@ -297,7 +297,7 @@ function DiffLineRow({ line, language }: { line: DiffLine; language: ShikiLangua
           minWidth: 50,
           textAlign: "right",
           paddingRight: 8,
-          color: "var(--text-muted, #666)",
+          color: "var(--text-muted)",
           userSelect: "none",
           overflow: "hidden",
           fontVariantNumeric: "tabular-nums",
@@ -312,7 +312,7 @@ function DiffLineRow({ line, language }: { line: DiffLine; language: ShikiLangua
           minWidth: 50,
           textAlign: "right",
           paddingRight: 8,
-          color: "var(--text-muted, #666)",
+          color: "var(--text-muted)",
           userSelect: "none",
           overflow: "hidden",
           fontVariantNumeric: "tabular-nums",
@@ -322,7 +322,7 @@ function DiffLineRow({ line, language }: { line: DiffLine; language: ShikiLangua
       </span>
       {/* Sign character (+/-/ ) */}
       {isCodeLine ? (
-        <span style={SIGN_STYLES[line.type as "addition" | "deletion"] ?? { userSelect: "none", color: "var(--text-muted, #666)" }}>
+        <span style={SIGN_STYLES[line.type as "addition" | "deletion"] ?? { userSelect: "none", color: "var(--text-muted)" }}>
           {signChar}
         </span>
       ) : (

@@ -76,15 +76,15 @@ function TabButton({
         padding: "4px 12px",
         fontSize: 12,
         fontFamily: "inherit",
-        background: active ? "var(--accent-color, #0078d4)" : "transparent",
-        color: active ? "#fff" : "var(--text-primary, #e0e0e0)",
+        background: active ? "var(--accent)" : "transparent",
+        color: active ? "#fff" : "var(--text-primary)",
         border: "none",
         borderRadius: 4,
         cursor: "pointer",
         transition: "background 150ms",
       }}
       onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--bg-hover, #2a2a2a)";
+        if (!active) e.currentTarget.style.background = "var(--bg-hover)";
       }}
       onMouseLeave={(e) => {
         if (!active) e.currentTarget.style.background = "transparent";
@@ -178,7 +178,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           alignItems: "center",
           gap: 4,
           padding: "4px 8px",
-          borderBottom: "1px solid var(--border-color, #333)",
+          borderBottom: "1px solid var(--border)",
           flexShrink: 0,
         }}
       >
@@ -200,8 +200,8 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
             padding: "2px 8px",
             fontSize: 11,
             background: "transparent",
-            color: "var(--text-muted, #888)",
-            border: "1px solid var(--border-color, #333)",
+            color: "var(--text-muted)",
+            border: "1px solid var(--border)",
             borderRadius: 4,
             cursor: "pointer",
           }}
@@ -216,7 +216,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           <div
             style={{
               padding: 16,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               fontSize: 13,
               position: "absolute",
               inset: 0,
@@ -233,7 +233,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           <div
             style={{
               padding: 16,
-              color: "var(--error, #f48771)",
+              color: "var(--danger)",
               fontSize: 13,
             }}
           >
@@ -245,7 +245,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           <div
             style={{
               padding: 16,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               fontSize: 13,
               textAlign: "center",
             }}
@@ -284,13 +284,13 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
                         height: 20,
                         width: "100%",
                         background: "rgba(56, 132, 255, 0.08)",
-                        color: "var(--text-muted, #888)",
+                        color: "var(--text-muted)",
                         fontWeight: 600,
                         fontSize: 12,
                         display: "flex",
                         alignItems: "center",
                         paddingLeft: 12,
-                        borderBottom: "1px solid var(--border-color, #333)",
+                        borderBottom: "1px solid var(--border)",
                       }}
                     >
                       {item.filePath}
@@ -304,7 +304,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
                 const isHunkHeader = raw.startsWith("@@");
 
                 let bg = "transparent";
-                let signColor = "var(--text-muted, #666)";
+                let signColor = "var(--text-muted)";
                 let typeClass = "context";
 
                 if (isAddition) {
@@ -367,8 +367,8 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
         style={{
           padding: "2px 8px",
           fontSize: 11,
-          color: "var(--text-muted, #888)",
-          borderTop: "1px solid var(--border-color, #333)",
+          color: "var(--text-muted)",
+          borderTop: "1px solid var(--border)",
           display: "flex",
           justifyContent: "space-between",
           flexShrink: 0,

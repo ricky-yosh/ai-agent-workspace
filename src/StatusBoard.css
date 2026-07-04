@@ -46,11 +46,11 @@
 }
 
 .status-dot-running {
-  background: var(--dot-running);
+  background: var(--status-running);
 }
 
 .status-dot-missing {
-  background: var(--dot-missing);
+  background: var(--status-missing);
 }
 
 /* ── Info column inside the card ── */
@@ -286,7 +286,7 @@
 
 .snippet-copy-btn.failed {
   background: rgba(211, 47, 47, 0.15);
-  color: var(--danger-color);
+  color: var(--danger);
 }
 
 /* ── "Open a folder" CTA ── */
@@ -304,7 +304,7 @@
   padding: 10px 20px;
   border: none;
   border-radius: var(--radius-control);
-  background: var(--accent-color);
+  background: var(--accent);
   color: #fff;
   font-size: 13px;
   font-weight: 600;

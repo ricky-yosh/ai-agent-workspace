@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { getHighlighter } from "../shikiSingleton";
+import { getHighlighter, getShikiTheme } from "../shikiSingleton";
 import { fileContentCache, fnv1a } from "../cache";
 import {
   languageForFile,
@@ -94,7 +94,7 @@ export function CodeRenderer({ filePath, content, size }: CodeRendererProps) {
 
         const html = highlighter.codeToHtml(content, {
           lang: language!,
-          theme: "github-light",
+          theme: getShikiTheme(),
         });
 
         if (cancelled || thisRequest !== requestIdRef.current) return;

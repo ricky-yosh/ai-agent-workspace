@@ -30,12 +30,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
 const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
   h1: ({ children }) => (
-    <h1 style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px", borderBottom: "1px solid var(--border, #3c3c3c)", paddingBottom: 6 }}>
+    <h1 style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px", borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px", borderBottom: "1px solid var(--border, #3c3c3c)", paddingBottom: 4 }}>
+    <h2 style={{ fontSize: 17, fontWeight: 600, margin: "14px 0 6px", borderBottom: "1px solid var(--border)", paddingBottom: 4 }}>
       {children}
     </h2>
   ),
@@ -49,7 +49,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     <h5 style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px" }}>{children}</h5>
   ),
   h6: ({ children }) => (
-    <h6 style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px", color: "var(--text-muted, #888)" }}>{children}</h6>
+    <h6 style={{ fontSize: 13, fontWeight: 600, margin: "8px 0 4px", color: "var(--text-muted)" }}>{children}</h6>
   ),
   p: ({ children }) => <p style={{ margin: "6px 0", lineHeight: 1.6 }}>{children}</p>,
   a: ({ children, href }) => (
@@ -58,7 +58,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     </a>
   ),
   blockquote: ({ children }) => (
-    <blockquote style={{ borderLeft: "3px solid var(--border, #3c3c3c)", margin: "6px 0", paddingLeft: 12, color: "var(--text-muted, #888)" }}>
+    <blockquote style={{ borderLeft: "3px solid var(--border)", margin: "6px 0", paddingLeft: 12, color: "var(--text-muted)" }}>
       {children}
     </blockquote>
   ),
@@ -66,7 +66,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
   ol: ({ children }) => <ol style={{ paddingLeft: 22, margin: "6px 0" }}>{children}</ol>,
   li: ({ children }) => <li style={{ margin: "2px 0", lineHeight: 1.5 }}>{children}</li>,
   hr: () => (
-    <hr style={{ border: "none", borderTop: "1px solid var(--border, #3c3c3c)", margin: "12px 0" }} />
+    <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
   ),
   table: ({ children }) => (
     <div style={{ overflowX: "auto", margin: "8px 0" }}>
@@ -75,12 +75,12 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
       </table>
     </div>
   ),
-  thead: ({ children }) => <thead style={{ borderBottom: "2px solid var(--border, #3c3c3c)" }}>{children}</thead>,
+  thead: ({ children }) => <thead style={{ borderBottom: "2px solid var(--border)" }}>{children}</thead>,
   th: ({ children }) => (
     <th style={{ textAlign: "left", padding: "6px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{children}</th>
   ),
   td: ({ children }) => (
-    <td style={{ padding: "6px 10px", borderTop: "1px solid var(--border, #3c3c3c)" }}>{children}</td>
+    <td style={{ padding: "6px 10px", borderTop: "1px solid var(--border)" }}>{children}</td>
   ),
   code: ({ className, children, ...rest }: React.HTMLAttributes<HTMLElement> & { className?: string; children?: React.ReactNode }) => {
     const isBlock = Boolean(className?.includes("language-"));
@@ -136,7 +136,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     />
   ),
   del: ({ children }) => (
-    <del style={{ color: "var(--text-muted, #888)" }}>{children}</del>
+    <del style={{ color: "var(--text-muted)" }}>{children}</del>
   ),
 };
 

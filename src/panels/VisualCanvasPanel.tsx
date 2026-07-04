@@ -824,7 +824,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   if (loading && canvases.length === 0) {
     return (
-      <div style={{ padding: 16, color: "var(--text-muted, #888)", fontSize: 13 }}>
+      <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
         Loading canvases...
       </div>
     );
@@ -832,7 +832,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   if (error) {
     return (
-      <div style={{ padding: 16, color: "var(--error, #f48771)", fontSize: 13 }}>
+      <div style={{ padding: 16, color: "var(--danger)", fontSize: 13 }}>
         {error}
       </div>
     );
@@ -844,7 +844,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       return (
         <div style={{
           padding: 16,
-          color: "var(--text-muted, #888)",
+          color: "var(--text-muted)",
           fontSize: 13,
           display: "flex",
           flexDirection: "column",
@@ -878,8 +878,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                 padding: "8px 12px",
                 marginBottom: 4,
                 borderRadius: 6,
-                border: "1px solid var(--border, #3c3c3c)",
-                background: "var(--bg-secondary, #222)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-secondary)",
                 cursor: "pointer",
               }}
               onClick={() => setSelectedCanvasId(canvas.id)}
@@ -887,7 +887,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               <div style={{ fontWeight: 500, fontSize: 13 }}>
                 {canvas.name}
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted, #888)", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                 Created {new Date(canvas.created_at).toLocaleDateString()}
               </div>
             </motion.div>
@@ -933,14 +933,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           --canvas-edge-dash-array: 6 6;
           --canvas-edge-dash-speed: .68s;
 
-          /* Colors */
-          --canvas-bg: #0b090f;
-          --canvas-node-bg: #1f1828;
-          --canvas-node-border: #7c3aed55;
-          --canvas-node-selected: #7c3aed;
-          --canvas-edge-color: #7c3aed;
-          --canvas-accent: #9b6cb9;
-          --canvas-accent-bright: #c6a7d8;
+          /* Colors are now provided by the theme system via applyTheme().
+             Canvas-specific tokens (--canvas-*) are set in the theme files. */
 
           /* Radii */
           --canvas-radius-node: 10px;
@@ -1080,7 +1074,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       {/* Header with back button */}
       <div style={{
         padding: "8px 12px",
-        borderBottom: "1px solid var(--border, #3c3c3c)",
+        borderBottom: "1px solid var(--border)",
         display: "flex",
         alignItems: "center",
         gap: 8,
@@ -1090,7 +1084,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           style={{
             background: "none",
             border: "none",
-            color: "var(--text-muted, #888)",
+            color: "var(--text-muted)",
             cursor: "pointer",
             padding: 4,
             fontSize: 14,
@@ -1102,7 +1096,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           {selectedCanvas?.name || "Canvas"}
         </div>
         {/* Zoom indicator and reset */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted, #888)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
           <span>{Math.round(zoom * 100)}%</span>
           <button
             onClick={() => {
@@ -1122,9 +1116,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             }}
             style={{
               background: "none",
-              border: "1px solid var(--border, #3c3c3c)",
+              border: "1px solid var(--border)",
               borderRadius: 4,
-              color: "var(--text-muted, #888)",
+              color: "var(--text-muted)",
               cursor: "pointer",
               padding: "2px 6px",
               fontSize: 11,
@@ -1139,13 +1133,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       {uniqueTags.length > 0 && (
         <div style={{
           padding: "6px 12px",
-          borderBottom: "1px solid var(--border, #3c3c3c)",
+          borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
           gap: 6,
           flexWrap: "wrap",
         }}>
-          <span style={{ fontSize: 11, color: "var(--text-muted, #888)", marginRight: 4 }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>
             Filter:
           </span>
           <button
@@ -1153,9 +1147,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             style={{
               padding: "2px 8px",
               borderRadius: 10,
-              border: "1px solid var(--border, #3c3c3c)",
+              border: "1px solid var(--border)",
               background: !activeTagFilter ? "var(--canvas-accent)" : "transparent",
-              color: !activeTagFilter ? "#fff" : "var(--text-muted, #888)",
+              color: !activeTagFilter ? "#fff" : "var(--text-muted)",
               fontSize: 11,
               cursor: "pointer",
             }}
@@ -1177,9 +1171,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               style={{
                 padding: "2px 8px",
                 borderRadius: 10,
-                border: "1px solid var(--border, #3c3c3c)",
+                border: "1px solid var(--border)",
                 background: activeTagFilter === tag ? "var(--canvas-accent)" : "transparent",
-                color: activeTagFilter === tag ? "#fff" : "var(--text-muted, #888)",
+                color: activeTagFilter === tag ? "#fff" : "var(--text-muted)",
                 fontSize: 11,
                 cursor: "pointer",
               }}
@@ -1261,7 +1255,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                 {nodeTags.length > 3 && (
                   <span style={{
                     fontSize: 9,
-                    color: "var(--text-muted, #888)",
+                    color: "var(--text-muted)",
                     alignSelf: "center",
                   }}>
                     +{nodeTags.length - 3}
@@ -1304,9 +1298,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               height={60}
               rx={10}
               ry={10}
-              fill="var(--canvas-node-bg, #1f1828)"
+              fill="var(--canvas-node-bg)"
               fillOpacity={0.5}
-              stroke="var(--canvas-accent, #9b6cb9)"
+              stroke="var(--canvas-accent)"
               strokeWidth={2}
               strokeDasharray="6 3"
             />
@@ -1314,7 +1308,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               x={100}
               y={35}
               textAnchor="middle"
-              fill="var(--canvas-accent-bright, #c6a7d8)"
+              fill="var(--canvas-accent-bright)"
               fillOpacity={0.7}
               fontSize={14}
             >
@@ -1330,9 +1324,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               height={getGroupGhostSize().height}
               rx={12}
               ry={12}
-              fill="var(--canvas-accent, #9b6cb9)"
+              fill="var(--canvas-accent)"
               fillOpacity={0.1}
-              stroke="var(--canvas-accent, #9b6cb9)"
+              stroke="var(--canvas-accent)"
               strokeWidth={1.5}
               strokeDasharray="6 3"
             />
@@ -1340,7 +1334,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               x={getGroupGhostSize().width / 2}
               y={getGroupGhostSize().height / 2 + 5}
               textAnchor="middle"
-              fill="var(--canvas-accent-bright, #c6a7d8)"
+              fill="var(--canvas-accent-bright)"
               fillOpacity={0.7}
               fontSize={14}
             >
@@ -1391,9 +1385,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             style={{
               padding: "4px 8px",
               borderRadius: 6,
-              border: "1px solid var(--border, #3c3c3c)",
-              background: undoStack.length > 0 ? "var(--bg-secondary, #222)" : "var(--bg-primary, #1a1a1a)",
-              color: undoStack.length > 0 ? "var(--text-primary, #fff)" : "var(--text-muted, #888)",
+              border: "1px solid var(--border)",
+              background: undoStack.length > 0 ? "var(--bg-secondary)" : "var(--bg-primary)",
+              color: undoStack.length > 0 ? "var(--text-primary)" : "var(--text-muted)",
               fontSize: 11,
               cursor: undoStack.length > 0 ? "pointer" : "not-allowed",
               display: "flex",
@@ -1413,9 +1407,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             style={{
               padding: "4px 8px",
               borderRadius: 6,
-              border: "1px solid var(--border, #3c3c3c)",
-              background: redoStack.length > 0 ? "var(--bg-secondary, #222)" : "var(--bg-primary, #1a1a1a)",
-              color: redoStack.length > 0 ? "var(--text-primary, #fff)" : "var(--text-muted, #888)",
+              border: "1px solid var(--border)",
+              background: redoStack.length > 0 ? "var(--bg-secondary)" : "var(--bg-primary)",
+              color: redoStack.length > 0 ? "var(--text-primary)" : "var(--text-muted)",
               fontSize: 11,
               cursor: redoStack.length > 0 ? "pointer" : "not-allowed",
               display: "flex",
@@ -1444,9 +1438,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               transform: "translateX(-50%)",
               padding: "6px 14px",
               borderRadius: 8,
-              background: "var(--bg-elevated, #333)",
-              border: "1px solid var(--border, #3c3c3c)",
-              color: "var(--text-primary, #fff)",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              color: "var(--text-primary)",
               fontSize: 12,
               fontWeight: 500,
               boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",

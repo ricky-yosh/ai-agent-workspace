@@ -23,7 +23,7 @@ function labelStyle(label: string): { background: string; color: string } {
     case "wontfix":
       return { background: "#2e1b1b", color: "#f87171" };
     default:
-      return { background: "var(--bg-tertiary, #333)", color: "var(--text-secondary, #aaa)" };
+      return { background: "var(--bg-elevated)", color: "var(--text-secondary)" };
   }
 }
 
@@ -407,7 +407,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   // focused row and steal keyboard focus.
   if (loading && issues.length === 0) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted, #888)", fontSize: 13 }}>
+      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
         Loading issues…
       </div>
     );
@@ -415,7 +415,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (error) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--error, #f48771)", fontSize: 13 }}>
+      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--danger)", fontSize: 13 }}>
         {error}
       </div>
     );
@@ -423,7 +423,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (issues.length === 0) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted, #888)", fontSize: 13 }}>
+      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
         No issues yet. Ask the AI to create one.
       </div>
     );
@@ -557,7 +557,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ color: "var(--text-muted, #888)", fontWeight: 600, minWidth: 48, fontVariantNumeric: "tabular-nums" }}>
+                      <span style={{ color: "var(--text-muted)", fontWeight: 600, minWidth: 48, fontVariantNumeric: "tabular-nums" }}>
                         #{issue.number}
                       </span>
                       <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -567,8 +567,8 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                         <span
                           style={{
                             fontSize: 11,
-                            color: "var(--text-muted, #888)",
-                            background: "var(--bg-tertiary, #333)",
+                            color: "var(--text-muted)",
+                            background: "var(--bg-elevated)",
                             borderRadius: 4,
                             padding: "1px 5px",
                             fontVariantNumeric: "tabular-nums",
@@ -632,7 +632,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                             </pre>
                           ),
                           blockquote: ({ children }) => (
-                            <blockquote style={{ borderLeft: "3px solid var(--border, #3c3c3c)", margin: 0, paddingLeft: 10, color: "var(--text-muted, #888)" }}>
+                            <blockquote style={{ borderLeft: "3px solid var(--border)", margin: 0, paddingLeft: 10, color: "var(--text-muted)" }}>
                               {children}
                             </blockquote>
                           ),

@@ -16,6 +16,7 @@ import { safeInvoke } from "./safeInvoke";
 import { useTerminalCache } from "./providers/TerminalCacheProvider";
 import { useWebGLPool } from "./providers/WebGLPoolProvider";
 import type { TerminalCacheManager } from "./providers/TerminalCacheProvider";
+import { TOKENS } from "./themes";
 
 interface CachedTerminal {
   terminal: Terminal;
@@ -97,12 +98,16 @@ function useXtermTerminal(
         // fastScrollModifier exists at runtime but is missing from v6's bundled
         // typings; narrow the cast rather than widening the whole options object.
         ...({ fastScrollModifier: "alt" } as Partial<ITerminalOptions>),
-        theme: {
-          background: "#1e1e1e",
-          foreground: "#cccccc",
-          cursor: "#cccccc",
-          selectionBackground: "#264f78",
-        },
+        theme: (() => {
+          const root = document.documentElement;
+          const cs = getComputedStyle(root);
+          return {
+            background: cs.getPropertyValue(TOKENS.TERM_BG).trim() || "#1e1e1e",
+            foreground: cs.getPropertyValue(TOKENS.TERM_FG).trim() || "#cccccc",
+            cursor: cs.getPropertyValue(TOKENS.TERM_CURSOR).trim() || "#cccccc",
+            selectionBackground: cs.getPropertyValue(TOKENS.TERM_SELECTION).trim() || "#264f78",
+          };
+        })(),
       });
 
       // Allow host-level keyboard shortcuts (Cmd+N, Cmd+W, etc.) to reach the
@@ -492,7 +497,7 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
             alignItems: "center",
             justifyContent: "center",
             background: "rgba(30, 30, 30, 0.9)",
-            color: "var(--text-muted, #888)",
+            color: "var(--text-muted)",
             fontSize: 13,
             fontFamily: "inherit",
             zIndex: 10,
@@ -510,7 +515,7 @@ function TerminalPanel({ panelType: _panelType }: PanelProps) {
             alignItems: "center",
             justifyContent: "center",
             background: "rgba(30, 30, 30, 0.9)",
-            color: "var(--text-muted, #888)",
+            color: "var(--text-muted)",
             fontSize: 13,
             fontFamily: "inherit",
             zIndex: 10,

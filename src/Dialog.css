@@ -29,7 +29,7 @@
   padding: 24px;
   min-width: 360px;
   max-width: 440px;
-  box-shadow: 0 0 0 1px var(--border-color), 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0, 0, 0, 0.4);
   will-change: transform, opacity;
   position: relative;
   overflow: hidden;
@@ -95,7 +95,7 @@
 .dialog-input {
   padding: 8px 10px;
   background: var(--bg-input);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   color: var(--text-primary);
   font-size: 13px;
@@ -104,7 +104,7 @@
 }
 
 .dialog-input:focus {
-  border-color: var(--accent-color);
+  border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.18);
 }
 
@@ -122,7 +122,7 @@
   min-height: 140px;
   padding: 20px 16px;
   background: var(--bg-primary);
-  border: 1.5px dashed var(--border-color);
+  border: 1.5px dashed var(--border);
   border-radius: 6px;
   color: var(--text-muted);
   font-size: 13px;
@@ -140,12 +140,12 @@
 
 .dialog-dropzone:focus-visible {
   outline: none;
-  border-color: var(--accent-color);
+  border-color: var(--accent);
 }
 
 .dialog-dropzone.drag-over {
   border-style: solid;
-  border-color: var(--accent-color);
+  border-color: var(--accent);
   background: rgba(45, 140, 255, 0.08);
   color: var(--text-primary);
 }
@@ -168,7 +168,7 @@
 
 .dialog-dropzone.drag-over .dialog-dropzone-icon,
 .dialog-dropzone.has-value .dialog-dropzone-icon {
-  color: var(--accent-color);
+  color: var(--accent);
 }
 
 .dialog-dropzone-title {
@@ -210,7 +210,7 @@
 
 .dialog-btn {
   padding: 6px 16px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   font-size: 13px;
   cursor: pointer;
@@ -229,13 +229,13 @@
 }
 
 .dialog-btn-create {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
 }
 
 .dialog-btn-create:hover {
-  background: var(--accent-color-hover);
+  background: var(--accent-hover);
 }
 
 .dialog-btn-create:active:not(:disabled) {
@@ -249,23 +249,23 @@
 }
 
 .dialog-btn-delete {
-  color: var(--danger-color);
-  border-color: var(--danger-color);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .dialog-btn-delete:hover {
-  background: var(--danger-color);
+  background: var(--danger);
   color: white;
 }
 
 .dialog-btn-primary {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
 }
 
 .dialog-btn-primary:hover {
-  background: var(--accent-color-hover);
+  background: var(--accent-hover);
 }
 
 .dialog-confirm-text {
