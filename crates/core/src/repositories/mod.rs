@@ -9,6 +9,7 @@ pub mod canvas_edge_repository;
 pub mod canvas_group_repository;
 pub mod canvas_tag_repository;
 pub mod canvas_view_state_repository;
+pub mod c4_diagram_repository;
 pub mod timestamps;
 #[cfg(test)]
 pub mod test_helpers;
@@ -26,3 +27,4 @@ pub use canvas_edge_repository::CanvasEdgeRepository;
 pub use canvas_group_repository::CanvasGroupRepository;
 pub use canvas_tag_repository::CanvasTagRepository;
 pub use canvas_view_state_repository::CanvasViewStateRepository;
+pub use c4_diagram_repository::C4DiagramRepository;

@@ -250,4 +250,22 @@ pub enum Command {
         offset_y: f64,
         zoom: f64,
     },
+    C4DiagramCreate {
+        repo_path: String,
+        name: String,
+        diagram_json: String,
+    },
+    C4DiagramList {
+        repo_path: String,
+    },
+    C4DiagramGet {
+        id: String,
+    },
+    C4DiagramDelete {
+        id: String,
+    },
+    C4DiagramRename {
+        id: String,
+        name: String,
+    },
 }

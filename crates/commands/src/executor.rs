@@ -637,6 +637,38 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasViewState(state)))
         }
+        Command::C4DiagramCreate { repo_path, name, diagram_json } => {
+            let diagrams = state.db.c4_diagrams(&conn);
+            let diagram = diagrams.create(&repo_path, &name, &diagram_json)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::C4Diagram(diagram), DomainEvent::C4DiagramsChanged { repo_path }))
+        }
+        Command::C4DiagramList { repo_path } => {
+            let diagrams = state.db.c4_diagrams(&conn);
+            let list = diagrams.list_by_repo_path(&repo_path)?;
+            Ok(ExecutionOutcome::none(CommandResult::C4Diagrams(list)))
+        }
+        Command::C4DiagramGet { id } => {
+            let diagrams = state.db.c4_diagrams(&conn);
+            let diagram = diagrams.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("c4_diagram", &id, e))?;
+            Ok(ExecutionOutcome::none(CommandResult::C4Diagram(diagram)))
+        }
+        Command::C4DiagramDelete { id } => {
+            let diagrams = state.db.c4_diagrams(&conn);
+            let diagram = diagrams.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("c4_diagram", &id, e))?;
+            let repo_path = diagram.repo_path.clone();
+            diagrams.delete(&id)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::C4DiagramsChanged { repo_path }))
+        }
+        Command::C4DiagramRename { id, name } => {
+            let diagrams = state.db.c4_diagrams(&conn);
+            let existing = diagrams.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("c4_diagram", &id, e))?;
+            let repo_path = existing.repo_path.clone();
+            let diagram = diagrams.rename(&id, &name)?;
+            Ok(ExecutionOutcome::with_event(CommandResult::C4Diagram(diagram), DomainEvent::C4DiagramsChanged { repo_path }))
+        }
     }
 }
 

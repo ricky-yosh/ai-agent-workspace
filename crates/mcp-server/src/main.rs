@@ -50,6 +50,7 @@ async fn main() {
         on_canvas_edges_changed: None,
         on_canvas_groups_changed: None,
         on_canvas_tags_changed: None,
+        on_c4_diagrams_changed: None,
         on_open_file_request: None,
         on_show_diff_request: None,
         resolved_session_id,

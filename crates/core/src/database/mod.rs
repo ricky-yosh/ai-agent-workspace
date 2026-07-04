@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use thiserror::Error;
 
-use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasTagRepository, CanvasViewStateRepository};
+use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasTagRepository, CanvasViewStateRepository, C4DiagramRepository};
 use migrations::{migrate, MigrationError};
 
 #[derive(Debug, Error)]
@@ -153,6 +153,10 @@ impl Database {
     pub fn canvas_view_states<'a>(&self, conn: &'a Connection) -> CanvasViewStateRepository<'a> {
         CanvasViewStateRepository::new(&self.db_path, conn)
     }
+
+    pub fn c4_diagrams<'a>(&self, conn: &'a Connection) -> C4DiagramRepository<'a> {
+        C4DiagramRepository::new(&self.db_path, conn)
+    }
 }
 
 #[cfg(test)]
@@ -255,6 +259,13 @@ mod tests {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
         let _repo = db.canvas_view_states(&conn);
+    }
+
+    #[test]
+    fn test_c4_diagrams_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.c4_diagrams(&conn);
     }
 
     #[test]

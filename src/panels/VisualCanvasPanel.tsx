@@ -6,6 +6,12 @@ import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import {
+  CanvasRenderer,
+  type CanvasNode,
+  type CanvasEdge,
+  type CanvasGroup,
+} from "../components/CanvasRenderer";
 
 // Undo/Redo command types
 type CanvasCommand =
@@ -42,50 +48,12 @@ interface VisualCanvas {
   updated_at: string;
 }
 
-interface CanvasNode {
-  id: string;
-  canvas_id: string;
-  content: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CanvasEdge {
-  id: string;
-  canvas_id: string;
-  source_node_id: string;
-  target_node_id: string;
-  label: string | null;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CanvasGroup {
-  id: string;
-  canvas_id: string;
-  label: string;
-  node_ids_json: string;
-  metadata_json: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 interface CanvasTag {
   id: string;
   node_id: string;
   tag: string;
   created_at: string;
 }
-
-// Zoom limits
-const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 5.0;
 
 function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
@@ -103,11 +71,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const viewportRef = useRef<HTMLDivElement>(null);
-
-  // Pan state
-  const [isPanning, setIsPanning] = useState(false);
-  const panStartRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
 
   // Drag state
   const [dragState, setDragState] = useState<{
@@ -142,9 +105,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     targetX: number;
     targetY: number;
   } | null>(null);
-
-  // Space key held for panning
-  const isSpacePressedRef = useRef(false);
 
   // Alt key held for edge creation mode
   const isAltPressedRef = useRef(false);
@@ -586,76 +546,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }, 300); // 300ms debounce
   }, [selectedCanvasId]);
 
-  // Pan handlers
-  const handlePanStart = useCallback((e: React.MouseEvent) => {
-    // Only handle left mouse button
-    if (e.button !== 0) return;
-    // Check if the target is the viewport container itself or the SVG
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-node]')) return;
-
-    e.preventDefault();
-    setEditingNodeId(null);
-    setEditingValue("");
-
-    if (isSpacePressedRef.current) {
-      // Space + left drag = pan
-      setIsPanning(true);
-      panStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        offsetX,
-        offsetY,
-      };
-      // Clear selection on pan
-      setSelectedNodeIds(new Set());
-    } else {
-      // Left drag on empty canvas = box-select
-      const rect = viewportRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const svgX = e.clientX - rect.left;
-      const svgY = e.clientY - rect.top;
-      setBoxSelect({ startX: svgX, startY: svgY, endX: svgX, endY: svgY });
-    }
-  }, [offsetX, offsetY]);
-
-  const handlePanMove = useCallback((e: React.MouseEvent) => {
-    if (!isPanning || !panStartRef.current) return;
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-    const newOffsetX = panStartRef.current.offsetX + dx;
-    const newOffsetY = panStartRef.current.offsetY + dy;
-    setOffsetX(newOffsetX);
-    setOffsetY(newOffsetY);
-  }, [isPanning]);
-
-  const handlePanEnd = useCallback(() => {
-    if (isPanning) {
-      setIsPanning(false);
-      panStartRef.current = null;
-      saveViewState(offsetX, offsetY, zoom);
-    }
-  }, [isPanning, offsetX, offsetY, zoom, saveViewState]);
-
   // Box-select: update rubber band on mouse move
-  const handleBoxSelectMove = useCallback((e: React.MouseEvent) => {
+  const handleBoxSelectMove = useCallback((viewportX: number, viewportY: number) => {
     if (!boxSelect) return;
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const svgX = e.clientX - rect.left;
-    const svgY = e.clientY - rect.top;
-    setBoxSelect((prev) => prev ? { ...prev, endX: svgX, endY: svgY } : null);
+    setBoxSelect((prev) => prev ? { ...prev, endX: viewportX, endY: viewportY } : null);
   }, [boxSelect]);
 
   // Box-select: complete selection on mouse up
   const handleBoxSelectEnd = useCallback(() => {
     if (!boxSelect) return;
-
-    const viewportRect = viewportRef.current?.getBoundingClientRect();
-    if (!viewportRect) {
-      setBoxSelect(null);
-      return;
-    }
 
     // Convert box coordinates (viewport-relative) to canvas coordinates
     const left = (Math.min(boxSelect.startX, boxSelect.endX) - offsetX) / zoom;
@@ -686,36 +585,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     justCompletedBoxSelectRef.current = true;
     setTimeout(() => { justCompletedBoxSelectRef.current = false; }, 50);
   }, [boxSelect, offsetX, offsetY, zoom, nodes]);
-
-  // Zoom handler (mouse wheel)
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // Clear edit mode and selection when zooming
-    setEditingNodeId(null);
-    setEditingValue("");
-    setSelectedNodeIds(new Set());
-
-    // Mouse position relative to viewport
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    // Calculate new zoom level
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * delta));
-
-    // Adjust offset so the point under the cursor stays fixed
-    const scale = newZoom / zoom;
-    const newOffsetX = mouseX - (mouseX - offsetX) * scale;
-    const newOffsetY = mouseY - (mouseY - offsetY) * scale;
-
-    setZoom(newZoom);
-    setOffsetX(newOffsetX);
-    setOffsetY(newOffsetY);
-    saveViewState(newOffsetX, newOffsetY, newZoom);
-  }, [zoom, offsetX, offsetY, saveViewState]);
 
   // Load view state when canvas is selected
   useEffect(() => {
@@ -791,27 +660,14 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   }, []);
 
   // Update edge drag position
-  const handleEdgeDragMove = useCallback((e: React.MouseEvent) => {
+  const handleEdgeDragMove = useCallback((canvasX: number, canvasY: number) => {
     if (!edgeDragState) return;
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // Convert screen coordinates to canvas coordinates
-    const canvasX = (e.clientX - rect.left - offsetX) / zoom;
-    const canvasY = (e.clientY - rect.top - offsetY) / zoom;
     setEdgeDragState((prev) => prev ? { ...prev, targetX: canvasX, targetY: canvasY } : null);
-  }, [edgeDragState, offsetX, offsetY, zoom]);
+  }, [edgeDragState]);
 
   // Complete edge creation
-  const handleEdgeDragEnd = useCallback((e: React.MouseEvent) => {
+  const handleEdgeDragEnd = useCallback((canvasX: number, canvasY: number) => {
     if (!edgeDragState) return;
-    // Find if we dropped on a node
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) {
-      setEdgeDragState(null);
-      return;
-    }
-    const canvasX = (e.clientX - rect.left - offsetX) / zoom;
-    const canvasY = (e.clientY - rect.top - offsetY) / zoom;
 
     // Check if dropped on a node
     for (const node of nodes) {
@@ -840,18 +696,21 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       }
     }
     setEdgeDragState(null);
-  }, [edgeDragState, offsetX, offsetY, zoom, nodes, selectedCanvasId, showToast]);
+  }, [edgeDragState, nodes, selectedCanvasId, showToast]);
 
   // Handle mouse down on a node to start dragging or edge creation
   const handleNodeMouseDown = useCallback((
-    e: React.MouseEvent,
-    node: CanvasNode
+    nodeId: string,
+    e: React.MouseEvent
   ) => {
     e.stopPropagation();
     e.preventDefault();
 
     // Only start drag with left mouse button
     if (e.button !== 0) return;
+
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
 
     // Alt + left click starts edge creation
     if (e.altKey) {
@@ -883,30 +742,22 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   }, [selectedNodeIds, nodes, handleEdgeDragStart]);
 
   // Handle mouse move on canvas
-  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+  const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
     // Handle placement mode (ghost preview)
     if (placementMode) {
-      const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect) {
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-        setCursorCanvasPos({
-          x: (screenX - offsetX) / zoom,
-          y: (screenY - offsetY) / zoom,
-        });
-      }
+      setCursorCanvasPos({ x: canvasX, y: canvasY });
       return;
     }
 
     // Handle box-select rubber band
     if (boxSelect) {
-      handleBoxSelectMove(e);
+      handleBoxSelectMove(viewportX, viewportY);
       return;
     }
 
     // Handle edge drag
     if (edgeDragState) {
-      handleEdgeDragMove(e);
+      handleEdgeDragMove(canvasX, canvasY);
       return;
     }
 
@@ -945,10 +796,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       );
       updateNodePosition(dragState.nodeId, newX, newY);
     }
-  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode, offsetX, offsetY]);
+  }, [dragState, zoom, updateNodePosition, batchUpdatePositions, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode]);
 
   // Handle mouse up to end dragging
-  const handleMouseUp = useCallback((e?: React.MouseEvent) => {
+  const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
     if (dragThrottleRef.current) {
       clearTimeout(dragThrottleRef.current);
     }
@@ -957,8 +808,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
 
     // Complete edge drag if active
-    if (edgeDragState && e) {
-      handleEdgeDragEnd(e);
+    if (edgeDragState) {
+      handleEdgeDragEnd(canvasX, canvasY);
       return;
     }
 
@@ -1011,7 +862,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, edgeDragState, handleEdgeDragEnd]);
 
   // Handle node click to select
-  const handleNodeClick = useCallback((e: React.MouseEvent, nodeId: string) => {
+  const handleNodeClick = useCallback((nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (e.shiftKey) {
       // Shift+click: toggle this node in the selection
@@ -1031,14 +882,16 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   }, []);
 
   // Enter edit mode on double-click
-  const handleNodeDoubleClick = useCallback((e: React.MouseEvent, node: CanvasNode) => {
+  const handleNodeDoubleClick = useCallback((nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
     setEditingNodeId(node.id);
     setEditingValue(node.content);
     // Clear selection when entering edit mode
     setSelectedNodeIds(new Set());
-  }, []);
+  }, [nodes]);
 
   // Confirm edit: save to database if content changed and is non-empty
   const confirmEdit = useCallback(() => {
@@ -1200,24 +1053,16 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   }, [selectedNodeIds, nodes]);
 
   // Handle click on empty canvas to deselect and clear edit
-  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+  const handleCanvasClick = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
     // Don't clear selection if we just completed a box-select
     if (justCompletedBoxSelectRef.current) return;
 
     // If in placement mode, place the element at the click position
     if (placementMode) {
-      const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect) {
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-        const canvasX = (screenX - offsetX) / zoom;
-        const canvasY = (screenY - offsetY) / zoom;
-
-        if (placementMode.type === 'node') {
-          placeNodeAtCursor(canvasX, canvasY);
-        } else if (placementMode.type === 'group') {
-          placeGroupAtCursor(canvasX, canvasY);
-        }
+      if (placementMode.type === 'node') {
+        placeNodeAtCursor(canvasX, canvasY);
+      } else if (placementMode.type === 'group') {
+        placeGroupAtCursor(canvasX, canvasY);
       }
       return;
     }
@@ -1227,133 +1072,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     setEditingValue("");
     // Close context menu on any click
     setContextMenu(null);
-  }, [placementMode, offsetX, zoom, placeNodeAtCursor, placeGroupAtCursor]);
-
-  // Find the nearest edge to a canvas point, returning edge ID if within threshold
-  const findNearestEdge = useCallback((cx: number, cy: number, threshold: number = 10): string | null => {
-    let nearestId: string | null = null;
-    let nearestDist = Infinity;
-
-    for (const edge of edges) {
-      const sourceNode = nodes.find(n => n.id === edge.source_node_id);
-      const targetNode = nodes.find(n => n.id === edge.target_node_id);
-      if (!sourceNode || !targetNode) continue;
-
-      // Reproduce the same geometry used for rendering
-      const srcCx = sourceNode.x + sourceNode.width / 2;
-      const srcCy = sourceNode.y + sourceNode.height / 2;
-      const tgtCx = targetNode.x + targetNode.width / 2;
-      const tgtCy = targetNode.y + targetNode.height / 2;
-
-      const ddx = tgtCx - srcCx;
-      const ddy = tgtCy - srcCy;
-      const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-      if (dist === 0) continue;
-      const curvature = Math.min(dist * 0.2, 50);
-      const nx = -ddy / dist;
-      const ny = ddx / dist;
-      const cpX = (srcCx + tgtCx) / 2 + nx * curvature;
-      const cpY = (srcCy + tgtCy) / 2 + ny * curvature;
-
-      // Edge intersection with node boundaries
-      const getEdgePoint = (node: CanvasNode, tx: number, ty: number) => {
-        const ccx = node.x + node.width / 2;
-        const ccy = node.y + node.height / 2;
-        const edx = tx - ccx;
-        const edy = ty - ccy;
-        const angle = Math.atan2(edy, edx);
-        const hw = node.width / 2;
-        const hh = node.height / 2;
-        const tanAngle = Math.abs(Math.tan(angle));
-        let ix: number, iy: number;
-        if (tanAngle * hw <= hh) {
-          ix = edx > 0 ? hw : -hw;
-          iy = ix * Math.tan(angle);
-        } else {
-          iy = edy > 0 ? hh : -hh;
-          ix = iy / Math.tan(angle);
-        }
-        return { x: ccx + ix, y: ccy + iy };
-      };
-
-      const p0 = getEdgePoint(sourceNode, cpX, cpY);
-      const p2 = getEdgePoint(targetNode, cpX, cpY);
-      const p1 = { x: cpX, y: cpY };
-
-      // Sample the quadratic bezier at many t values and find min distance
-      const SAMPLES = 40;
-      for (let i = 0; i <= SAMPLES; i++) {
-        const t = i / SAMPLES;
-        const mt = 1 - t;
-        const bx = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x;
-        const by = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y;
-        const d = Math.sqrt((cx - bx) ** 2 + (cy - by) ** 2);
-        if (d < nearestDist) {
-          nearestDist = d;
-          nearestId = edge.id;
-        }
-      }
-    }
-
-    return nearestDist <= threshold ? nearestId : null;
-  }, [edges, nodes]);
-
-  // Right-click handler on empty canvas, node, or edge
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    // Convert screen coordinates to canvas coordinates
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-    const canvasX = (screenX - offsetX) / zoom;
-    const canvasY = (screenY - offsetY) / zoom;
-
-    // Check if the click landed on a node (in canvas coordinates)
-    for (const node of nodes) {
-      if (
-        canvasX >= node.x &&
-        canvasX <= node.x + node.width &&
-        canvasY >= node.y &&
-        canvasY <= node.y + node.height
-      ) {
-        // Click was on a node — show node context menu
-        setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, nodeId: node.id });
-        return;
-      }
-    }
-
-    // Check if the click landed near an edge
-    const edgeId = findNearestEdge(canvasX, canvasY, 10);
-    if (edgeId) {
-      setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, edgeId });
-      return;
-    }
-
-    // Check if click landed inside any group's bounding box
-    for (const group of groups) {
-      const nodeIds: string[] = JSON.parse(group.node_ids_json || "[]");
-      const memberNodes = nodes.filter((n) => nodeIds.includes(n.id));
-      if (memberNodes.length === 0) continue;
-
-      const padding = 20;
-      const minX = Math.min(...memberNodes.map((n) => n.x)) - padding;
-      const minY = Math.min(...memberNodes.map((n) => n.y)) - padding;
-      const maxX = Math.max(...memberNodes.map((n) => n.x + n.width)) + padding;
-      const maxY = Math.max(...memberNodes.map((n) => n.y + n.height)) + padding;
-
-      if (canvasX >= minX && canvasX <= maxX && canvasY >= minY && canvasY <= maxY) {
-        // Click was on a group — show group context menu
-        setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY, groupId: group.id });
-        return;
-      }
-    }
-
-    // Empty space — show canvas context menu
-    setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
-  }, [offsetX, offsetY, zoom, nodes, groups, findNearestEdge]);
+  }, [placementMode, placeNodeAtCursor, placeGroupAtCursor]);
 
   // Add a group at a specific canvas position (enters placement mode)
   const handleAddGroupAtPosition = useCallback((cx: number, cy: number) => {
@@ -1625,14 +1344,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         setEditingValue("");
       }
 
-      if (e.key === " " && !e.repeat) {
-        // Space key for panning - prevent scroll
-        if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
-          e.preventDefault();
-          isSpacePressedRef.current = true;
-        }
-      }
-
       if (e.key === "Alt") {
         isAltPressedRef.current = true;
         setIsAltPressed(true);
@@ -1640,9 +1351,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === " ") {
-        isSpacePressedRef.current = false;
-      }
       if (e.key === "Alt") {
         isAltPressedRef.current = false;
         setIsAltPressed(false);
@@ -1687,11 +1395,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       if (batchUpdatePositionsRef.current) {
         clearTimeout(batchUpdatePositionsRef.current);
       }
-      if (isPanning) {
-        setIsPanning(false);
-        panStartRef.current = null;
-        saveViewState(offsetX, offsetY, zoom);
-      }
       if (boxSelect) {
         handleBoxSelectEnd();
       }
@@ -1710,7 +1413,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         clearTimeout(batchUpdatePositionsRef.current);
       }
     };
-  }, [isPanning, offsetX, offsetY, zoom, saveViewState, boxSelect, handleBoxSelectEnd]);
+  }, [boxSelect, handleBoxSelectEnd]);
 
   useTauriEvent<{ session_id: string }>(
     "visual-canvases-changed",
@@ -2145,497 +1848,161 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         </div>
       )}
 
-      {/* SVG Canvas */}
-      <div
-        ref={viewportRef}
-        style={{
-          flex: 1,
-          overflow: "hidden",
-          position: "relative",
-          cursor: isPanning ? "grabbing" : isSpacePressedRef.current ? "grab" : dragState ? "grabbing" : "default",
+      {/* Canvas */}
+      <CanvasRenderer
+        nodes={filteredNodes}
+        edges={filteredEdges}
+        groups={groups}
+        mode="editable"
+        offsetX={offsetX}
+        offsetY={offsetY}
+        zoom={zoom}
+        onOffsetChange={(x, y) => {
+          setOffsetX(x);
+          setOffsetY(y);
+          saveViewState(x, y, zoom);
         }}
-        onMouseDown={handlePanStart}
-        onMouseMove={(e) => { handlePanMove(e); handleCanvasMouseMove(e); }}
-        onMouseUp={() => { handlePanEnd(); handleMouseUp(); }}
-        onMouseLeave={() => { handlePanEnd(); handleMouseUp(); }}
-        onWheel={handleWheel}
-        onContextMenu={handleContextMenu}
-      >
-        <svg
-          width="100%"
-          height="100%"
-          style={{
-            minWidth: 800,
-            minHeight: 600,
-            background: "var(--canvas-bg)",
-            overflow: "visible",
-          }}
-          onClick={handleCanvasClick}
-        >
-          {/* Transformed content group */}
-          <g transform={`translate(${offsetX}, ${offsetY}) scale(${zoom})`}>
-          {/* Grid pattern - moves with content via parent <g> transform */}
-          <defs>
-            <pattern
-              id="grid"
-              width="20"
-              height="20"
-              patternUnits="userSpaceOnUse"
+        onZoomChange={(z) => {
+          setZoom(z);
+          saveViewState(offsetX, offsetY, z);
+        }}
+        onNodeClick={handleNodeClick}
+        onNodeMouseDown={handleNodeMouseDown}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeHover={setHoveredNodeId}
+        onNodeContextMenu={(nodeId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, nodeId })}
+        onEdgeClick={() => {}}
+        onEdgeContextMenu={(edgeId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, edgeId })}
+        onGroupContextMenu={(groupId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, groupId })}
+        onCanvasClick={handleCanvasClick}
+        onCanvasMouseMove={handleCanvasMouseMove}
+        onCanvasMouseUp={handleMouseUp}
+        onCanvasContextMenu={(canvasX, canvasY, screenX, screenY) => setContextMenu({ x: screenX, y: screenY, canvasX, canvasY })}
+        selectedNodeIds={selectedNodeIds}
+        edgeDragSource={edgeDragState ? { nodeId: edgeDragState.sourceNodeId, x: edgeDragState.sourceX, y: edgeDragState.sourceY } : null}
+        edgeDragTarget={edgeDragState ? { x: edgeDragState.targetX, y: edgeDragState.targetY } : null}
+        newNodeIds={newlyCreatedNodeIds}
+        deletingNodeIds={deletingNodeIds}
+        tags={tags}
+        renderTags={(nodeId) => {
+          const nodeTags = tags.filter(t => t.node_id === nodeId);
+          if (nodeTags.length === 0) return null;
+          const node = filteredNodes.find(n => n.id === nodeId);
+          if (!node) return null;
+          return (
+            <foreignObject
+              x={node.x + 8}
+              y={node.y + node.height - 22}
+              width={node.width - 16}
+              height={18}
             >
-              <path
-                d="M 20 0 L 0 0 0 20"
-                fill="none"
-                stroke="var(--border, #3c3c3c)"
-                strokeWidth="0.5"
-                opacity="0.3"
-              />
-            </pattern>
-          </defs>
-          <rect x={-10000} y={-10000} width={20000} height={20000} fill="url(#grid)" />
-
-          {/* Edges */}
-          <AnimatePresence>
-            {filteredEdges.map((edge) => {
-              const sourceNode = nodes.find(n => n.id === edge.source_node_id);
-              const targetNode = nodes.find(n => n.id === edge.target_node_id);
-              if (!sourceNode || !targetNode) return null;
-
-              // Calculate center points of nodes
-              const sourceX = sourceNode.x + sourceNode.width / 2;
-              const sourceY = sourceNode.y + sourceNode.height / 2;
-              const targetX = targetNode.x + targetNode.width / 2;
-              const targetY = targetNode.y + targetNode.height / 2;
-
-              // Calculate control points for a curved path
-              const dx = targetX - sourceX;
-              const dy = targetY - sourceY;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              const curvature = Math.min(dist * 0.2, 50);
-
-              // Perpendicular offset for curve
-              const nx = -dy / dist;
-              const ny = dx / dist;
-              const cpX = (sourceX + targetX) / 2 + nx * curvature;
-              const cpY = (sourceY + targetY) / 2 + ny * curvature;
-
-              // Calculate edge intersection points with node boundaries
-              const getEdgePoint = (node: CanvasNode, targetX: number, targetY: number) => {
-                const cx = node.x + node.width / 2;
-                const cy = node.y + node.height / 2;
-                const dx = targetX - cx;
-                const dy = targetY - cy;
-                const angle = Math.atan2(dy, dx);
-                
-                // Calculate intersection with rectangle
-                const hw = node.width / 2;
-                const hh = node.height / 2;
-                const tanAngle = Math.abs(Math.tan(angle));
-                
-                let ix: number, iy: number;
-                if (tanAngle * hw <= hh) {
-                  // Intersects left or right side
-                  ix = dx > 0 ? hw : -hw;
-                  iy = ix * Math.tan(angle);
-                } else {
-                  // Intersects top or bottom
-                  iy = dy > 0 ? hh : -hh;
-                  ix = iy / Math.tan(angle);
-                }
-                
-                return { x: cx + ix, y: cy + iy };
-              };
-
-              const start = getEdgePoint(sourceNode, cpX, cpY);
-              const end = getEdgePoint(targetNode, cpX, cpY);
-
-              // Create curved path
-              const path = `M ${start.x} ${start.y} Q ${cpX} ${cpY} ${end.x} ${end.y}`;
-
-              // Calculate arrowhead
-              const arrowSize = 10;
-              const t = 0.98; // Point near the end
-              const arrowX = (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * cpX + t * t * end.x;
-              const arrowY = (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * cpY + t * t * end.y;
-              const arrowAngle = Math.atan2(end.y - arrowY, end.x - arrowX);
-
-              return (
-                <motion.g
-                  key={edge.id}
-                  initial={{ pathLength: 0, opacity: 0 }}
-                  animate={{ pathLength: 1, opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.26, ease: "linear" }}
-                >
-                  {/* Edge path */}
-                  <motion.path
-                    d={path}
-                    fill="none"
-                    stroke="var(--canvas-edge-color)"
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 0.42, ease: "easeOut" }}
-                  />
-                  {/* Arrowhead */}
-                  <motion.polygon
-                    points={`
-                      ${end.x},${end.y}
-                      ${end.x - arrowSize * Math.cos(arrowAngle - Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle - Math.PI / 6)}
-                      ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
-                    `}
-                    fill="var(--canvas-edge-color)"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
-                  />
-                  {/* Edge handles (start and end circles) */}
-                  <circle
-                    cx={start.x}
-                    cy={start.y}
-                    r={4}
-                    fill="var(--canvas-edge-color)"
-                    className="edge-handle"
-                  />
-                  <circle
-                    cx={end.x}
-                    cy={end.y}
-                    r={4}
-                    fill="var(--canvas-edge-color)"
-                    className="edge-handle"
-                  />
-                  {/* Label */}
-                  {edge.label && (
-                    <text
-                      x={cpX}
-                      y={cpY - 8}
-                      textAnchor="middle"
-                      fill="var(--text-muted, #888)"
-                      fontSize={12}
-                      fontFamily="var(--font-family, sans-serif)"
-                    >
-                      {edge.label}
-                    </text>
-                  )}
-                </motion.g>
-              );
-            })}
-          </AnimatePresence>
-
-          {/* Edge preview (being dragged to create new edge) */}
-          {edgeDragState && (
-            <line
-              x1={edgeDragState.sourceX}
-              y1={edgeDragState.sourceY}
-              x2={edgeDragState.targetX}
-              y2={edgeDragState.targetY}
-              stroke="var(--canvas-edge-color)"
+              <div
+                style={{
+                  display: "flex",
+                  gap: 4,
+                  flexWrap: "nowrap",
+                  overflow: "hidden",
+                }}
+              >
+                {nodeTags.slice(0, 3).map((t) => (
+                  <span
+                    key={t.id}
+                    className={`tag-pill${newlyAddedTagIds.has(t.id) ? " tag-pill-enter" : ""}`}
+                  >
+                    {t.tag}
+                  </span>
+                ))}
+                {nodeTags.length > 3 && (
+                  <span style={{
+                    fontSize: 9,
+                    color: "var(--text-muted, #888)",
+                    alignSelf: "center",
+                  }}>
+                    +{nodeTags.length - 3}
+                  </span>
+                )}
+              </div>
+            </foreignObject>
+          );
+        }}
+        renderNodeOverlay={(node) => {
+          if (!newlyCreatedNodeIds.has(node.id)) return null;
+          return (
+            <foreignObject
+              x={node.x}
+              y={node.y}
+              width={node.width}
+              height={node.height}
+              style={{ overflow: "visible", pointerEvents: "none" }}
+            >
+              <div className="node-shockwave" />
+            </foreignObject>
+          );
+        }}
+        hoveredNodeId={hoveredNodeId}
+        isAltPressed={isAltPressed}
+        draggedNodeId={draggedNodeId}
+        editingNodeId={editingNodeId}
+        editingValue={editingValue}
+        onEditingValueChange={setEditingValue}
+        onEditKeyDown={handleEditKeyDown}
+        onEditBlur={confirmEdit}
+        editInputRef={editInputRef}
+        boxSelect={boxSelect}
+      >
+        {/* Ghost preview for node placement */}
+        {placementMode && placementMode.type === 'node' && cursorCanvasPos && (
+          <g transform={`translate(${cursorCanvasPos.x - 100}, ${cursorCanvasPos.y - 30})`} className="node-ghost">
+            <rect
+              width={200}
+              height={60}
+              rx={10}
+              ry={10}
+              fill="var(--canvas-node-bg, #1f1828)"
+              fillOpacity={0.5}
+              stroke="var(--canvas-accent, #9b6cb9)"
               strokeWidth={2}
-              strokeLinecap="round"
-              className="edge-dragging"
-              pointerEvents="none"
+              strokeDasharray="6 3"
             />
-          )}
-
-          {/* Ghost preview for node placement */}
-          {placementMode && placementMode.type === 'node' && cursorCanvasPos && (
-            <g transform={`translate(${cursorCanvasPos.x - 100}, ${cursorCanvasPos.y - 30})`} className="node-ghost">
-              <rect
-                width={200}
-                height={60}
-                rx={10}
-                ry={10}
-                fill="var(--canvas-node-bg, #1f1828)"
-                fillOpacity={0.5}
-                stroke="var(--canvas-accent, #9b6cb9)"
-                strokeWidth={2}
-                strokeDasharray="6 3"
-              />
-              <text
-                x={100}
-                y={35}
-                textAnchor="middle"
-                fill="var(--canvas-accent-bright, #c6a7d8)"
-                fillOpacity={0.7}
-                fontSize={14}
-              >
-                Click to place
-              </text>
-            </g>
-          )}
-
-          {/* Ghost preview for group placement */}
-          {placementMode && placementMode.type === 'group' && cursorCanvasPos && (
-            <g transform={`translate(${cursorCanvasPos.x - getGroupGhostSize().width / 2}, ${cursorCanvasPos.y - getGroupGhostSize().height / 2})`} className="node-ghost">
-              <rect
-                width={getGroupGhostSize().width}
-                height={getGroupGhostSize().height}
-                rx={12}
-                ry={12}
-                fill="var(--canvas-accent, #9b6cb9)"
-                fillOpacity={0.1}
-                stroke="var(--canvas-accent, #9b6cb9)"
-                strokeWidth={1.5}
-                strokeDasharray="6 3"
-              />
-              <text
-                x={getGroupGhostSize().width / 2}
-                y={getGroupGhostSize().height / 2 + 5}
-                textAnchor="middle"
-                fill="var(--canvas-accent-bright, #c6a7d8)"
-                fillOpacity={0.7}
-                fontSize={14}
-              >
-                Click to place group
-              </text>
-            </g>
-          )}
-
-          {/* Groups - render behind nodes */}
-          <AnimatePresence>
-            {groups.map((group) => {
-              const nodeIds: string[] = JSON.parse(group.node_ids_json || "[]");
-              const memberNodes = nodes.filter((n) => nodeIds.includes(n.id));
-              if (memberNodes.length === 0) return null;
-
-              // Calculate bounding box of member nodes
-              const padding = 20;
-              const minX = Math.min(...memberNodes.map((n) => n.x)) - padding;
-              const minY = Math.min(...memberNodes.map((n) => n.y)) - padding;
-              const maxX = Math.max(...memberNodes.map((n) => n.x + n.width)) + padding;
-              const maxY = Math.max(...memberNodes.map((n) => n.y + n.height)) + padding;
-              const groupWidth = maxX - minX;
-              const groupHeight = maxY - minY;
-
-              return (
-                <motion.g
-                  key={group.id}
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{
-                    duration: 0.26,
-                    ease: "linear",
-                  }}
-                >
-                  {/* Group frame */}
-                  <rect
-                    x={minX}
-                    y={minY}
-                    width={groupWidth}
-                    height={groupHeight}
-                    rx={12}
-                    ry={12}
-                    fill="var(--canvas-accent)"
-                    fillOpacity={0.06}
-                    stroke="var(--canvas-accent)"
-                    strokeWidth={1.5}
-                    strokeOpacity={0.3}
-                    strokeDasharray="6 3"
-                  />
-                  {/* Group label */}
-                  <text
-                    x={minX + 10}
-                    y={minY - 8}
-                    fill="var(--canvas-accent)"
-                    fontSize={12}
-                    fontFamily="var(--font-family, sans-serif)"
-                    fontWeight={500}
-                    opacity={0.8}
-                  >
-                    {group.label}
-                  </text>
-                </motion.g>
-              );
-            })}
-          </AnimatePresence>
-
-          {/* Nodes */}
-          <AnimatePresence>
-            {filteredNodes.map((node) => {
-              const isDragging = draggedNodeId === node.id;
-              const isSelected = selectedNodeIds.has(node.id);
-              const isDeleting = deletingNodeIds.has(node.id);
-              const isEditing = editingNodeId === node.id;
-              const nodeTags = tags.filter(t => t.node_id === node.id);
-              return (
-                <motion.g
-                  key={node.id}
-                  data-node="true"
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{
-                    scale: isDragging ? 1.05 : 1,
-                    opacity: isDeleting ? 0 : 1,
-                    zIndex: isDragging ? 1000 : 1,
-                  }}
-                  exit={{ opacity: 0 }}
-                  transition={isDeleting ? {
-                    duration: 0.26,
-                    ease: "linear",
-                  } : {
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 20,
-                    duration: 0.62,
-                  }}
-                  style={{
-                    cursor: isEditing ? "text" : isDragging ? "grabbing" : "grab",
-                    pointerEvents: isDragging || isDeleting ? "none" : "auto",
-                  }}
-                  onMouseDown={(e) => { if (!isEditing) handleNodeMouseDown(e, node); }}
-                  onClick={(e) => { if (!isEditing) handleNodeClick(e, node.id); }}
-                  onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
-                  onMouseEnter={() => setHoveredNodeId(node.id)}
-                  onMouseLeave={() => setHoveredNodeId(null)}
-                >
-                  {/* Node background */}
-                  <rect
-                    x={node.x}
-                    y={node.y}
-                    width={node.width}
-                    height={node.height}
-                    rx={8}
-                    ry={8}
-                    fill="var(--canvas-node-bg)"
-                    stroke={isDragging ? "var(--canvas-node-selected)" : isSelected ? "var(--canvas-node-selected)" : isEditing ? "var(--canvas-node-selected)" : "var(--canvas-node-border)"}
-                    strokeWidth={isDragging || isEditing ? 2 : isSelected ? 2 : 1}
-                    filter={isDragging ? "url(#drop-shadow)" : undefined}
-                    className={isAltPressed && hoveredNodeId === node.id ? "node-connection-source" : undefined}
-                  />
-                  {/* Node content */}
-                  <foreignObject
-                    x={node.x + 12}
-                    y={node.y + 12}
-                    width={node.width - 24}
-                    height={node.height - 24 - (nodeTags.length > 0 ? 20 : 0)}
-                  >
-                    {isEditing ? (
-                      <input
-                        ref={editInputRef}
-                        type="text"
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onKeyDown={handleEditKeyDown}
-                        onBlur={confirmEdit}
-                        autoFocus
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          border: "none",
-                          outline: "none",
-                          background: "transparent",
-                          color: "var(--text-primary, #fff)",
-                          fontSize: 13,
-                          lineHeight: 1.4,
-                          fontFamily: "var(--font-family, sans-serif)",
-                          padding: 0,
-                          margin: 0,
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          color: "var(--text-primary, #fff)",
-                          fontSize: 13,
-                          lineHeight: 1.4,
-                          overflow: "hidden",
-                          wordBreak: "break-word",
-                          userSelect: "none",
-                        }}
-                      >
-                        {node.content}
-                      </div>
-                    )}
-                  </foreignObject>
-                  {/* Tags */}
-                  {nodeTags.length > 0 && (
-                    <foreignObject
-                      x={node.x + 8}
-                      y={node.y + node.height - 22}
-                      width={node.width - 16}
-                      height={18}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 4,
-                          flexWrap: "nowrap",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {nodeTags.slice(0, 3).map((t) => (
-                          <span
-                            key={t.id}
-                            className={`tag-pill${newlyAddedTagIds.has(t.id) ? " tag-pill-enter" : ""}`}
-                          >
-                            {t.tag}
-                          </span>
-                        ))}
-                        {nodeTags.length > 3 && (
-                          <span style={{
-                            fontSize: 9,
-                            color: "var(--text-muted, #888)",
-                            alignSelf: "center",
-                          }}>
-                            +{nodeTags.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    </foreignObject>
-                  )}
-                  {/* Shockwave effect for newly created nodes */}
-                  {newlyCreatedNodeIds.has(node.id) && (
-                    <foreignObject
-                      x={node.x}
-                      y={node.y}
-                      width={node.width}
-                      height={node.height}
-                      style={{ overflow: "visible", pointerEvents: "none" }}
-                    >
-                      <div className="node-shockwave" />
-                    </foreignObject>
-                  )}
-                </motion.g>
-              );
-            })}
-          </AnimatePresence>
-
-          {/* Empty state */}
-          {filteredNodes.length === 0 && (
             <text
-              x="50%"
-              y="50%"
+              x={100}
+              y={35}
               textAnchor="middle"
-              dominantBaseline="middle"
-              fill="var(--text-muted, #888)"
+              fill="var(--canvas-accent-bright, #c6a7d8)"
+              fillOpacity={0.7}
               fontSize={14}
             >
-              No nodes yet. Ask the AI to create some.
+              Click to place
             </text>
-          )}
           </g>
-
-          {/* Box-select rubber band rectangle (rendered in screen coordinates) */}
-          {boxSelect && (
+        )}
+        {/* Ghost preview for group placement */}
+        {placementMode && placementMode.type === 'group' && cursorCanvasPos && (
+          <g transform={`translate(${cursorCanvasPos.x - getGroupGhostSize().width / 2}, ${cursorCanvasPos.y - getGroupGhostSize().height / 2})`} className="node-ghost">
             <rect
-              x={Math.min(boxSelect.startX, boxSelect.endX)}
-              y={Math.min(boxSelect.startY, boxSelect.endY)}
-              width={Math.abs(boxSelect.endX - boxSelect.startX)}
-              height={Math.abs(boxSelect.endY - boxSelect.startY)}
-              fill="var(--canvas-edge-color)"
-              fillOpacity={0.08}
-              stroke="var(--canvas-edge-color)"
-              strokeWidth={1}
-              strokeOpacity={0.5}
-              strokeDasharray="4 2"
-              rx={2}
-              ry={2}
-              pointerEvents="none"
+              width={getGroupGhostSize().width}
+              height={getGroupGhostSize().height}
+              rx={12}
+              ry={12}
+              fill="var(--canvas-accent, #9b6cb9)"
+              fillOpacity={0.1}
+              stroke="var(--canvas-accent, #9b6cb9)"
+              strokeWidth={1.5}
+              strokeDasharray="6 3"
             />
-          )}
-        </svg>
-      </div>
+            <text
+              x={getGroupGhostSize().width / 2}
+              y={getGroupGhostSize().height / 2 + 5}
+              textAnchor="middle"
+              fill="var(--canvas-accent-bright, #c6a7d8)"
+              fillOpacity={0.7}
+              fontSize={14}
+            >
+              Click to place group
+            </text>
+          </g>
+        )}
+      </CanvasRenderer>
 
       {/* Selection count indicator */}
       {selectedNodeIds.size > 1 && (

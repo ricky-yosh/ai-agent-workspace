@@ -5,7 +5,7 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, DomainEvent,
+    Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent,
 };
 
 mod pty;
@@ -50,6 +50,9 @@ fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
             }
             DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
                 let _ = app.emit("canvas-tags-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
+            }
+            DomainEvent::C4DiagramsChanged { repo_path } => {
+                let _ = app.emit("c4-diagrams-changed", serde_json::json!({ "repo_path": repo_path }));
             }
         }
     }
@@ -279,6 +282,11 @@ command_handler!(update_canvas_view_state, CanvasViewStateUpdate { canvas_id, of
 
 command_handler!(list_change_events, ChangeEventList { session_id }, ChangeEvents, Vec<ChangeEvent>, session_id: String);
 command_handler!(mark_change_event_processed, ChangeEventMarkProcessed { event_id }, Unit, (), event_id: String);
+
+// ── C4 Diagram commands ──────────────────────────────────────
+
+command_handler!(list_c4_diagrams, C4DiagramList { repo_path }, C4Diagrams, Vec<C4Diagram>, repo_path: String);
+command_handler!(get_c4_diagram, C4DiagramGet { id }, C4Diagram, C4Diagram, id: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -834,6 +842,8 @@ pub fn run() {
             update_canvas_view_state,
             list_change_events,
             mark_change_event_processed,
+            list_c4_diagrams,
+            get_c4_diagram,
             open_preferences,
             open_in_app,
             is_git_repo,

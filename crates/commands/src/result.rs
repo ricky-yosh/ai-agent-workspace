@@ -1,4 +1,4 @@
-use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, DomainEvent};
+use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent};
 
 #[derive(Debug)]
 pub enum CommandResult {
@@ -23,6 +23,8 @@ pub enum CommandResult {
     CanvasTag(CanvasTag),
     CanvasTags(Vec<CanvasTag>),
     CanvasViewState(CanvasViewState),
+    C4Diagram(C4Diagram),
+    C4Diagrams(Vec<C4Diagram>),
     Unit(()),
 }
 

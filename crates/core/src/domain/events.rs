@@ -11,4 +11,5 @@ pub enum DomainEvent {
     CanvasEdgesChanged { session_id: String, canvas_id: String },
     CanvasGroupsChanged { session_id: String, canvas_id: String },
     CanvasTagsChanged { session_id: String, canvas_id: String },
+    C4DiagramsChanged { repo_path: String },
 }

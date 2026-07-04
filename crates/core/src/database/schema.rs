@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 11;
+pub const SCHEMA_VERSION: i32 = 14;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -139,6 +139,52 @@ CREATE TABLE IF NOT EXISTS canvas_view_states (
 );
 
 CREATE INDEX IF NOT EXISTS idx_canvas_view_states_canvas_id ON canvas_view_states(canvas_id);
+
+CREATE TABLE IF NOT EXISTS c4_diagrams (
+    id TEXT PRIMARY KEY,
+    repo_path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    diagram_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_c4_diagrams_repo_path ON c4_diagrams(repo_path);
+
+CREATE TABLE IF NOT EXISTS code_index (
+    id TEXT PRIMARY KEY,
+    repo_path TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    symbol_name TEXT NOT NULL,
+    symbol_type TEXT NOT NULL,
+    line_number INTEGER NOT NULL,
+    end_line_number INTEGER,
+    content_fingerprint TEXT NOT NULL,
+    data_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_index_repo_path ON code_index(repo_path);
+CREATE INDEX IF NOT EXISTS idx_code_index_repo_file ON code_index(repo_path, file_path);
+CREATE INDEX IF NOT EXISTS idx_code_index_symbol ON code_index(repo_path, symbol_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_code_index_repo_file_symbol_line ON code_index(repo_path, file_path, symbol_name, line_number);
+
+CREATE TABLE IF NOT EXISTS code_vectors (
+    id TEXT PRIMARY KEY,
+    repo_path TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    symbol_name TEXT NOT NULL,
+    symbol_type TEXT NOT NULL,
+    line_start INTEGER NOT NULL,
+    line_end INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    embedding_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_path ON code_vectors(repo_path);
+CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_file ON code_vectors(repo_path, file_path);
 "#;
 
 #[cfg(test)]
@@ -181,8 +227,23 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_version_is_eleven() {
-        assert_eq!(SCHEMA_VERSION, 11);
+    fn test_create_tables_includes_c4_diagrams() {
+        assert!(CREATE_TABLES.contains("c4_diagrams"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_code_index() {
+        assert!(CREATE_TABLES.contains("code_index"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_code_vectors() {
+        assert!(CREATE_TABLES.contains("code_vectors"));
+    }
+
+    #[test]
+    fn test_schema_version_is_fourteen() {
+        assert_eq!(SCHEMA_VERSION, 14);
     }
 
     #[test]

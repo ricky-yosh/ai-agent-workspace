@@ -72,6 +72,7 @@ struct Callbacks<'a> {
     canvas_edges_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     canvas_groups_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     canvas_tags_cb: &'a Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    c4_diagrams_cb: &'a Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 impl<'a> Callbacks<'a> {
@@ -86,6 +87,7 @@ impl<'a> Callbacks<'a> {
             canvas_edges_cb: none_ref(),
             canvas_groups_cb: none_ref(),
             canvas_tags_cb: none_ref(),
+            c4_diagrams_cb: none_ref(),
         }
     }
 }
@@ -122,6 +124,9 @@ fn invoke_callbacks(
             }
             DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
                 if let Some(cb) = cbs.canvas_tags_cb { cb(session_id.clone(), canvas_id.clone()); }
+            }
+            DomainEvent::C4DiagramsChanged { repo_path } => {
+                if let Some(cb) = cbs.c4_diagrams_cb { cb(repo_path.clone()); }
             }
         }
     }
@@ -194,6 +199,7 @@ pub struct McpHandler {
     pub on_canvas_edges_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     pub on_canvas_groups_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     pub on_canvas_tags_changed: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub on_c4_diagrams_changed: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
     pub on_open_file_request: Option<std::sync::Arc<dyn Fn(String, String) + Send + Sync>>,
     pub on_show_diff_request: Option<std::sync::Arc<dyn Fn(String, Option<String>, bool) + Send + Sync>>,
     pub resolved_session_id: Option<String>,
@@ -271,7 +277,25 @@ impl McpHandler {
         group_delete,
         tag_add,
         tag_remove,
-        tag_list
+        tag_list,
+        c4_diagram_create,
+        c4_diagram_list,
+        c4_diagram_get,
+        c4_diagram_delete,
+        c4_diagram_rename,
+        keyword_search,
+        find_definition,
+        find_references,
+        find_callers,
+        find_callees,
+        list_code_files,
+        read_file_range,
+        generate_c4_diagram,
+        search_history,
+        blame,
+        get_owners,
+        vector_search,
+        reindex_vectors
     });
 
     #[tool(description = "List all sessions")]
@@ -669,6 +693,36 @@ impl McpHandler {
         }
     }
 
+    #[tool(description = "Create a C4 diagram for a repository")]
+    async fn c4_diagram_create(&self, #[tool(param)] repo_path: String, #[tool(param)] name: String, #[tool(param)] diagram_json: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::C4DiagramCreate { repo_path, name, diagram_json }, &state, C4Diagram, diagram, json, c4_diagrams_cb: self.on_c4_diagrams_changed)
+    }
+
+    #[tool(description = "List all C4 diagrams for a repository")]
+    async fn c4_diagram_list(&self, #[tool(param)] repo_path: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::C4DiagramList { repo_path }, &state, C4Diagrams, diagrams, json)
+    }
+
+    #[tool(description = "Get a C4 diagram by ID")]
+    async fn c4_diagram_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::C4DiagramGet { id }, &state, C4Diagram, diagram, json)
+    }
+
+    #[tool(description = "Delete a C4 diagram")]
+    async fn c4_diagram_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::C4DiagramDelete { id }, &state, Unit, _, empty, c4_diagrams_cb: self.on_c4_diagrams_changed)
+    }
+
+    #[tool(description = "Rename a C4 diagram")]
+    async fn c4_diagram_rename(&self, #[tool(param)] id: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = AppState { db: self.db.clone() };
+        run_mcp_command!(Command::C4DiagramRename { id, name }, &state, C4Diagram, diagram, json, c4_diagrams_cb: self.on_c4_diagrams_changed)
+    }
+
     #[tool(description = "Open a file in the File Viewer Panel. Emits an event that the frontend handles by opening the file in the last-focused viewer (or creating one if none exists).")]
     async fn open_file(&self, #[tool(param)] file_path: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
@@ -694,6 +748,623 @@ impl McpHandler {
             "staged": staged_val,
         }))?]))
     }
+
+    #[tool(description = "Search indexed code by keyword or regex pattern")]
+    async fn keyword_search(&self, #[tool(param)] query: String, #[tool(param)] regex: Option<bool>) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = if regex.unwrap_or(false) {
+            store.search_by_regex(&repo_path, &query)
+        } else {
+            store.search_by_keyword(&repo_path, &query)
+        }.map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Find the definition of a symbol by name in the indexed codebase")]
+    async fn find_definition(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = store.find_definition(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Find all references/usage of a symbol in the indexed codebase")]
+    async fn find_references(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = store.find_references(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Find all callers of a function (call sites)")]
+    async fn find_callers(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = store.find_callers(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Find what functions are called by a given function in a file (callees)")]
+    async fn find_callees(&self, #[tool(param)] file_path: String, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = store.find_callees(&repo_path, &file_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "List all indexed source files in the repository")]
+    async fn list_code_files(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let results = store.list_files(&repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Read a specific range of lines from a file in the working directory")]
+    async fn read_file_range(&self, #[tool(param)] file_path: String, #[tool(param)] start_line: i32, #[tool(param)] end_line: i32) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let full_path = std::path::PathBuf::from(&repo_path).join(&file_path);
+        let content = std::fs::read_to_string(&full_path).map_err(|e| rmcp::Error::internal_error(format!("Failed to read {}: {}", file_path, e), None))?;
+        let lines: Vec<&str> = content.lines().collect();
+        let start = (start_line - 1).max(0) as usize;
+        let end = (end_line as usize).min(lines.len());
+        if start >= lines.len() {
+            return Ok(CallToolResult::success(vec![Content::text("")]));
+        }
+        let slice: String = lines[start..end].join("\n");
+        Ok(CallToolResult::success(vec![Content::text(slice)]))
+    }
+
+    #[tool(description = "Generate a C4 architecture diagram from the code intelligence index. Returns structural data for the AI to interpret and label. Use c4_diagram_create to persist the result.")]
+    async fn generate_c4_diagram(
+        &self,
+        #[tool(param)] scope: Option<String>,
+        #[tool(param)] max_depth: Option<u32>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+        let depth = max_depth.unwrap_or(3).min(4).max(1);
+        let scope_ref = scope.as_deref();
+        let entries = store.list_all_entries(&repo_path, scope_ref).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        if entries.is_empty() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "No code index found for this repository. The index will be built automatically on first use. Please try again."
+            )]));
+        }
+        let result = build_c4_structure(&repo_path, scope_ref, depth, &entries);
+        Ok(CallToolResult::success(vec![Content::json(&result)?]))
+    }
+
+    #[tool(description = "Search git commit history by keyword, author, and date range")]
+    async fn search_history(
+        &self,
+        #[tool(param)] keyword: Option<String>,
+        #[tool(param)] author: Option<String>,
+        #[tool(param)] after: Option<String>,
+        #[tool(param)] before: Option<String>,
+        #[tool(param)] max_results: Option<u32>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
+        if !git_dir.exists() {
+            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
+        }
+        let max = max_results.unwrap_or(50);
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&repo_path)
+            .args(["log", "--format=%H|%an|%ae|%aI|%s"])
+            .arg(format!("--max-count={}", max));
+        if let Some(ref kw) = keyword {
+            cmd.arg(format!("--grep={}", kw));
+        }
+        if let Some(ref a) = author {
+            cmd.arg(format!("--author={}", a));
+        }
+        if let Some(ref af) = after {
+            cmd.arg(format!("--after={}", af));
+        }
+        if let Some(ref bf) = before {
+            cmd.arg(format!("--before={}", bf));
+        }
+        let output = cmd.output()
+            .map_err(|e| rmcp::Error::internal_error(format!("Failed to run git: {}", e), None))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(rmcp::Error::internal_error(format!("git log failed: {}", stderr.trim()), None));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let commits: Vec<serde_json::Value> = stdout.lines()
+            .filter(|line| !line.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(5, '|').collect();
+                if parts.len() < 5 { return None; }
+                Some(serde_json::json!({
+                    "hash": parts[0],
+                    "author_name": parts[1],
+                    "author_email": parts[2],
+                    "date": parts[3],
+                    "message": parts[4],
+                }))
+            })
+            .collect();
+        Ok(CallToolResult::success(vec![Content::json(&commits)?]))
+    }
+
+    #[tool(description = "Run git blame on a file to see per-line ownership")]
+    async fn blame(
+        &self,
+        #[tool(param)] file_path: String,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
+        if !git_dir.exists() {
+            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
+        }
+        let output = std::process::Command::new("git")
+            .arg("-C").arg(&repo_path)
+            .args(["blame", "--porcelain", &file_path])
+            .output()
+            .map_err(|e| rmcp::Error::internal_error(format!("Failed to run git: {}", e), None))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(rmcp::Error::internal_error(format!("git blame failed: {}", stderr.trim()), None));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        let mut current_hash = "";
+        let mut current_author = "";
+        let mut current_author_email = "";
+        let mut current_time = "";
+        let mut current_line = 0u32;
+        for line in stdout.lines() {
+            if line.starts_with('\t') {
+                if current_line > 0 {
+                    entries.push(serde_json::json!({
+                        "line_number": current_line,
+                        "author": current_author,
+                        "author_email": current_author_email,
+                        "commit_hash": current_hash,
+                        "date": current_time,
+                    }));
+                    current_line = 0;
+                }
+                continue;
+            }
+            if line.len() >= 40 && line.as_bytes()[40] == b' ' {
+                let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                if parts.len() >= 3 {
+                    current_hash = parts[0];
+                    if let Ok(n) = parts[1].parse::<u32>() {
+                        current_line = n;
+                    }
+                }
+                current_author = "";
+                current_author_email = "";
+                current_time = "";
+            } else if let Some(rest) = line.strip_prefix("author ") {
+                current_author = rest;
+            } else if let Some(rest) = line.strip_prefix("author-mail ") {
+                current_author_email = rest;
+            } else if let Some(rest) = line.strip_prefix("author-time ") {
+                current_time = rest;
+            }
+        }
+        Ok(CallToolResult::success(vec![Content::json(&entries)?]))
+    }
+
+    #[tool(description = "Parse CODEOWNERS file to find owners for a given path")]
+    async fn get_owners(
+        &self,
+        #[tool(param)] path: Option<String>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
+        if !git_dir.exists() {
+            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
+        }
+        let candidates = [
+            "CODEOWNERS",
+            ".github/CODEOWNERS",
+            ".gitlab/CODEOWNERS",
+            "docs/CODEOWNERS",
+        ];
+        let repo = std::path::PathBuf::from(&repo_path);
+        let mut found_file = None;
+        for candidate in &candidates {
+            let p = repo.join(candidate);
+            if p.exists() {
+                found_file = Some((candidate.to_string(), std::fs::read_to_string(&p)
+                    .map_err(|e| rmcp::Error::internal_error(format!("Failed to read {}: {}", candidate, e), None))?));
+                break;
+            }
+        }
+        let (file_name, content) = match found_file {
+            Some(fc) => fc,
+            None => {
+                return Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
+                    "file": null,
+                    "rules": [],
+                }))?]));
+            }
+        };
+        let mut rules: Vec<serde_json::Value> = Vec::new();
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let mut parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() < 2 { continue; }
+            let pattern = parts.remove(0).to_string();
+            let owners: Vec<String> = parts.iter().map(|s| s.to_string()).collect();
+            if let Some(ref p) = path {
+                if !pattern_matches_path(&pattern, p) {
+                    continue;
+                }
+            }
+            rules.push(serde_json::json!({
+                "pattern": pattern,
+                "owners": owners,
+            }));
+        }
+        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
+            "file": file_name,
+            "rules": rules,
+        }))?]))
+    }
+
+    #[tool(description = "Semantic search across the codebase using vector embeddings. Finds code by intent, not text matching.")]
+    async fn vector_search(
+        &self,
+        #[tool(param)] query: String,
+        #[tool(param)] limit: Option<usize>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection()
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+        let store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
+            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
+
+        let count = store.count_chunks(&repo_path)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+        if count == 0 {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "No vector index found for this repo. Call the `reindex_vectors` tool first to build the semantic search index."
+            )]));
+        }
+
+        let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
+            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
+
+        let limit = limit.unwrap_or(10);
+        let results = store.search(&repo_path, &query, limit)
+            .map_err(|e| rmcp::Error::internal_error(format!("Search failed: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::json(&results)?]))
+    }
+
+    #[tool(description = "Rebuild the vector index for semantic search. This embeds all code chunks in the repo and may take a while.")]
+    async fn reindex_vectors(&self) -> Result<CallToolResult, rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection()
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+        let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
+            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
+
+        let count = store.index_repo(&repo_path)
+            .map_err(|e| rmcp::Error::internal_error(format!("Indexing failed: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
+            "repo_path": repo_path,
+            "chunks_indexed": count,
+        }))?]))
+    }
+}
+
+fn pattern_matches_path(pattern: &str, path: &str) -> bool {
+    let pat = pattern.trim_start_matches('/');
+    let p = path.trim_start_matches('/');
+    if pat.ends_with('/') {
+        return p.starts_with(pat);
+    }
+    if let Some(prefix) = pat.strip_suffix("/**") {
+        return p.starts_with(prefix);
+    }
+    if !pat.contains('/') {
+        let filename = p.rsplit('/').next().unwrap_or(p);
+        if pat.starts_with("*.") {
+            return filename.ends_with(&pat[1..]);
+        }
+        return filename == pat;
+    }
+    if pat.contains('*') {
+        let pat_parts: Vec<&str> = pat.split('/').collect();
+        let path_parts: Vec<&str> = p.split('/').collect();
+        if pat_parts.len() != path_parts.len() { return false; }
+        return pat_parts.iter().zip(path_parts.iter()).all(|(pp, fp)| {
+            if pp.contains('*') {
+                let sub_pat = pp.replace('*', "");
+                fp.contains(sub_pat.as_str())
+            } else {
+                pp == fp
+            }
+        });
+    }
+    pat == p
+}
+
+fn build_c4_structure(
+    repo_path: &str,
+    scope: Option<&str>,
+    max_depth: u32,
+    entries: &[ai_agent_workspace_code_intelligence::IndexEntry],
+) -> serde_json::Value {
+    use std::collections::{HashMap, HashSet};
+
+    let root_dir = std::path::Path::new(repo_path);
+    let scope_prefix = scope.unwrap_or("").trim_end_matches('/');
+
+    let mut dir_symbols: HashMap<String, Vec<&ai_agent_workspace_code_intelligence::IndexEntry>> = HashMap::new();
+    let mut all_dirs: HashSet<String> = HashSet::new();
+    let mut file_dirs: HashMap<String, String> = HashMap::new();
+
+    for entry in entries {
+        let rel_path = if scope_prefix.is_empty() {
+            entry.file_path.clone()
+        } else {
+            entry.file_path.strip_prefix(scope_prefix)
+                .unwrap_or(&entry.file_path)
+                .trim_start_matches('/')
+                .to_string()
+        };
+
+        let components: Vec<&str> = rel_path.split('/').collect();
+        let dir = if components.len() > 1 {
+            components[..components.len()-1].join("/")
+        } else {
+            ".".to_string()
+        };
+
+        let dir_depth = dir.chars().filter(|&c| c == '/').count() as u32 + 1;
+        if dir_depth < max_depth {
+            all_dirs.insert(dir.clone());
+        }
+        dir_symbols.entry(dir.clone()).or_default().push(entry);
+        file_dirs.insert(entry.file_path.clone(), dir);
+    }
+
+    let mut nodes: Vec<serde_json::Value> = Vec::new();
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+    let mut groups: Vec<serde_json::Value> = Vec::new();
+    let mut node_ids: HashMap<String, String> = HashMap::new();
+
+    let system_label = scope.map(|s| s.to_string()).unwrap_or_else(|| {
+        root_dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "system".to_string())
+    });
+
+    let system_id = uuid::Uuid::new_v4().to_string();
+    nodes.push(serde_json::json!({
+        "id": system_id,
+        "label": system_label,
+        "level": "context",
+        "type": "system",
+        "file_path": scope.unwrap_or(""),
+        "children_count": all_dirs.len(),
+        "code_snippet": null,
+        "metadata": { "total_symbols": entries.len() }
+    }));
+    node_ids.insert(".".to_string(), system_id.clone());
+
+    let mut sorted_dirs: Vec<String> = all_dirs.into_iter().collect();
+    sorted_dirs.sort();
+
+    for dir in &sorted_dirs {
+        let dir_depth = dir.chars().filter(|&c| c == '/').count() as u32 + 1;
+        let level = if dir_depth == 1 {
+            "container"
+        } else {
+            "component"
+        };
+
+        let dir_display = if dir == "." {
+            system_label.clone()
+        } else {
+            dir.clone()
+        };
+
+        let child_count = dir_symbols.get(dir).map(|v| v.len()).unwrap_or(0);
+        let dir_id = uuid::Uuid::new_v4().to_string();
+
+        let file_count = {
+            let mut files: HashSet<&str> = HashSet::new();
+            if let Some(syms) = dir_symbols.get(dir) {
+                for s in syms {
+                    files.insert(&s.file_path);
+                }
+            }
+            files.len()
+        };
+
+        nodes.push(serde_json::json!({
+            "id": dir_id,
+            "label": dir_display,
+            "level": level,
+            "type": "module",
+            "file_path": if dir == "." { "".to_string() } else { format!("{}/", dir) },
+            "children_count": child_count,
+            "code_snippet": null,
+            "metadata": { "file_count": file_count, "symbol_count": child_count }
+        }));
+        node_ids.insert(dir.clone(), dir_id.clone());
+
+        if let Some(parent_dir) = {
+            if dir == "." {
+                None
+            } else {
+                let path = std::path::Path::new(dir);
+                path.parent().map(|p| {
+                    let s = p.to_string_lossy().to_string();
+                    if s.is_empty() { ".".to_string() } else { s }
+                })
+            }
+        } {
+            if let Some(parent_id) = node_ids.get(&parent_dir) {
+                groups.push(serde_json::json!({
+                    "id": uuid::Uuid::new_v4().to_string(),
+                    "label": parent_dir.clone(),
+                    "level": if parent_dir == "." { "context" } else { "container" },
+                    "node_ids": [dir_id.clone()]
+                }));
+                edges.push(serde_json::json!({
+                    "source_id": parent_id,
+                    "target_id": dir_id,
+                    "label": "contains",
+                    "type": "composition"
+                }));
+            }
+        }
+    }
+
+    if max_depth >= 4 {
+        for entry in entries {
+            let kind = entry.data_json.as_ref()
+                .and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok())
+                .and_then(|d| d.get("kind").and_then(|k| k.as_str()).map(|s| s.to_string()))
+                .unwrap_or_else(|| entry.symbol_type.clone());
+
+            let code_snippet = if entry.symbol_type == "definition" {
+                let full = root_dir.join(&entry.file_path);
+                if let Ok(content) = std::fs::read_to_string(&full) {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let start = (entry.line_number as usize).saturating_sub(1);
+                    let end = entry.end_line_number.map(|l| l as usize).unwrap_or(start + 1).min(lines.len());
+                    if start < lines.len() {
+                        Some(lines[start..end].join("\n"))
+                    } else { None }
+                } else { None }
+            } else {
+                None
+            };
+
+            let sym_id = uuid::Uuid::new_v4().to_string();
+
+            let mut metadata = serde_json::json!({});
+            if entry.symbol_type == "definition" {
+                let calls: Vec<&str> = entries.iter()
+                    .filter(|e| e.symbol_type == "call" && e.file_path == entry.file_path && e.line_number > entry.line_number)
+                    .take(20)
+                    .map(|e| e.symbol_name.as_str())
+                    .collect();
+                if !calls.is_empty() {
+                    metadata["calls"] = serde_json::json!(calls);
+                }
+            }
+
+            nodes.push(serde_json::json!({
+                "id": sym_id,
+                "label": entry.symbol_name,
+                "level": "code",
+                "type": kind,
+                "file_path": entry.file_path,
+                "line_start": entry.line_number,
+                "line_end": entry.end_line_number,
+                "code_snippet": code_snippet,
+                "metadata": metadata
+            }));
+        }
+    }
+
+    let definitions_by_name: HashMap<&str, &str> = entries.iter()
+        .filter(|e| e.symbol_type == "definition")
+        .map(|e| (e.symbol_name.as_str(), e.file_path.as_str()))
+        .collect();
+
+    let file_stems: HashMap<String, &str> = entries.iter()
+        .map(|e| {
+            let stem = std::path::Path::new(&e.file_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (stem, e.file_path.as_str())
+        })
+        .collect();
+
+    for entry in entries {
+        if entry.symbol_type == "import" {
+            let source_file_dir = file_dirs.get(&entry.file_path)
+                .cloned()
+                .unwrap_or_else(|| ".".to_string());
+
+            if let Some(source_id) = node_ids.get(&source_file_dir) {
+                let imported_name = &entry.symbol_name;
+
+                let target_file = definitions_by_name.get(imported_name.as_str()).copied()
+                    .or_else(|| file_stems.get(imported_name.as_str()).copied());
+
+                if let Some(tf) = target_file {
+                    let target_dir = file_dirs.get(tf)
+                        .cloned()
+                        .unwrap_or_else(|| ".".to_string());
+                    if let Some(target_id) = node_ids.get(&target_dir) {
+                        if source_id != target_id {
+                            edges.push(serde_json::json!({
+                                "source_id": source_id,
+                                "target_id": target_id,
+                                "label": entry.symbol_name,
+                                "type": "dependency"
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::json!({
+        "repo_path": repo_path,
+        "scope": scope,
+        "max_depth": max_depth,
+        "nodes": nodes,
+        "edges": edges,
+        "groups": groups,
+        "instructions": "This is a raw structural map of the codebase. Please interpret the components, assign meaningful labels, and classify each node into the appropriate C4 level (context, container, component, code). Then call c4_diagram_create to persist the diagram."
+    })
 }
 
 #[cfg(test)]
@@ -717,6 +1388,7 @@ mod tests {
             on_canvas_edges_changed: None,
             on_canvas_groups_changed: None,
             on_canvas_tags_changed: None,
+            on_c4_diagrams_changed: None,
             on_open_file_request: None,
             on_show_diff_request: None,
             resolved_session_id: None,
@@ -1092,6 +1764,329 @@ mod tests {
         assert_eq!(summary["closed"], 1);
         assert_eq!(summary["by_label"]["needs-triage"], 3);
     }
+
+    // --- Git history & ownership tool tests ---
+
+    fn setup_git_repo() -> (TempDir, String) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test Author"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        std::fs::write(dir.path().join("hello.txt"), "line one\nline two\n").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["-c", "user.name=Test Author", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        (dir, path)
+    }
+
+    fn setup_handler_with_repo(repo_path: &str) -> (McpHandler, TempDir) {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("workspace.db");
+        let db = Database::new(db_path);
+        let session_id = {
+            let conn = db.connection().unwrap();
+            let sessions = db.sessions(&conn);
+            let session = sessions.create(repo_path, "Git Test").unwrap();
+            session.id
+        };
+        let handler = McpHandler {
+            db,
+            on_session_changed: None,
+            on_workspace_changed: None,
+            on_layouts_changed: None,
+            on_issues_changed: None,
+            on_visual_canvases_changed: None,
+            on_canvas_nodes_changed: None,
+            on_canvas_edges_changed: None,
+            on_canvas_groups_changed: None,
+            on_canvas_tags_changed: None,
+            on_c4_diagrams_changed: None,
+            on_open_file_request: None,
+            on_show_diff_request: None,
+            resolved_session_id: Some(session_id),
+            resolution_source: "test".to_string(),
+        };
+        (handler, dir)
+    }
+
+    #[tokio::test]
+    async fn test_search_history() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.search_history(None, None, None, None, None).await.unwrap();
+        let text = extract_text(result);
+        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let arr = commits.as_array().unwrap();
+        assert!(!arr.is_empty());
+        assert_eq!(arr[0]["author_name"], "Test Author");
+        assert_eq!(arr[0]["message"], "Initial commit");
+        assert!(arr[0]["hash"].as_str().unwrap().len() == 40);
+    }
+
+    #[tokio::test]
+    async fn test_search_history_keyword_filter() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.search_history(Some("Initial".into()), None, None, None, None).await.unwrap();
+        let text = extract_text(result);
+        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let arr = commits.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["message"], "Initial commit");
+    }
+
+    #[tokio::test]
+    async fn test_search_history_no_results() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.search_history(Some("nonexistent".into()), None, None, None, None).await.unwrap();
+        let text = extract_text(result);
+        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(commits.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_search_history_author_filter() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.search_history(None, Some("Test Author".into()), None, None, None).await.unwrap();
+        let text = extract_text(result);
+        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(commits.as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_blame() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.blame("hello.txt".into()).await.unwrap();
+        let text = extract_text(result);
+        let entries: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let arr = entries.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["author"], "Test Author");
+        assert_eq!(arr[0]["commit_hash"].as_str().unwrap().len(), 40);
+        assert_eq!(arr[0]["line_number"], 1);
+        assert_eq!(arr[1]["line_number"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_blame_not_git_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let (handler, _handler_dir) = setup_handler_with_repo(&path);
+        let result = handler.blame("foo.txt".into()).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Not a git repository"));
+    }
+
+    #[tokio::test]
+    async fn test_get_owners_no_file() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.get_owners(None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(data["file"].is_null());
+        assert_eq!(data["rules"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_owners_with_file() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        std::fs::write(
+            std::path::PathBuf::from(&repo_path).join("CODEOWNERS"),
+            "# Comments are ignored\n*.rs @rust-team\nsrc/auth/ @auth-team @security-team\n",
+        ).unwrap();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.get_owners(None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["file"], "CODEOWNERS");
+        let rules = data["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0]["pattern"], "*.rs");
+        assert_eq!(rules[0]["owners"][0], "@rust-team");
+        assert_eq!(rules[1]["pattern"], "src/auth/");
+    }
+
+    #[tokio::test]
+    async fn test_get_owners_filter_by_path() {
+        let (_repo_dir, repo_path) = setup_git_repo();
+        std::fs::write(
+            std::path::PathBuf::from(&repo_path).join("CODEOWNERS"),
+            "*.rs @rust-team\n*.ts @frontend-team\n",
+        ).unwrap();
+        let (handler, _dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.get_owners(Some("src/main.rs".into())).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let rules = data["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["pattern"], "*.rs");
+    }
+
+    #[tokio::test]
+    async fn test_get_owners_not_git_repo() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let (handler, _handler_dir) = setup_handler_with_repo(&path);
+        let result = handler.get_owners(None).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Not a git repository"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_basic() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        std::fs::create_dir_all(dir.path().join("src/auth")).unwrap();
+        std::fs::write(
+            dir.path().join("src/auth/login.rs"),
+            "fn authenticate(user: &str) -> bool { verify(user) }\nfn verify(s: &str) -> bool { true }\n",
+        ).unwrap();
+        std::fs::write(
+            dir.path().join("src/main.rs"),
+            "use crate::auth::login;\nfn main() { login::authenticate(\"test\"); }\n",
+        ).unwrap();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(None, None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["repo_path"], repo_path);
+        assert_eq!(data["max_depth"], 3);
+        let nodes = data["nodes"].as_array().unwrap();
+        assert!(!nodes.is_empty());
+        let has_context = nodes.iter().any(|n| n["level"] == "context");
+        assert!(has_context, "should have a context-level node");
+        let has_container = nodes.iter().any(|n| n["level"] == "container");
+        assert!(has_container, "should have container-level nodes");
+        assert!(data["instructions"].as_str().unwrap().contains("c4_diagram_create"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_scope_filtering() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        std::fs::create_dir_all(dir.path().join("src/auth")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/api")).unwrap();
+        std::fs::write(
+            dir.path().join("src/auth/login.rs"),
+            "fn authenticate() {}\n",
+        ).unwrap();
+        std::fs::write(
+            dir.path().join("src/api/handler.rs"),
+            "fn handle_request() {}\n",
+        ).unwrap();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(Some("src/auth".into()), None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["scope"], "src/auth");
+        let nodes = data["nodes"].as_array().unwrap();
+        let code_nodes: Vec<&serde_json::Value> = nodes.iter()
+            .filter(|n| n["level"] == "code")
+            .collect();
+        for node in &code_nodes {
+            let fp = node["file_path"].as_str().unwrap();
+            assert!(fp.starts_with("src/auth"), "expected scoped file, got: {}", fp);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_max_depth() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        std::fs::create_dir_all(dir.path().join("src/deep/nested")).unwrap();
+        std::fs::write(
+            dir.path().join("src/deep/nested/module.rs"),
+            "fn deep_fn() {}\n",
+        ).unwrap();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(None, Some(2)).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["max_depth"], 2);
+        let nodes = data["nodes"].as_array().unwrap();
+        let levels: Vec<&str> = nodes.iter().filter_map(|n| n["level"].as_str()).collect();
+        assert!(!levels.contains(&"code"), "max_depth=2 should not produce code-level nodes");
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_max_depth_4() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/main.rs"),
+            "fn main() {}\nfn helper() {}\n",
+        ).unwrap();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(None, Some(4)).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["max_depth"], 4);
+        let nodes = data["nodes"].as_array().unwrap();
+        let has_code = nodes.iter().any(|n| n["level"] == "code");
+        assert!(has_code, "max_depth=4 should produce code-level nodes");
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_edges() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        std::fs::create_dir_all(dir.path().join("src/auth")).unwrap();
+        std::fs::create_dir_all(dir.path().join("src/api")).unwrap();
+        std::fs::write(
+            dir.path().join("src/auth/login.rs"),
+            "pub fn authenticate(user: &str) -> bool { true }\n",
+        ).unwrap();
+        std::fs::write(
+            dir.path().join("src/api/handler.rs"),
+            "use crate::auth::login;\nfn handle_request() { login::authenticate(\"test\"); }\n",
+        ).unwrap();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(None, None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let edges = data["edges"].as_array().unwrap();
+        let non_composition: Vec<&serde_json::Value> = edges.iter()
+            .filter(|e| e["type"] != "composition")
+            .collect();
+        assert!(!non_composition.is_empty(), "should have non-composition edges from imports/calls");
+    }
+
+    #[tokio::test]
+    async fn test_generate_c4_diagram_empty_index() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap().to_string();
+        let (handler, _handler_dir) = setup_handler_with_repo(&repo_path);
+        let result = handler.generate_c4_diagram(None, None).await.unwrap();
+        let text = extract_text(result);
+        assert!(text.contains("No code index found") || text.contains("instructions"));
+    }
 }
 
 #[cfg(feature = "tauri-integration")]
@@ -1131,6 +2126,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     let _ = h.emit("canvas-tags-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
                 }) as std::sync::Arc<dyn Fn(String, String) + Send + Sync>)
             };
+            let on_c4_diagrams_changed = make_session_id_callback(&handle, "c4-diagrams-changed");
             let on_open_file_request = make_open_file_callback(&handle);
             let on_show_diff_request = make_show_diff_callback(&handle);
 
@@ -1149,6 +2145,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         on_canvas_edges_changed,
                         on_canvas_groups_changed,
                         on_canvas_tags_changed,
+                        on_c4_diagrams_changed,
                         on_open_file_request,
                         on_show_diff_request,
                         resolved_session_id: None,

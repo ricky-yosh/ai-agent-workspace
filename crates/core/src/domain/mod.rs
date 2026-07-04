@@ -10,6 +10,7 @@ pub mod canvas_edge;
 pub mod canvas_group;
 pub mod canvas_tag;
 pub mod canvas_view_state;
+pub mod c4_diagram;
 
 pub use events::DomainEvent;
 pub use session::{Session, SessionState, SessionSummary, WorkspaceInstance};
@@ -23,3 +24,4 @@ pub use canvas_edge::CanvasEdge;
 pub use canvas_group::CanvasGroup;
 pub use canvas_tag::CanvasTag;
 pub use canvas_view_state::CanvasViewState;
+pub use c4_diagram::C4Diagram;

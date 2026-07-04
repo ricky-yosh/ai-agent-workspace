@@ -21,6 +21,7 @@ import "./file-panel/DiffViewerPanel";
 import "./file-panel/FileViewerPanel";
 import "./file-panel/FileTreePanel";
 import "./panels/VisualCanvasPanel";
+import "./panels/C4DiagramPanel";
 import "./App.css";
 import "./Toast.css";
 import "./Dialog.css";
