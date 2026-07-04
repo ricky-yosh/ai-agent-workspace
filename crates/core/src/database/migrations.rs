@@ -114,6 +114,26 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         }
     }
 
+    if current_version < 15 {
+        let has_containing_symbol: bool = conn
+            .prepare("PRAGMA table_info(code_index)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt
+                    .query_map([], |row| row.get(1))
+                    .unwrap()
+                    .filter_map(|r| r.ok())
+                    .collect();
+                cols.contains(&"containing_symbol".to_string())
+            })
+            .unwrap_or(false);
+
+        if !has_containing_symbol {
+            conn.execute_batch(
+                "ALTER TABLE code_index ADD COLUMN containing_symbol TEXT;"
+            )?;
+        }
+    }
+
     Ok(())
 }
 

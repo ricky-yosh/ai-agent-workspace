@@ -157,12 +157,7 @@ impl<'a> VectorStore<'a> {
 }
 
 fn is_supported(file_path: &str) -> bool {
-    matches!(
-        std::path::Path::new(file_path)
-            .extension()
-            .and_then(|e| e.to_str()),
-        Some("rs" | "ts" | "tsx" | "js" | "jsx")
-    )
+    ai_agent_workspace_code_intelligence::is_supported(file_path)
 }
 
 pub fn extract_code_chunks(repo_path: &str) -> Result<Vec<CodeChunk>, Box<dyn std::error::Error>> {

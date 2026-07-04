@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 14;
+pub const SCHEMA_VERSION: i32 = 15;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS code_index (
     end_line_number INTEGER,
     content_fingerprint TEXT NOT NULL,
     data_json TEXT,
+    containing_symbol TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -242,8 +243,8 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_version_is_fourteen() {
-        assert_eq!(SCHEMA_VERSION, 14);
+    fn test_schema_version_is_fifteen() {
+        assert_eq!(SCHEMA_VERSION, 15);
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub struct ExtractedSymbol {
     pub line_number: usize,
     pub end_line_number: Option<usize>,
     pub data: Option<serde_json::Value>,
+    pub containing_symbol: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,9 +31,16 @@ pub struct IndexEntry {
     pub line_number: i32,
     pub end_line_number: Option<i32>,
     pub data_json: Option<String>,
+    pub containing_symbol: Option<String>,
 }
 
 pub struct CodeIndexer;
+
+impl Default for CodeIndexer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CodeIndexer {
     pub fn new() -> Self {
@@ -60,7 +68,7 @@ impl CodeIndexer {
         };
 
         let mut symbols = Vec::new();
-        extract_symbols(tree.root_node(), content, &mut symbols);
+        extract_symbols(tree.root_node(), content, &mut symbols, None);
         symbols
     }
 }
@@ -86,19 +94,44 @@ fn detect_language(file_path: &str) -> Option<Language> {
     }
 }
 
-fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>) {
+fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>, containing: Option<String>) {
     let node_type = node.kind();
 
     match node_type {
         "function_item" => {
             if let Some(name) = child_by_field(node, "name") {
+                let name_text = node_text(name, content);
                 symbols.push(ExtractedSymbol {
-                    symbol_name: node_text(name, content),
+                    symbol_name: name_text.clone(),
                     symbol_type: SymbolType::Definition,
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "function" })),
+                    containing_symbol: containing.clone(),
                 });
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    extract_symbols(child, content, symbols, Some(name_text.clone()));
+                }
+                return;
+            }
+        }
+        "function_declaration" => {
+            if let Some(name) = child_by_field(node, "name") {
+                let name_text = node_text(name, content);
+                symbols.push(ExtractedSymbol {
+                    symbol_name: name_text.clone(),
+                    symbol_type: SymbolType::Definition,
+                    line_number: node.start_position().row + 1,
+                    end_line_number: Some(node.end_position().row + 1),
+                    data: Some(serde_json::json!({ "kind": "function" })),
+                    containing_symbol: containing.clone(),
+                });
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    extract_symbols(child, content, symbols, Some(name_text.clone()));
+                }
+                return;
             }
         }
         "struct_item" => {
@@ -109,6 +142,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "struct" })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -120,6 +154,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "enum" })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -131,6 +166,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "trait" })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -143,6 +179,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                 line_number: node.start_position().row + 1,
                 end_line_number: Some(node.end_position().row + 1),
                 data: Some(serde_json::json!({ "kind": "impl" })),
+                containing_symbol: containing.clone(),
             });
         }
         "use_declaration" => {
@@ -162,6 +199,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "path": cleaned.trim() })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -176,6 +214,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                         line_number: node.start_position().row + 1,
                         end_line_number: None,
                         data: None,
+                        containing_symbol: containing.clone(),
                     });
                 }
             } else {
@@ -188,19 +227,9 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                         line_number: node.start_position().row + 1,
                         end_line_number: None,
                         data: Some(serde_json::json!({ "kind": "macro_invocation" })),
+                        containing_symbol: containing.clone(),
                     });
                 }
-            }
-        }
-        "function_declaration" => {
-            if let Some(name) = child_by_field(node, "name") {
-                symbols.push(ExtractedSymbol {
-                    symbol_name: node_text(name, content),
-                    symbol_type: SymbolType::Definition,
-                    line_number: node.start_position().row + 1,
-                    end_line_number: Some(node.end_position().row + 1),
-                    data: Some(serde_json::json!({ "kind": "function" })),
-                });
             }
         }
         "class_declaration" => {
@@ -211,6 +240,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "class" })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -222,6 +252,7 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "kind": "interface" })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
@@ -245,22 +276,23 @@ fn extract_symbols(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>
                     line_number: node.start_position().row + 1,
                     end_line_number: Some(node.end_position().row + 1),
                     data: Some(serde_json::json!({ "statement": full_text.trim() })),
+                    containing_symbol: containing.clone(),
                 });
             }
         }
         "lexical_declaration" | "variable_declaration" => {
-            extract_var_declarations(node, content, symbols);
+            extract_var_declarations(node, content, symbols, containing.clone());
         }
         _ => {}
     }
 
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
-        extract_symbols(child, content, symbols);
+        extract_symbols(child, content, symbols, containing.clone());
     }
 }
 
-fn extract_var_declarations(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>) {
+fn extract_var_declarations(node: Node, content: &str, symbols: &mut Vec<ExtractedSymbol>, containing: Option<String>) {
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
         if child.kind() == "variable_declarator" {
@@ -279,6 +311,7 @@ fn extract_var_declarations(node: Node, content: &str, symbols: &mut Vec<Extract
                         line_number: node.start_position().row + 1,
                         end_line_number: Some(node.end_position().row + 1),
                         data: Some(serde_json::json!({ "kind": "function" })),
+                        containing_symbol: containing.clone(),
                     });
                 }
             }
@@ -303,6 +336,20 @@ pub struct IndexStore<'a> {
 impl<'a> IndexStore<'a> {
     pub fn new(conn: &'a rusqlite::Connection) -> Self {
         Self { conn }
+    }
+
+    fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<IndexEntry> {
+        Ok(IndexEntry {
+            id: row.get(0)?,
+            repo_path: row.get(1)?,
+            file_path: row.get(2)?,
+            symbol_name: row.get(3)?,
+            symbol_type: row.get(4)?,
+            line_number: row.get(5)?,
+            end_line_number: row.get(6)?,
+            data_json: row.get(7)?,
+            containing_symbol: row.get(8)?,
+        })
     }
 
     pub fn get_fingerprint(&self, repo_path: &str, file_path: &str) -> Option<String> {
@@ -345,8 +392,8 @@ impl<'a> IndexStore<'a> {
                 .map(|v| serde_json::to_string(v).unwrap_or_default());
 
             self.conn.execute(
-                "INSERT INTO code_index (id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, content_fingerprint, data_json, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT INTO code_index (id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, content_fingerprint, data_json, containing_symbol, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     id,
                     repo_path,
@@ -357,6 +404,7 @@ impl<'a> IndexStore<'a> {
                     symbol.end_line_number.map(|l| l as i32),
                     fingerprint,
                     data_json,
+                    symbol.containing_symbol,
                     now,
                     now,
                 ],
@@ -372,22 +420,11 @@ impl<'a> IndexStore<'a> {
     ) -> Result<Vec<IndexEntry>, rusqlite::Error> {
         let pattern = format!("%{}%", keyword);
         let mut stmt = self.conn.prepare(
-            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
+            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
              FROM code_index WHERE repo_path = ?1 AND symbol_name LIKE ?2
              ORDER BY file_path, line_number",
         )?;
-        let rows = stmt.query_map(params![repo_path, pattern], |row| {
-            Ok(IndexEntry {
-                id: row.get(0)?,
-                repo_path: row.get(1)?,
-                file_path: row.get(2)?,
-                symbol_name: row.get(3)?,
-                symbol_type: row.get(4)?,
-                line_number: row.get(5)?,
-                end_line_number: row.get(6)?,
-                data_json: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![repo_path, pattern], Self::row_to_entry)?;
         rows.collect()
     }
 
@@ -411,22 +448,11 @@ impl<'a> IndexStore<'a> {
         symbol_name: &str,
     ) -> Result<Vec<IndexEntry>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
+            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
              FROM code_index WHERE repo_path = ?1 AND symbol_name = ?2 AND symbol_type = 'definition'
              ORDER BY file_path, line_number",
         )?;
-        let rows = stmt.query_map(params![repo_path, symbol_name], |row| {
-            Ok(IndexEntry {
-                id: row.get(0)?,
-                repo_path: row.get(1)?,
-                file_path: row.get(2)?,
-                symbol_name: row.get(3)?,
-                symbol_type: row.get(4)?,
-                line_number: row.get(5)?,
-                end_line_number: row.get(6)?,
-                data_json: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![repo_path, symbol_name], Self::row_to_entry)?;
         rows.collect()
     }
 
@@ -436,22 +462,11 @@ impl<'a> IndexStore<'a> {
         symbol_name: &str,
     ) -> Result<Vec<IndexEntry>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
+            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
              FROM code_index WHERE repo_path = ?1 AND symbol_name = ?2 AND symbol_type IN ('reference', 'call', 'import')
              ORDER BY file_path, line_number",
         )?;
-        let rows = stmt.query_map(params![repo_path, symbol_name], |row| {
-            Ok(IndexEntry {
-                id: row.get(0)?,
-                repo_path: row.get(1)?,
-                file_path: row.get(2)?,
-                symbol_name: row.get(3)?,
-                symbol_type: row.get(4)?,
-                line_number: row.get(5)?,
-                end_line_number: row.get(6)?,
-                data_json: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![repo_path, symbol_name], Self::row_to_entry)?;
         rows.collect()
     }
 
@@ -461,22 +476,12 @@ impl<'a> IndexStore<'a> {
         symbol_name: &str,
     ) -> Result<Vec<IndexEntry>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
-             FROM code_index WHERE repo_path = ?1 AND symbol_name = ?2 AND symbol_type = 'call'
+            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
+             FROM code_index
+             WHERE repo_path = ?1 AND symbol_name = ?2 AND symbol_type = 'call' AND containing_symbol IS NOT NULL
              ORDER BY file_path, line_number",
         )?;
-        let rows = stmt.query_map(params![repo_path, symbol_name], |row| {
-            Ok(IndexEntry {
-                id: row.get(0)?,
-                repo_path: row.get(1)?,
-                file_path: row.get(2)?,
-                symbol_name: row.get(3)?,
-                symbol_type: row.get(4)?,
-                line_number: row.get(5)?,
-                end_line_number: row.get(6)?,
-                data_json: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![repo_path, symbol_name], Self::row_to_entry)?;
         rows.collect()
     }
 
@@ -487,22 +492,12 @@ impl<'a> IndexStore<'a> {
         symbol_name: &str,
     ) -> Result<Vec<IndexEntry>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
-             FROM code_index WHERE repo_path = ?1 AND file_path = ?2 AND symbol_name = ?3 AND symbol_type = 'call'
+            "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
+             FROM code_index
+             WHERE repo_path = ?1 AND file_path = ?2 AND containing_symbol = ?3 AND symbol_type = 'call'
              ORDER BY line_number",
         )?;
-        let rows = stmt.query_map(params![repo_path, file_path, symbol_name], |row| {
-            Ok(IndexEntry {
-                id: row.get(0)?,
-                repo_path: row.get(1)?,
-                file_path: row.get(2)?,
-                symbol_name: row.get(3)?,
-                symbol_type: row.get(4)?,
-                line_number: row.get(5)?,
-                end_line_number: row.get(6)?,
-                data_json: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![repo_path, file_path, symbol_name], Self::row_to_entry)?;
         rows.collect()
     }
 
@@ -519,43 +514,21 @@ impl<'a> IndexStore<'a> {
         if let Some(scope_prefix) = scope {
             let pattern = format!("{}%", scope_prefix.trim_end_matches('/'));
             let mut stmt = self.conn.prepare(
-                "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
+                "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
                  FROM code_index WHERE repo_path = ?1 AND file_path LIKE ?2
                  ORDER BY file_path, line_number",
             )?;
-            let rows = stmt.query_map(params![repo_path, pattern], |row| {
-                Ok(IndexEntry {
-                    id: row.get(0)?,
-                    repo_path: row.get(1)?,
-                    file_path: row.get(2)?,
-                    symbol_name: row.get(3)?,
-                    symbol_type: row.get(4)?,
-                    line_number: row.get(5)?,
-                    end_line_number: row.get(6)?,
-                    data_json: row.get(7)?,
-                })
-            })?;
+            let rows = stmt.query_map(params![repo_path, pattern], Self::row_to_entry)?;
             for row in rows {
                 entries.push(row?);
             }
         } else {
             let mut stmt = self.conn.prepare(
-                "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json
+                "SELECT id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, data_json, containing_symbol
                  FROM code_index WHERE repo_path = ?1
                  ORDER BY file_path, line_number",
             )?;
-            let rows = stmt.query_map(params![repo_path], |row| {
-                Ok(IndexEntry {
-                    id: row.get(0)?,
-                    repo_path: row.get(1)?,
-                    file_path: row.get(2)?,
-                    symbol_name: row.get(3)?,
-                    symbol_type: row.get(4)?,
-                    line_number: row.get(5)?,
-                    end_line_number: row.get(6)?,
-                    data_json: row.get(7)?,
-                })
-            })?;
+            let rows = stmt.query_map(params![repo_path], Self::row_to_entry)?;
             for row in rows {
                 entries.push(row?);
             }
@@ -564,7 +537,7 @@ impl<'a> IndexStore<'a> {
     }
 }
 
-fn is_supported(file_path: &str) -> bool {
+pub fn is_supported(file_path: &str) -> bool {
     matches!(
         std::path::Path::new(file_path)
             .extension()
@@ -627,6 +600,7 @@ mod tests {
             end_line_number INTEGER,
             content_fingerprint TEXT NOT NULL,
             data_json TEXT,
+            containing_symbol TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );").unwrap();
@@ -769,6 +743,7 @@ import fs from 'fs';
                 line_number: 10,
                 end_line_number: Some(20),
                 data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
             },
             ExtractedSymbol {
                 symbol_name: "other_func".into(),
@@ -776,6 +751,7 @@ import fs from 'fs';
                 line_number: 5,
                 end_line_number: None,
                 data: None,
+                containing_symbol: Some("main".into()),
             },
         ];
         let fp = "abc123";
@@ -958,28 +934,44 @@ interface User {
     fn test_find_callers_and_callees() {
         let conn = test_conn();
         let store = IndexStore::new(&conn);
+
         let symbols = vec![
             ExtractedSymbol {
                 symbol_name: "caller_func".into(),
-                symbol_type: SymbolType::Call,
-                line_number: 15,
-                end_line_number: None,
-                data: None,
+                symbol_type: SymbolType::Definition,
+                line_number: 1,
+                end_line_number: Some(10),
+                data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
             },
             ExtractedSymbol {
                 symbol_name: "target".into(),
                 symbol_type: SymbolType::Call,
-                line_number: 3,
+                line_number: 5,
                 end_line_number: None,
                 data: None,
+                containing_symbol: Some("caller_func".into()),
+            },
+            ExtractedSymbol {
+                symbol_name: "target".into(),
+                symbol_type: SymbolType::Call,
+                line_number: 15,
+                end_line_number: None,
+                data: None,
+                containing_symbol: Some("other_func".into()),
             },
         ];
         store.insert_symbols("/repo", "src/a.rs", "fp1", &symbols).unwrap();
 
         let callers = store.find_callers("/repo", "target").unwrap();
-        assert_eq!(callers.len(), 1);
-        assert_eq!(callers[0].file_path, "src/a.rs");
-        assert_eq!(callers[0].line_number, 3);
+        assert_eq!(callers.len(), 2);
+        let caller_names: Vec<&str> = callers.iter().filter_map(|c| c.containing_symbol.as_deref()).collect();
+        assert!(caller_names.contains(&"caller_func"));
+        assert!(caller_names.contains(&"other_func"));
+
+        let callees = store.find_callees("/repo", "src/a.rs", "caller_func").unwrap();
+        assert_eq!(callees.len(), 1);
+        assert_eq!(callees[0].symbol_name, "target");
     }
 
     #[test]
@@ -993,6 +985,7 @@ interface User {
                 line_number: 1,
                 end_line_number: Some(5),
                 data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
             },
             ExtractedSymbol {
                 symbol_name: "func_b".into(),
@@ -1000,6 +993,7 @@ interface User {
                 line_number: 10,
                 end_line_number: Some(15),
                 data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
             },
         ];
         store.insert_symbols("/repo", "src/auth.rs", "fp1", &symbols).unwrap();
@@ -1010,6 +1004,7 @@ interface User {
                 line_number: 1,
                 end_line_number: Some(3),
                 data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
             },
         ];
         store.insert_symbols("/repo", "src/api.rs", "fp2", &symbols2).unwrap();
@@ -1020,5 +1015,52 @@ interface User {
         let scoped = store.list_all_entries("/repo", Some("src/auth")).unwrap();
         assert_eq!(scoped.len(), 2);
         assert!(scoped.iter().all(|e| e.file_path.starts_with("src/auth")));
+    }
+
+    #[test]
+    fn test_parse_typescript_call_expressions() {
+        let indexer = CodeIndexer::new();
+        let source = r#"
+function greet(name: string): void {
+    console.log(name);
+    const x = parseInt("42");
+}
+"#;
+        let symbols = indexer.parse_file("test.ts", source);
+        let calls: Vec<&ExtractedSymbol> = symbols
+            .iter()
+            .filter(|s| s.symbol_type == SymbolType::Call)
+            .collect();
+        assert!(calls.iter().any(|s| s.symbol_name == "console.log"));
+        assert!(calls.iter().any(|s| s.symbol_name == "parseInt"));
+        for call in &calls {
+            assert_eq!(call.containing_symbol.as_deref(), Some("greet"));
+        }
+    }
+
+    #[test]
+    fn test_incremental_indexing_preserves_other_files() {
+        let dir = TempDir::new().unwrap();
+        let repo_path = dir.path().to_str().unwrap();
+        let file_a = "src/a.rs";
+        let file_b = "src/b.rs";
+
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join(file_a), "fn alpha() { }\n").unwrap();
+        std::fs::write(dir.path().join(file_b), "fn beta() { }\n").unwrap();
+
+        let conn = test_conn();
+        ensure_indexed(&conn, repo_path).unwrap();
+
+        let store = IndexStore::new(&conn);
+        assert_eq!(store.search_by_keyword(repo_path, "alpha").unwrap().len(), 1);
+        assert_eq!(store.search_by_keyword(repo_path, "beta").unwrap().len(), 1);
+
+        std::fs::write(dir.path().join(file_a), "fn alpha() { }\nfn gamma() { }\n").unwrap();
+        ensure_indexed(&conn, repo_path).unwrap();
+
+        assert_eq!(store.search_by_keyword(repo_path, "alpha").unwrap().len(), 1);
+        assert_eq!(store.search_by_keyword(repo_path, "gamma").unwrap().len(), 1);
+        assert_eq!(store.search_by_keyword(repo_path, "beta").unwrap().len(), 1);
     }
 }
