@@ -9,7 +9,7 @@ import {
   pointInArea,
   resizeEdgeLocal,
   selectConnectedVertices,
-} from "./screenGeometry";
+} from "./screenLayout";
 
 // --- Fixtures: faithful TS ports of the Rust fixtures in graph.rs ---
 

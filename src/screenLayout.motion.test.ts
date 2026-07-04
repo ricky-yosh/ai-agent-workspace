@@ -6,8 +6,8 @@ import {
   diffAreas,
   determineEnterSeam,
   determineExitCollapse,
-} from "./screenMotion";
-import type { SeamSide } from "./screenMotion";
+} from "./screenLayout";
+import type { SeamSide } from "./screenLayout";
 
 // ---------------------------------------------------------------------------
 // Helpers
