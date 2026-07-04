@@ -324,7 +324,7 @@ impl McpHandler {
     #[tool(description = "Open a session (set as active)")]
     async fn session_open(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = AppState { db: self.db.clone() };
-        run_mcp_command!(Command::SessionOpen { session_id }, &state, Session, session, json)
+        run_mcp_command!(Command::SessionOpen { session_id }, &state, Session, session, json, session_cb: self.on_session_changed, layouts_cb: self.on_layouts_changed, workspace_cb: self.on_workspace_changed)
     }
 
     #[tool(description = "Close the active session")]

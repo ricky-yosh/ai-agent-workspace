@@ -820,6 +820,17 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }, [sessionId, selectedCanvasId, fetchTags]),
   );
 
+  useTauriEvent(
+    "db-changed",
+    useCallback(() => {
+      fetchCanvases();
+      fetchNodes();
+      fetchEdges();
+      fetchGroups();
+      fetchTags();
+    }, [fetchCanvases, fetchNodes, fetchEdges, fetchGroups, fetchTags]),
+  );
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading && canvases.length === 0) {

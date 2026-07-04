@@ -169,6 +169,13 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     ),
   );
 
+  useTauriEvent(
+    "db-changed",
+    useCallback(() => {
+      fetchDiagrams();
+    }, [fetchDiagrams]),
+  );
+
   // ── Parse diagram data when selected ───────────────────────────────────
 
   useEffect(() => {

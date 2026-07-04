@@ -77,7 +77,7 @@ function SaveAsTemplateDialog({
 }
 
 function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTabActionsRef, closeTabActionsRef }: { toggleZoomRef: React.RefObject<(() => void) | null>; panelActionsRef: React.RefObject<PanelActions | null>; openNewWorkspaceRef: React.RefObject<(() => void) | null>; openTabActionsRef: React.RefObject<(() => void) | null>; closeTabActionsRef: React.RefObject<(() => void) | null> }) {
-  const { activeSessionId, sessions } = useSessions();
+  const { activeSessionId, sessions, refreshSessions } = useSessions();
   const { addToast } = useToast();
   const { disposeTerminal } = useTerminalCache();
   const onError = useCallback((msg: string) => addToast({ type: "error", message: msg }), [addToast]);
@@ -239,6 +239,13 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
   }, [refreshTemplates, onError]);
 
   useTauriEvent("layouts-changed", useCallback(() => refreshTemplates(), [refreshTemplates]));
+
+  useTauriEvent(
+    "db-changed",
+    useCallback(() => {
+      refreshSessions();
+    }, [refreshSessions]),
+  );
 
   useTauriEvent<{ session_id: string; workspace_id: string; screen: Screen }>(
     "workspace-changed",
