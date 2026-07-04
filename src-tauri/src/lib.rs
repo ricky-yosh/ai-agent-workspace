@@ -7,6 +7,7 @@ use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
     Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent,
 };
+use ai_agent_workspace_git_operations;
 
 mod pty;
 use pty::{PtyStore, PtySpawnResult};
@@ -287,6 +288,8 @@ command_handler!(mark_change_event_processed, ChangeEventMarkProcessed { event_i
 
 command_handler!(list_c4_diagrams, C4DiagramList { repo_path }, C4Diagrams, Vec<C4Diagram>, repo_path: String);
 command_handler!(get_c4_diagram, C4DiagramGet { id }, C4Diagram, C4Diagram, id: String);
+unit_return!(delete_c4_diagram, C4DiagramDelete { id }, id: String);
+command_handler!(rename_c4_diagram, C4DiagramRename { id, name }, C4Diagram, C4Diagram, id: String, name: String);
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -334,11 +337,7 @@ struct ReadFileResult {
     size: u64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-struct GitDiffResult {
-    diff: String,
-    staged: bool,
-}
+type GitDiffResult = ai_agent_workspace_git_operations::GitDiffResult;
 
 #[tauri::command]
 fn read_file(
@@ -488,35 +487,11 @@ fn get_git_diff(
     session_id: String,
     staged: bool,
 ) -> Result<GitDiffResult, String> {
-    // Resolve the session's working directory (single lightweight SELECT)
     let working_dir = state.db.get_working_directory(&session_id)
         .map_err(|e| format!("Session not found: {}", e))?;
 
-    let base = std::path::Path::new(&working_dir);
-    if !base.join(".git").exists() {
-        return Err("Not a git repository".to_string());
-    }
-
-    let mut args = vec!["diff".to_string()];
-    if staged {
-        args.push("--staged".to_string());
-    }
-
-    let output = std::process::Command::new("git")
-        .args(&args)
-        .current_dir(&working_dir)
-        .output()
-        .map_err(|e| format!("Failed to run git diff: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git diff failed: {}", stderr));
-    }
-
-    let diff = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Failed to parse git diff output: {}", e))?;
-
-    Ok(GitDiffResult { diff, staged })
+    ai_agent_workspace_git_operations::get_diff(&working_dir, staged)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -536,7 +511,7 @@ fn open_in_app(path: String, app_name: String) -> Result<(), String> {
 
 #[tauri::command]
 fn is_git_repo(path: String) -> bool {
-    std::path::Path::new(&path).join(".git").exists()
+    ai_agent_workspace_git_operations::is_git_repo(&path)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -844,6 +819,8 @@ pub fn run() {
             mark_change_event_processed,
             list_c4_diagrams,
             get_c4_diagram,
+            delete_c4_diagram,
+            rename_c4_diagram,
             open_preferences,
             open_in_app,
             is_git_repo,

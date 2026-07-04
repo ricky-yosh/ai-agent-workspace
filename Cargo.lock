@@ -37,6 +37,7 @@ version = "0.1.1"
 dependencies = [
  "ai-agent-workspace-commands",
  "ai-agent-workspace-core",
+ "ai-agent-workspace-git-operations",
  "ai-agent-workspace-mcp",
  "dirs",
  "notify",
@@ -99,14 +100,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-agent-workspace-git-operations"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ai-agent-workspace-mcp"
 version = "0.1.1"
 dependencies = [
  "ai-agent-workspace-code-intelligence",
  "ai-agent-workspace-commands",
  "ai-agent-workspace-core",
+ "ai-agent-workspace-git-operations",
  "ai-agent-workspace-vector-store",
  "rmcp",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -119,6 +131,7 @@ dependencies = [
 name = "ai-agent-workspace-vector-store"
 version = "0.1.0"
 dependencies = [
+ "ai-agent-workspace-code-intelligence",
  "chrono",
  "fastembed",
  "regex",

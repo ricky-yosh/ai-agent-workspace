@@ -5,7 +5,7 @@ use rmcp::{ServerHandler, tool};
 #[cfg(feature = "tauri-integration")]
 use rmcp::serve_server;
 use rmcp::model::{CallToolResult, Content, ServerInfo, ServerCapabilities};
-use ai_agent_workspace_core::database::Database;
+use ai_agent_workspace_core::database::{Database, CachedConnection};
 use ai_agent_workspace_core::Screen;
 use ai_agent_workspace_core::DomainEvent;
 use ai_agent_workspace_core::Axis;
@@ -371,6 +371,14 @@ impl McpHandler {
         let sessions = self.db.sessions(&conn);
         crate::session_resolution::resolve_session_id_db(None, &cwd, &sessions)
             .map_err(|e| rmcp::Error::invalid_params(format!("{}", e), None))
+    }
+
+    fn resolve_index_store(&self) -> Result<(String, CachedConnection<'_>), rmcp::Error> {
+        let session_id = self.require_session_id()?;
+        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok((repo_path, conn))
     }
 
     #[tool(description = "Show the current session info including ID, name, working directory, and how it was resolved")]
@@ -751,10 +759,7 @@ impl McpHandler {
 
     #[tool(description = "Search indexed code by keyword or regex pattern")]
     async fn keyword_search(&self, #[tool(param)] query: String, #[tool(param)] regex: Option<bool>) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = if regex.unwrap_or(false) {
             store.search_by_regex(&repo_path, &query)
@@ -766,10 +771,7 @@ impl McpHandler {
 
     #[tool(description = "Find the definition of a symbol by name in the indexed codebase")]
     async fn find_definition(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = store.find_definition(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
@@ -777,10 +779,7 @@ impl McpHandler {
 
     #[tool(description = "Find all references/usage of a symbol in the indexed codebase")]
     async fn find_references(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = store.find_references(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
@@ -788,10 +787,7 @@ impl McpHandler {
 
     #[tool(description = "Find all callers of a function (call sites)")]
     async fn find_callers(&self, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = store.find_callers(&repo_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
@@ -799,10 +795,7 @@ impl McpHandler {
 
     #[tool(description = "Find what functions are called by a given function in a file (callees)")]
     async fn find_callees(&self, #[tool(param)] file_path: String, #[tool(param)] symbol_name: String) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = store.find_callees(&repo_path, &file_path, &symbol_name).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
@@ -810,10 +803,7 @@ impl McpHandler {
 
     #[tool(description = "List all indexed source files in the repository")]
     async fn list_code_files(&self) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let results = store.list_files(&repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
@@ -841,10 +831,7 @@ impl McpHandler {
         #[tool(param)] scope: Option<String>,
         #[tool(param)] max_depth: Option<u32>,
     ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection().map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        ai_agent_workspace_code_intelligence::ensure_indexed(&conn, &repo_path).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let (repo_path, conn) = self.resolve_index_store()?;
         let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
         let depth = max_depth.unwrap_or(3).min(4).max(1);
         let scope_ref = scope.as_deref();
@@ -870,48 +857,15 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let repo_path = self.db.get_working_directory(&session_id)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
-        if !git_dir.exists() {
-            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
-        }
-        let max = max_results.unwrap_or(50);
-        let mut cmd = std::process::Command::new("git");
-        cmd.arg("-C").arg(&repo_path)
-            .args(["log", "--format=%H|%an|%ae|%aI|%s"])
-            .arg(format!("--max-count={}", max));
-        if let Some(ref kw) = keyword {
-            cmd.arg(format!("--grep={}", kw));
-        }
-        if let Some(ref a) = author {
-            cmd.arg(format!("--author={}", a));
-        }
-        if let Some(ref af) = after {
-            cmd.arg(format!("--after={}", af));
-        }
-        if let Some(ref bf) = before {
-            cmd.arg(format!("--before={}", bf));
-        }
-        let output = cmd.output()
-            .map_err(|e| rmcp::Error::internal_error(format!("Failed to run git: {}", e), None))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(rmcp::Error::internal_error(format!("git log failed: {}", stderr.trim()), None));
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let commits: Vec<serde_json::Value> = stdout.lines()
-            .filter(|line| !line.is_empty())
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.splitn(5, '|').collect();
-                if parts.len() < 5 { return None; }
-                Some(serde_json::json!({
-                    "hash": parts[0],
-                    "author_name": parts[1],
-                    "author_email": parts[2],
-                    "date": parts[3],
-                    "message": parts[4],
-                }))
-            })
-            .collect();
+        let commits = ai_agent_workspace_git_operations::search_history(
+            &repo_path,
+            keyword.as_deref(),
+            author.as_deref(),
+            after.as_deref(),
+            before.as_deref(),
+            max_results,
+        )
+        .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&commits)?]))
     }
 
@@ -923,59 +877,8 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let repo_path = self.db.get_working_directory(&session_id)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
-        if !git_dir.exists() {
-            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
-        }
-        let output = std::process::Command::new("git")
-            .arg("-C").arg(&repo_path)
-            .args(["blame", "--porcelain", &file_path])
-            .output()
-            .map_err(|e| rmcp::Error::internal_error(format!("Failed to run git: {}", e), None))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(rmcp::Error::internal_error(format!("git blame failed: {}", stderr.trim()), None));
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut entries: Vec<serde_json::Value> = Vec::new();
-        let mut current_hash = "";
-        let mut current_author = "";
-        let mut current_author_email = "";
-        let mut current_time = "";
-        let mut current_line = 0u32;
-        for line in stdout.lines() {
-            if line.starts_with('\t') {
-                if current_line > 0 {
-                    entries.push(serde_json::json!({
-                        "line_number": current_line,
-                        "author": current_author,
-                        "author_email": current_author_email,
-                        "commit_hash": current_hash,
-                        "date": current_time,
-                    }));
-                    current_line = 0;
-                }
-                continue;
-            }
-            if line.len() >= 40 && line.as_bytes()[40] == b' ' {
-                let parts: Vec<&str> = line.splitn(3, ' ').collect();
-                if parts.len() >= 3 {
-                    current_hash = parts[0];
-                    if let Ok(n) = parts[1].parse::<u32>() {
-                        current_line = n;
-                    }
-                }
-                current_author = "";
-                current_author_email = "";
-                current_time = "";
-            } else if let Some(rest) = line.strip_prefix("author ") {
-                current_author = rest;
-            } else if let Some(rest) = line.strip_prefix("author-mail ") {
-                current_author_email = rest;
-            } else if let Some(rest) = line.strip_prefix("author-time ") {
-                current_time = rest;
-            }
-        }
+        let entries = ai_agent_workspace_git_operations::blame(&repo_path, &file_path)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::json(&entries)?]))
     }
 
@@ -987,59 +890,9 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let repo_path = self.db.get_working_directory(&session_id)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let git_dir = std::path::PathBuf::from(&repo_path).join(".git");
-        if !git_dir.exists() {
-            return Err(rmcp::Error::internal_error(format!("Not a git repository: {}", repo_path), None));
-        }
-        let candidates = [
-            "CODEOWNERS",
-            ".github/CODEOWNERS",
-            ".gitlab/CODEOWNERS",
-            "docs/CODEOWNERS",
-        ];
-        let repo = std::path::PathBuf::from(&repo_path);
-        let mut found_file = None;
-        for candidate in &candidates {
-            let p = repo.join(candidate);
-            if p.exists() {
-                found_file = Some((candidate.to_string(), std::fs::read_to_string(&p)
-                    .map_err(|e| rmcp::Error::internal_error(format!("Failed to read {}: {}", candidate, e), None))?));
-                break;
-            }
-        }
-        let (file_name, content) = match found_file {
-            Some(fc) => fc,
-            None => {
-                return Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
-                    "file": null,
-                    "rules": [],
-                }))?]));
-            }
-        };
-        let mut rules: Vec<serde_json::Value> = Vec::new();
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            let mut parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() < 2 { continue; }
-            let pattern = parts.remove(0).to_string();
-            let owners: Vec<String> = parts.iter().map(|s| s.to_string()).collect();
-            if let Some(ref p) = path {
-                if !pattern_matches_path(&pattern, p) {
-                    continue;
-                }
-            }
-            rules.push(serde_json::json!({
-                "pattern": pattern,
-                "owners": owners,
-            }));
-        }
-        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
-            "file": file_name,
-            "rules": rules,
-        }))?]))
+        let result = ai_agent_workspace_git_operations::get_owners(&repo_path, path.as_deref())
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::json(&result)?]))
     }
 
     #[tool(description = "Semantic search across the codebase using vector embeddings. Finds code by intent, not text matching.")]
@@ -1095,38 +948,6 @@ impl McpHandler {
             "chunks_indexed": count,
         }))?]))
     }
-}
-
-fn pattern_matches_path(pattern: &str, path: &str) -> bool {
-    let pat = pattern.trim_start_matches('/');
-    let p = path.trim_start_matches('/');
-    if pat.ends_with('/') {
-        return p.starts_with(pat);
-    }
-    if let Some(prefix) = pat.strip_suffix("/**") {
-        return p.starts_with(prefix);
-    }
-    if !pat.contains('/') {
-        let filename = p.rsplit('/').next().unwrap_or(p);
-        if pat.starts_with("*.") {
-            return filename.ends_with(&pat[1..]);
-        }
-        return filename == pat;
-    }
-    if pat.contains('*') {
-        let pat_parts: Vec<&str> = pat.split('/').collect();
-        let path_parts: Vec<&str> = p.split('/').collect();
-        if pat_parts.len() != path_parts.len() { return false; }
-        return pat_parts.iter().zip(path_parts.iter()).all(|(pp, fp)| {
-            if pp.contains('*') {
-                let sub_pat = pp.replace('*', "");
-                fp.contains(sub_pat.as_str())
-            } else {
-                pp == fp
-            }
-        });
-    }
-    pat == p
 }
 
 fn build_c4_structure(
