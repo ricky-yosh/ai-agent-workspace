@@ -1,4 +1,4 @@
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tauri::menu::*;
 use ai_agent_workspace_commands::{
     AppState, Command, CommandResult, execute,
@@ -14,6 +14,8 @@ use pty::{PtyStore, PtySpawnResult};
 
 mod db_watcher;
 
+mod event_socket;
+
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
 const APP_DATA_DIR_NAME: &str = "AI Agent Workspace";
 const CLI_NAME: &str = "aiaw-mcp-server";
@@ -22,40 +24,7 @@ const PREFERENCES_WINDOW_SIZE: (f64, f64) = (520.0, 480.0);
 
 fn emit_domain_events(app: &tauri::AppHandle, events: &[DomainEvent]) {
     for event in events {
-        match event {
-            DomainEvent::SessionsChanged => { let _ = app.emit("sessions-changed", ()); }
-            DomainEvent::LayoutsChanged => { let _ = app.emit("layouts-changed", ()); }
-            DomainEvent::WorkspaceChanged { session_id, workspace_id, screen } => {
-                #[derive(serde::Serialize, Clone)]
-                struct WorkspaceChangedPayload {
-                    session_id: String,
-                    workspace_id: String,
-                    screen: Screen,
-                }
-                let _ = app.emit("workspace-changed", WorkspaceChangedPayload { session_id: session_id.clone(), workspace_id: workspace_id.clone(), screen: screen.clone() });
-            }
-            DomainEvent::IssuesChanged { session_id } => {
-                let _ = app.emit("issues-changed", serde_json::json!({ "session_id": session_id }));
-            }
-            DomainEvent::VisualCanvasesChanged { session_id } => {
-                let _ = app.emit("visual-canvases-changed", serde_json::json!({ "session_id": session_id }));
-            }
-            DomainEvent::CanvasNodesChanged { session_id, canvas_id } => {
-                let _ = app.emit("canvas-nodes-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
-            }
-            DomainEvent::CanvasEdgesChanged { session_id, canvas_id } => {
-                let _ = app.emit("canvas-edges-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
-            }
-            DomainEvent::CanvasGroupsChanged { session_id, canvas_id } => {
-                let _ = app.emit("canvas-groups-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
-            }
-            DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
-                let _ = app.emit("canvas-tags-changed", serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }));
-            }
-            DomainEvent::C4DiagramsChanged { repo_path } => {
-                let _ = app.emit("c4-diagrams-changed", serde_json::json!({ "repo_path": repo_path }));
-            }
-        }
+        event_socket::emit_domain_event(app, event);
     }
 }
 
@@ -739,6 +708,18 @@ pub fn run() {
             // Spawn DB file watcher for real-time updates from external
             // processes (e.g. the MCP server) that modify the database directly.
             db_watcher::spawn_db_watcher(app.handle().clone(), &db_path_for_watcher);
+
+            // Spawn event socket listener for real-time DomainEvents from the
+            // standalone MCP server binary (complements the file watcher).
+            {
+                let app_handle = app.handle().clone();
+                let db_path_clone = db_path_for_watcher.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = event_socket::run_event_socket_listener(app_handle, &db_path_clone).await {
+                        eprintln!("[event-socket] Listener error: {e}");
+                    }
+                });
+            }
 
             let submenu = Submenu::with_items(
                 app,

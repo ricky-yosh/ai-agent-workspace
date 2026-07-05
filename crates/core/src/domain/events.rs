@@ -1,6 +1,8 @@
+use serde::{Serialize, Deserialize};
 use super::Screen;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum DomainEvent {
     SessionsChanged,
     LayoutsChanged,
