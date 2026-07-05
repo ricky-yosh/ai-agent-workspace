@@ -233,7 +233,7 @@
   background: var(--accent);
   border: none;
   border-radius: var(--radius-control);
-  color: #fff;
+  color: var(--text-on-accent);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -297,7 +297,7 @@
 
 .template-item-btn-delete-confirm {
   opacity: 1;
-  color: #fff;
+  color: var(--text-on-danger);
   background: var(--danger);
   animation: template-confirm-pulse 1.4s ease-in-out infinite;
 }
@@ -305,8 +305,8 @@
 .template-item-btn-delete-confirm:hover,
 .template-item-btn-delete-confirm:focus-visible {
   background: var(--danger);
-  color: #fff;
-  outline: 1px solid #fff;
+  color: var(--text-on-danger);
+  outline: 1px solid var(--text-on-danger);
   outline-offset: -2px;
 }
 

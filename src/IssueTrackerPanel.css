@@ -19,8 +19,8 @@
 }
 
 .issue-row:hover {
-  background: #2c2c2e;
-  border-color: #484848;
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
 }
 
 :root[data-motion="full"] .issue-row:active {
@@ -29,9 +29,9 @@
 }
 
 .issue-row.focused {
-  background: #2e2e30;
-  border-color: #555;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  background: var(--bg-active);
+  border-color: var(--border);
+  box-shadow: 0 0 0 1px var(--accent-subtle);
 }
 
 .issue-row.selected {

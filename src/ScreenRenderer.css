@@ -188,7 +188,7 @@
 }
 
 .screen-split-preview--snapped {
-  background: #fff;
+  background: var(--text-primary);
   opacity: 1;
 }
 

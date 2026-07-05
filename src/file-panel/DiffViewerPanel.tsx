@@ -77,7 +77,7 @@ function TabButton({
         fontSize: 12,
         fontFamily: "inherit",
         background: active ? "var(--accent)" : "transparent",
-        color: active ? "#fff" : "var(--text-primary)",
+        color: active ? "var(--text-on-accent)" : "var(--text-primary)",
         border: "none",
         borderRadius: 4,
         cursor: "pointer",

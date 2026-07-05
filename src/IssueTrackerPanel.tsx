@@ -13,15 +13,15 @@ import "./IssueTrackerPanel.css";
 function labelStyle(label: string): { background: string; color: string } {
   switch (label) {
     case "ready-for-agent":
-      return { background: "#1b3a2a", color: "#4ade80" };
+      return { background: "oklch(0.3 0.05 160)", color: "oklch(0.72 0.13 160)" };
     case "ready-for-human":
-      return { background: "#1e3a5f", color: "#60a5fa" };
+      return { background: "oklch(0.28 0.05 245)", color: "oklch(0.68 0.13 245)" };
     case "needs-info":
-      return { background: "#3a2e1b", color: "#fb923c" };
+      return { background: "oklch(0.28 0.05 65)", color: "oklch(0.72 0.13 65)" };
     case "needs-triage":
-      return { background: "#2e2a1b", color: "#facc15" };
+      return { background: "oklch(0.28 0.05 90)", color: "oklch(0.72 0.13 90)" };
     case "wontfix":
-      return { background: "#2e1b1b", color: "#f87171" };
+      return { background: "oklch(0.25 0.05 25)", color: "oklch(0.68 0.13 25)" };
     default:
       return { background: "var(--bg-elevated)", color: "var(--text-secondary)" };
   }
@@ -31,15 +31,15 @@ function IssueStateIcon({ state }: { state: string }) {
   if (state === "open") {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="open">
-        <circle cx="7" cy="7" r="6" stroke="#4ade80" strokeWidth="1.5" />
-        <circle cx="7" cy="7" r="2" fill="#4ade80" />
+        <circle cx="7" cy="7" r="6" stroke="oklch(0.72 0.13 160)" strokeWidth="1.5" />
+        <circle cx="7" cy="7" r="2" fill="oklch(0.72 0.13 160)" />
       </svg>
     );
   }
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="closed">
-      <circle cx="7" cy="7" r="6" stroke="#888" strokeWidth="1.5" />
-      <path d="M4.5 7l2 2 3-3" stroke="#888" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="7" cy="7" r="6" stroke="var(--text-muted)" strokeWidth="1.5" />
+      <path d="M4.5 7l2 2 3-3" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

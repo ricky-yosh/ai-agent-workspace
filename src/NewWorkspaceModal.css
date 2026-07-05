@@ -331,13 +331,13 @@
 }
 
 .nwm-manager-btn--confirm {
-  color: #fff;
+  color: var(--text-on-danger);
   background: var(--danger);
 }
 
 .nwm-manager-btn--confirm:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--text-on-danger);
 }
 
 .nwm-manager-btn--disabled {

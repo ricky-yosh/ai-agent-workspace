@@ -17,8 +17,8 @@ export const lightTheme: ThemeDefinition = {
   // Text — dark on light
   [T.TEXT_PRIMARY]: 'oklch(0.220 0.002 286.000)',
   [T.TEXT_SECONDARY]: 'oklch(0.400 0.002 286.000)',
-  [T.TEXT_MUTED]: 'oklch(0.530 0.002 286.000)',
-  [T.TEXT_DIM]: 'oklch(0.630 0.002 286.000)',
+  [T.TEXT_MUTED]: 'oklch(0.450 0.002 286.000)',
+  [T.TEXT_DIM]: 'oklch(0.400 0.002 286.000)',
   [T.TEXT_ON_ACCENT]: 'oklch(1.000 0.000 0.000)',
   [T.TEXT_ON_DANGER]: 'oklch(1.000 0.000 0.000)',
 

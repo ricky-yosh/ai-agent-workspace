@@ -43,14 +43,14 @@ export class ErrorBoundary extends Component<Props, State> {
           justifyContent: "center",
           height: "100%",
           padding: 24,
-          color: "#cccccc",
-          background: "#1e1e1e",
+          color: "var(--text-secondary)",
+          background: "var(--bg-primary)",
           gap: 12,
         }}>
-          <div style={{ fontSize: 14, color: "#f44336", fontWeight: 600 }}>
+          <div style={{ fontSize: 14, color: "oklch(0.56 0.195 28.8)", fontWeight: 600 }}>
             {this.props.name ? `${this.props.name} crashed` : "Something went wrong"}
           </div>
-          <div style={{ fontSize: 12, color: "#6e6e6e", maxWidth: 400, textAlign: "center" }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 400, textAlign: "center" }}>
             {this.state.error?.message ?? "An unexpected error occurred"}
           </div>
           <button
@@ -58,8 +58,8 @@ export class ErrorBoundary extends Component<Props, State> {
             style={{
               marginTop: 8,
               padding: "6px 16px",
-              background: "#0078d4",
-              color: "#fff",
+              background: "var(--accent)",
+              color: "var(--text-on-accent)",
               border: "none",
               borderRadius: 4,
               cursor: "pointer",

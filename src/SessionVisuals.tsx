@@ -20,7 +20,7 @@ export function detectColorFromPath(path: string): string {
     hash = ((hash << 5) - hash + path.charCodeAt(i)) | 0;
   }
   const h = ((hash % 360) + 360) % 360;
-  return `hsl(${h}, 30%, 50%)`;
+  return `oklch(0.6 0.08 ${h})`;
 }
 
 function getSessionColor(sessionId: string): string {

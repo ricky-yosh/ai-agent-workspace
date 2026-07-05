@@ -86,7 +86,7 @@
 
 .ft-row--active {
   background: rgba(56, 139, 253, 0.15) !important;
-  color: #58a6ff;
+  color: oklch(0.68 0.13 245);
 }
 
 /* ---------- Chevron ------------------------------------------------------- */
@@ -127,27 +127,27 @@
 }
 
 .ft-icon--folder {
-  color: #e8b418;
+  color: oklch(0.75 0.15 90);
 }
 
 .ft-icon--code {
-  color: #58a6ff;
+  color: oklch(0.68 0.13 245);
 }
 
 .ft-icon--text {
-  color: #8b949e;
+  color: oklch(0.62 0.02 260);
 }
 
 .ft-icon--json {
-  color: #f0883e;
+  color: oklch(0.68 0.14 60);
 }
 
 .ft-icon--image {
-  color: #bc8cff;
+  color: oklch(0.68 0.13 290);
 }
 
 .ft-icon--archive {
-  color: #8b949e;
+  color: oklch(0.62 0.02 260);
 }
 
 .ft-icon--default {

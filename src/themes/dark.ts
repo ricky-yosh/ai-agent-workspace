@@ -9,7 +9,7 @@ export const darkTheme: ThemeDefinition = {
   [T.BG_PANEL]: 'oklch(0.257 0.002 286.269)',
   [T.BG_PANEL_RAISED]: 'oklch(0.294 0.004 286.177)',
   [T.BG_ACTIVE]: 'oklch(0.339 0.010 285.832)',
-  [T.BG_HOVER]: 'oklch(0.285 0.000 89.876)',
+  [T.BG_HOVER]: 'oklch(0.310 0.004 286.000)',
   [T.BG_INPUT]: 'oklch(0.356 0.000 89.876)',
   [T.BG_INPUT_HOVER]: 'oklch(0.409 0.000 89.876)',
   [T.BG_ELEVATED]: 'oklch(0.321 0.000 89.876)',
@@ -17,8 +17,8 @@ export const darkTheme: ThemeDefinition = {
   // Text
   [T.TEXT_PRIMARY]: 'oklch(0.845 0.000 89.876)',
   [T.TEXT_SECONDARY]: 'oklch(0.738 0.000 89.876)',
-  [T.TEXT_MUTED]: 'oklch(0.538 0.000 89.876)',
-  [T.TEXT_DIM]: 'oklch(0.627 0.000 89.876)',
+  [T.TEXT_MUTED]: 'oklch(0.623 0.000 89.876)',
+  [T.TEXT_DIM]: 'oklch(0.700 0.000 89.876)',
   [T.TEXT_ON_ACCENT]: 'oklch(1.000 0.000 0.000)',
   [T.TEXT_ON_DANGER]: 'oklch(1.000 0.000 0.000)',
 
@@ -28,7 +28,7 @@ export const darkTheme: ThemeDefinition = {
 
   // Accent
   [T.ACCENT]: 'oklch(0.568 0.167 251.313)',
-  [T.ACCENT_HOVER]: 'oklch(0.643 0.195 254.133)',
+  [T.ACCENT_HOVER]: 'oklch(0.643 0.195 251.313)',
   [T.ACCENT_SUBTLE]: 'oklch(0.300 0.060 251.313)',
 
   // Danger

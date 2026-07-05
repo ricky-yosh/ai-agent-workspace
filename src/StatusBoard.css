@@ -281,7 +281,7 @@
 
 .snippet-copy-btn.copied {
   background: rgba(39, 174, 96, 0.15);
-  color: #27ae60;
+  color: oklch(0.65 0.14 160);
 }
 
 .snippet-copy-btn.failed {
@@ -305,7 +305,7 @@
   border: none;
   border-radius: var(--radius-control);
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;

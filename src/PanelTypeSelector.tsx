@@ -107,7 +107,7 @@ export default function PanelTypeSelector({ currentType, onTypeSelect }: PanelTy
                 fontSize: 12,
                 cursor: "pointer",
                 background: type === currentType ? "var(--accent)" : "transparent",
-                color: type === currentType ? "#fff" : "var(--text-primary)",
+                color: type === currentType ? "var(--text-on-accent)" : "var(--text-primary)",
               }}
               onMouseEnter={(e) => { if (type !== currentType) e.currentTarget.style.background = "var(--bg-hover)"; }}
               onMouseLeave={(e) => { if (type !== currentType) e.currentTarget.style.background = "transparent"; }}
