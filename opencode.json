@@ -6,5 +6,11 @@
       "command": ["/Users/rickyyoshioka/repos/01_general/ai-agent-workspace/target/debug/aiaw-mcp-server"],
       "enabled": true
     }
+  },
+  "lsp": {
+    "rust": {
+      "command": ["rust-analyzer"],
+      "extensions": [".rs"]
+    }
   }
 }
