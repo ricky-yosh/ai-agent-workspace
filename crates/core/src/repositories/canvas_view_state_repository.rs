@@ -52,7 +52,7 @@ impl<'a> CanvasViewStateRepository<'a> {
         let now = now_epoch_millis();
 
         // Try to get existing record
-        if let Some(existing) = self.get_by_canvas(canvas_id)? {
+        if let Some(_existing) = self.get_by_canvas(canvas_id)? {
             self.conn.execute(
                 "UPDATE canvas_view_states SET offset_x = ?1, offset_y = ?2, zoom = ?3, updated_at = ?4
                  WHERE canvas_id = ?5",
