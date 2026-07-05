@@ -877,7 +877,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             <motion.div
               key={canvas.id}
               layout
-              initial={{ opacity: 0, y: 8 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{
@@ -1170,7 +1170,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           {uniqueTags.map(tag => (
             <motion.button
               key={tag}
-              initial={{ scale: 0, opacity: 0 }}
+              initial={false}
               animate={{ scale: 1, opacity: 1 }}
               transition={{
                 type: "spring",
@@ -1388,7 +1388,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           }}
         >
           <motion.button
-            initial={{ scale: 0, opacity: 0 }}
+            initial={false}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             onClick={handleUndo}
@@ -1407,10 +1407,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             }}
           >
             <span style={{ fontSize: 13 }}>&#8630;</span>
-            <span>{undoStack.length}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{undoStack.length}</span>
           </motion.button>
           <motion.button
-            initial={{ scale: 0, opacity: 0 }}
+            initial={false}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             onClick={handleRedo}
@@ -1429,7 +1429,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             }}
           >
             <span style={{ fontSize: 13 }}>&#8631;</span>
-            <span>{redoStack.length}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{redoStack.length}</span>
           </motion.button>
         </div>
       )}

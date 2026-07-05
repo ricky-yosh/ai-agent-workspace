@@ -312,6 +312,13 @@
   color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
+}
+
+.dialog-close-btn::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .dialog-close-btn:hover {

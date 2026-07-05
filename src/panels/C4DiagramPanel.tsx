@@ -551,7 +551,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             <motion.div
               key={diagram.id}
               layout
-              initial={{ opacity: 0, y: 8 }}
+              initial={false}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{
@@ -641,7 +641,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                       style={{
                         background: "var(--danger)",
                         border: "none",
-                        color: "#fff",
+                        color: "var(--text-on-danger)",
                         cursor: "pointer",
                         padding: "2px 6px",
                         borderRadius: 4,

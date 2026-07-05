@@ -567,7 +567,7 @@ export function CanvasRenderer({
     return (
       <motion.g
         key={edge.id}
-        initial={{ pathLength: 0, opacity: 0 }}
+        initial={false}
         animate={{ pathLength: 1, opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.26, ease: "linear" }}
@@ -580,7 +580,7 @@ export function CanvasRenderer({
           stroke="var(--canvas-edge)"
           strokeWidth={2}
           strokeLinecap="round"
-          initial={{ pathLength: 0 }}
+          initial={false}
           animate={{ pathLength: 1 }}
           transition={{ duration: 0.42, ease: "easeOut" }}
         />
@@ -591,7 +591,7 @@ export function CanvasRenderer({
             ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
           `}
           fill="var(--canvas-edge)"
-          initial={{ scale: 0 }}
+          initial={false}
           animate={{ scale: 1 }}
           transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
         />
@@ -723,7 +723,7 @@ export function CanvasRenderer({
               return (
                 <motion.g
                   key={group.id}
-                  initial={{ scale: 0.8, opacity: 0 }}
+                  initial={false}
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.26, ease: "linear" }}
@@ -771,7 +771,7 @@ export function CanvasRenderer({
                 <motion.g
                   key={node.id}
                   data-node="true"
-                  initial={{ scale: 0, opacity: 0 }}
+                  initial={false}
                   animate={{
                     scale: isDragging ? 1.05 : 1,
                     opacity: isDeleting ? 0 : 1,
