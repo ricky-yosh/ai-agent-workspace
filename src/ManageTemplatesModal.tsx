@@ -10,6 +10,7 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import type { Layout } from "./types/screen";
+import TemplateMiniature from "./components/TemplateMiniature";
 import "./ManageTemplatesModal.css";
 
 interface ManageTemplatesModalProps {
@@ -399,6 +400,7 @@ export default function ManageTemplatesModal({
   }, [templates, searchQuery, sortOrder]);
 
   const activeTemplate = filteredTemplates[activeIndex] ?? null;
+  const usageCount = activeTemplate ? (workspaceCounts?.[activeTemplate.id] ?? 0) : 0;
 
   useFocusTrap(dialogRef);
   useReclaimFocus();
@@ -569,103 +571,151 @@ export default function ManageTemplatesModal({
           </button>
         </div>
 
-        <div className="template-search">
-          <span className="template-search-icon" aria-hidden="true">
-            <Search size={14} />
-          </span>
-          <input
-            ref={searchInputRef}
-            type="text"
-            placeholder="Search templates…"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setActiveIndex(0);
-            }}
-            onKeyDown={handleSearchKeyDown}
-            aria-label="Search templates"
-          />
-        </div>
-
-        <div className="template-list-header">
-          <span className="template-list-count">
-            {filteredTemplates.length === templates.length
-              ? `${templates.length} template${templates.length !== 1 ? "s" : ""}`
-              : `${filteredTemplates.length} of ${templates.length} template${templates.length !== 1 ? "s" : ""}`}
-          </span>
-          <button
-            className="template-sort-btn"
-            onClick={toggleSort}
-            aria-label={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
-            title={`Sort ${sortOrder === "asc" ? "Z–A" : "A–Z"}`}
-          >
-            <ArrowUpDown size={12} />
-            {sortOrder === "asc" ? "A–Z" : "Z–A"}
-          </button>
-        </div>
-
-        <div
-          className="template-list"
-          ref={listRef}
-          role="listbox"
-          aria-label="Template list"
-          onKeyDown={handleListKeyDown}
-        >
-          {filteredTemplates.length === 0 && searchQuery.trim() && (
-            <div className="template-search-empty">
-              <span>No templates match "{searchQuery.trim()}"</span>
-            </div>
-          )}
-
-          {filteredTemplates.length === 0 && !searchQuery.trim() && (
-            <div className="template-empty">
-              <span className="template-empty-icon" aria-hidden="true">
-                <LayoutTemplate size={32} strokeWidth={1.5} />
+        <div className="template-body">
+          <div className="template-left">
+            <div className="template-search">
+              <span className="template-search-icon" aria-hidden="true">
+                <Search size={14} />
               </span>
-              <span className="template-empty-text">No templates saved</span>
-              <span className="template-empty-hint">
-                Save a layout from the tab context menu
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search templates…"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setActiveIndex(0);
+                }}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search templates"
+              />
+            </div>
+
+            <div className="template-list-header">
+              <span className="template-list-count">
+                {filteredTemplates.length === templates.length
+                  ? `${templates.length} template${templates.length !== 1 ? "s" : ""}`
+                  : `${filteredTemplates.length} of ${templates.length} template${templates.length !== 1 ? "s" : ""}`}
+              </span>
+              <button
+                className="template-sort-btn"
+                onClick={toggleSort}
+                aria-label={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
+                title={`Sort ${sortOrder === "asc" ? "Z–A" : "A–Z"}`}
+              >
+                <ArrowUpDown size={12} />
+                {sortOrder === "asc" ? "A–Z" : "Z–A"}
+              </button>
+            </div>
+
+            <div
+              className="template-list"
+              ref={listRef}
+              role="listbox"
+              aria-label="Template list"
+              onKeyDown={handleListKeyDown}
+            >
+              {filteredTemplates.length === 0 && searchQuery.trim() && (
+                <div className="template-search-empty">
+                  <span>No templates match "{searchQuery.trim()}"</span>
+                </div>
+              )}
+
+              {filteredTemplates.length === 0 && !searchQuery.trim() && (
+                <div className="template-empty">
+                  <span className="template-empty-icon" aria-hidden="true">
+                    <LayoutTemplate size={32} strokeWidth={1.5} />
+                  </span>
+                  <span className="template-empty-text">No templates saved</span>
+                  <span className="template-empty-hint">
+                    Save a layout from the tab context menu
+                  </span>
+                </div>
+              )}
+
+              {filteredTemplates.map((t, idx) => (
+                <TemplateRow
+                  key={t.id}
+                  template={t}
+                  index={idx}
+                  isActive={idx === activeIndex}
+                  isEditing={editingId === t.id}
+                  isConfirmingDelete={confirmingDeleteId === t.id}
+                  editingName={editValue}
+                  onSelect={moveActive}
+                  onEditStart={startRename}
+                  onEditNameChange={setEditValue}
+                  onEditCommit={commitRename}
+                  onEditCancel={() => setEditingId(null)}
+                  onDeleteStart={startDelete}
+                  onDeleteConfirm={(id) => {
+                    onDeleteTemplate(id);
+                    setConfirmingDeleteId(null);
+                  }}
+                  onDeleteCancel={() =>
+                    setConfirmingDeleteId((prev) => (prev === t.id ? null : prev))
+                  }
+                  usageCount={workspaceCounts?.[t.id] ?? 0}
+                  onDuplicate={onDuplicateTemplate}
+                  getItemRef={getItemRef}
+                  editingInputRef={editingInputRef}
+                />
+              ))}
+            </div>
+
+            <div className="template-footer">
+              <span>
+                <kbd>&uarr;</kbd> <kbd>&darr;</kbd> navigate&ensp;
+                <kbd>&crarr;</kbd> rename&ensp;
+                <kbd>&#9003;</kbd> delete&ensp;
+                <kbd>Esc</kbd> close
               </span>
             </div>
-          )}
+          </div>
 
-          {filteredTemplates.map((t, idx) => (
-            <TemplateRow
-              key={t.id}
-              template={t}
-              index={idx}
-              isActive={idx === activeIndex}
-              isEditing={editingId === t.id}
-              isConfirmingDelete={confirmingDeleteId === t.id}
-              editingName={editValue}
-              onSelect={moveActive}
-              onEditStart={startRename}
-              onEditNameChange={setEditValue}
-              onEditCommit={commitRename}
-              onEditCancel={() => setEditingId(null)}
-              onDeleteStart={startDelete}
-              onDeleteConfirm={(id) => {
-                onDeleteTemplate(id);
-                setConfirmingDeleteId(null);
-              }}
-              onDeleteCancel={() =>
-                setConfirmingDeleteId((prev) => (prev === t.id ? null : prev))
-              }
-              usageCount={workspaceCounts?.[t.id] ?? 0}
-              onDuplicate={onDuplicateTemplate}
-              getItemRef={getItemRef}
-              editingInputRef={editingInputRef}
-            />
-          ))}
-        </div>
-
-        <div className="template-footer">
-          <span>
-            <kbd>&uarr;</kbd> <kbd>&darr;</kbd> navigate&ensp;
-            <kbd>&crarr;</kbd> rename&ensp;
-            <kbd>&#9003;</kbd> delete&ensp;
-            <kbd>Esc</kbd> close
-          </span>
+          <div className="template-right">
+            {activeTemplate ? (
+              <div className="template-preview">
+                <div className="template-preview-header">
+                  <span className="template-preview-name">{activeTemplate.name}</span>
+                  {activeTemplate.built_in && (
+                    <span className="template-preview-badge">Built-in</span>
+                  )}
+                </div>
+                <div className="template-preview-mini">
+                  <TemplateMiniature
+                    screen={activeTemplate.screen}
+                    width={160}
+                    height={120}
+                  />
+                </div>
+                {usageCount > 0 && (
+                  <div className="template-preview-stat">
+                    <span className="template-preview-stat-label">Used by</span>
+                    <span className="template-preview-stat-value">
+                      {usageCount} workspace{usageCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
+                {onDuplicateTemplate && (
+                  <button
+                    className="template-preview-action"
+                    onClick={() => onDuplicateTemplate(activeTemplate.id)}
+                  >
+                    <Copy size={12} />
+                    Duplicate
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="template-preview template-preview--empty">
+                <LayoutTemplate size={24} strokeWidth={1.5} style={{ opacity: 0.3 }} />
+                <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                  Select a template to preview
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
