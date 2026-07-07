@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { useClickOutside } from "../hooks/useClickOutside";
 
 interface DialogProps {
@@ -75,9 +76,12 @@ export function Dialog({
 
   const overlayClass = `dialog-overlay${overlayClassName ? ` ${overlayClassName}` : ""}${visible ? " open" : " closing"}`;
   const dialogClass = `dialog ${className}${visible ? " open" : " closing"}`;
-  const dialogStyle = width !== undefined ? { width: typeof width === "number" ? `${width}px` : width } : undefined;
+  const dialogStyle =
+    width !== undefined
+      ? { width: typeof width === "number" ? `${width}px` : width, maxWidth: typeof width === "number" ? `${width}px` : width }
+      : undefined;
 
-  return (
+  return createPortal(
     <div
       className={overlayClass}
       style={{ pointerEvents: "auto" }}
@@ -96,6 +100,7 @@ export function Dialog({
         {header ?? (title && <div className="dialog-title">{title}</div>)}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
