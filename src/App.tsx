@@ -17,7 +17,7 @@ import { useTauriEvent } from "./hooks/useTauriEvent";
 import type { WorkspaceInstance } from "./hooks/useWorkspaceManager";
 import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import "./BlankPanel";
+import "./GettingStartedPanel";
 import "./TerminalPanel";
 import "./IssueTrackerPanel";
 import "./file-panel/DiffViewerPanel";

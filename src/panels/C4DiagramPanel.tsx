@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Copy, Check } from "lucide-react";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
@@ -134,6 +135,70 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const [zoom, setZoom] = useState(1);
 
   const [containerWidth, setContainerWidth] = useState(800);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  // ── Copy prompt ───────────────────────────────────────────────────────
+
+  const zeroStatePrompt =
+    'Use the aiaw generate_c4_diagram tool to create a C4 diagram of the codebase';
+
+  const buildDiagramPrompt = useCallback((): string => {
+    if (!diagramData) return "";
+    const lines: string[] = [];
+    lines.push(`# C4 Architecture Diagram: ${selectedDiagram?.name ?? "Untitled"}`);
+    lines.push("");
+    lines.push("## Nodes");
+    for (const node of diagramData.nodes) {
+      const meta = node.file_path
+        ? ` (file: ${node.file_path}${node.line_start ? `:${node.line_start}` : ""})`
+        : "";
+      lines.push(
+        `- ${node.label} [${node.level}/${node.type}]${meta}`,
+      );
+    }
+    lines.push("");
+    lines.push("## Relationships");
+    for (const edge of diagramData.edges) {
+      const source = diagramData.nodes.find((n) => n.id === edge.source_id);
+      const target = diagramData.nodes.find((n) => n.id === edge.target_id);
+      const sourceLabel = source?.label ?? edge.source_id;
+      const targetLabel = target?.label ?? edge.target_id;
+      lines.push(
+        `- ${sourceLabel} --> ${targetLabel}${edge.label ? ` : ${edge.label}` : ""}`,
+      );
+    }
+    if (diagramData.groups.length > 0) {
+      lines.push("");
+      lines.push("## Groups");
+      for (const group of diagramData.groups) {
+        const members = group.node_ids
+          .map((id) => diagramData.nodes.find((n) => n.id === id)?.label ?? id)
+          .join(", ");
+        lines.push(`- ${group.label}: ${members}`);
+      }
+    }
+    return lines.join("\n");
+  }, [diagramData, selectedDiagram?.name]);
+
+  const handleCopyZeroState = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(zeroStatePrompt);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 1500);
+  }, [zeroStatePrompt]);
+
+  const handleCopyDiagram = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(buildDiagramPrompt());
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 1500);
+  }, [buildDiagramPrompt]);
 
   // ── Fetch diagrams ────────────────────────────────────────────────────
 
@@ -507,22 +572,45 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         <div style={{ maxWidth: 320, lineHeight: 1.5 }}>
           To generate one, ask the AI:
         </div>
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--bg-secondary)",
-            fontFamily: "var(--font-mono, monospace)",
-            fontSize: 11,
-            color: "var(--text-primary)",
-            maxWidth: 400,
-            wordBreak: "break-word",
-            lineHeight: 1.5,
-          }}
-        >
-          Use the aiaw <code style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</code>{" "}
-          tool to create a C4 diagram of the codebase
+        <div style={{ position: "relative", maxWidth: 400 }}>
+          <div
+            style={{
+              padding: "10px 40px 10px 14px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg-secondary)",
+              fontFamily: "var(--font-mono, monospace)",
+              fontSize: 11,
+              color: "var(--text-primary)",
+              wordBreak: "break-word",
+              lineHeight: 1.5,
+            }}
+          >
+            Use the aiaw <code style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</code>{" "}
+            tool to create a C4 diagram of the codebase
+          </div>
+          <button
+            onClick={handleCopyZeroState}
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 26,
+              height: 26,
+              padding: 0,
+              border: "none",
+              borderRadius: 4,
+              background: "var(--bg-panel)",
+              color: copyState === "copied" ? "oklch(0.65 0.14 160)" : "var(--text-muted)",
+              cursor: "pointer",
+            }}
+            title={copyState === "copied" ? "Copied" : "Copy prompt"}
+          >
+            {copyState === "copied" ? <Check size={14} /> : <Copy size={14} />}
+          </button>
         </div>
       </div>
     );
@@ -752,6 +840,25 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           }}
         >
           <span>{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={handleCopyDiagram}
+            style={{
+              background: "none",
+              border: copyState === "copied" ? "1px solid oklch(0.65 0.14 160)" : "1px solid var(--border)",
+              borderRadius: 4,
+              color: copyState === "copied" ? "oklch(0.65 0.14 160)" : "var(--text-muted)",
+              cursor: "pointer",
+              padding: "2px 6px",
+              fontSize: 11,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+            title={copyState === "copied" ? "Copied" : "Copy diagram as text"}
+          >
+            {copyState === "copied" ? <Check size={12} /> : <Copy size={12} />}
+            {copyState === "copied" ? "Copied" : "Copy"}
+          </button>
           <button
             onClick={resetView}
             style={{

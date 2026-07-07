@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Check, Layout } from "lucide-react";
 import { Dialog } from "./components/Dialog";
 import { listPanelTypes, getPanelLabel } from "./panelRegistry";
+import type { PanelListItem, PanelTypeEntry } from "./panelRegistry";
 import "./PanelActionsModal.css";
 
 interface PanelActionsModalProps {
@@ -28,15 +29,17 @@ export default function PanelActionsModal({
 
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
-  const types = listPanelTypes();
+  const types: PanelListItem[] = listPanelTypes();
 
   const currentLabel = getPanelLabel(currentType) ?? currentType;
 
-  const actions: PanelTypeAction[] = types.map((t) => ({
-    type: t.type,
-    label: t.label,
-    isCurrent: t.type === currentType,
-  }));
+  const actions: PanelTypeAction[] = types
+    .filter((t): t is PanelTypeEntry => t.type !== "divider")
+    .map((t) => ({
+      type: t.type,
+      label: t.label,
+      isCurrent: t.type === currentType,
+    }));
 
   useEffect(() => {
     if (open) {
@@ -122,6 +125,22 @@ export default function PanelActionsModal({
     };
   }
 
+  // Build a render list that maps each item in `types` (which may include
+  // dividers) to either a divider placeholder or an action with its index.
+  const renderItems: ({ kind: "divider" } | { kind: "action"; action: PanelTypeAction; actionIdx: number })[] = (() => {
+    const items: ({ kind: "divider" } | { kind: "action"; action: PanelTypeAction; actionIdx: number })[] = [];
+    let actionIdx = -1;
+    for (const item of types) {
+      if (item.type === "divider") {
+        items.push({ kind: "divider" });
+      } else {
+        actionIdx++;
+        items.push({ kind: "action", action: actions[actionIdx], actionIdx });
+      }
+    }
+    return items;
+  })();
+
   return (
     <Dialog
       open={open}
@@ -142,13 +161,17 @@ export default function PanelActionsModal({
       }
     >
       <div className="panel-actions-list" role="list">
-        {actions.map((action, idx) => {
-          const isActive = idx === activeIndex;
+        {renderItems.map((item, idx) => {
+          if (item.kind === "divider") {
+            return <div key={`divider-${idx}`} className="panel-actions-divider" />;
+          }
+          const { action, actionIdx } = item;
+          const isActive = actionIdx === activeIndex;
           const isConfirmed = confirmedKey === action.type;
           return (
             <button
               key={action.type}
-              ref={getItemRef(idx)}
+              ref={getItemRef(actionIdx)}
               className={
                 "panel-actions-item" +
                 (isActive ? " panel-actions-item--active" : "") +
@@ -157,7 +180,7 @@ export default function PanelActionsModal({
               role="listitem"
               disabled={confirmedKey !== null}
               onClick={() => triggerAction(action)}
-              onMouseEnter={() => { if (!confirmedKey) setActiveIndex(idx); }}
+              onMouseEnter={() => { if (!confirmedKey) setActiveIndex(actionIdx); }}
             >
               <span className="panel-actions-row-left">
                 {action.isCurrent
