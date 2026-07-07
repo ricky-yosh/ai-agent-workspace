@@ -38,17 +38,30 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let session = sessions_repo.get(&session_id)
                 .map_err(|e| CommandError::not_found_from_sql("session", &session_id, e))?;
 
+            // Seed built-in templates if they don't exist (runs every open, idempotent)
+            {
+                let layouts_repo = state.db.layouts(&conn);
+                let builtins = [
+                    ("General", Screen::default_with_terminal()),
+                    ("File Explorer", Screen::file_explorer()),
+                    ("Diff Viewer", Screen::diff_viewer()),
+                    ("C4 Lab", Screen::c4_lab()),
+                    ("Project Hub", Screen::project_hub()),
+                ];
+                for (name, screen) in builtins {
+                    if layouts_repo.find_by_name(name).is_err() {
+                        layouts_repo.create(name, screen, true)?;
+                    }
+                }
+            }
+
             if session.workspaces.is_empty() {
                 let layouts_repo = state.db.layouts(&conn);
-                let (template_id, template_name, default_screen) = match layouts_repo.find_by_name("General") {
-                    Ok(general) => (general.id, general.name, general.screen),
-                    Err(_) => {
-                        let mut terminal_screen = Screen::new();
-                        terminal_screen.areas[0].panel_type = "terminal".to_string();
-                        let layout = layouts_repo.create("General", terminal_screen, true)?;
-                        (layout.id, layout.name, layout.screen)
-                    }
-                };
+                let general = layouts_repo.find_by_name("General")?;
+                let template_id = general.id;
+                let template_name = general.name;
+                let default_screen = general.screen;
+
                 let workspaces_repo = state.db.workspaces(&conn);
                 let ws = workspaces_repo.create(&session_id, &template_name, &template_id, default_screen)?;
                 sessions_repo.set_active_workspace(&session_id, &ws.id)?;
@@ -56,7 +69,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
 
             let result = sessions_repo.get(&session_id)
                 .map_err(|e| CommandError::not_found_from_sql("session", &session_id, e))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Session(result), DomainEvent::SessionsChanged))
+            Ok(ExecutionOutcome::new(CommandResult::Session(result), vec![DomainEvent::SessionsChanged, DomainEvent::LayoutsChanged]))
         }
         Command::SessionClose { session_id } => {
             let sessions = state.db.sessions(&conn);
@@ -1014,7 +1027,7 @@ mod tests {
         assert!(matches!(outcome.events.as_slice(), [DomainEvent::SessionsChanged]));
 
         let outcome = execute(Command::SessionOpen { session_id: sid.clone() }, &state).unwrap();
-        assert!(matches!(outcome.events.as_slice(), [DomainEvent::SessionsChanged]));
+        assert!(matches!(outcome.events.as_slice(), [DomainEvent::SessionsChanged, DomainEvent::LayoutsChanged]));
 
         let outcome = execute(Command::SessionClose { session_id: sid.clone() }, &state).unwrap();
         assert!(matches!(outcome.events.as_slice(), [DomainEvent::SessionsChanged]));
