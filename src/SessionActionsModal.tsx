@@ -79,18 +79,21 @@ export default function SessionActionsModal({
     itemRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  const actions: Action[] = [
+  const openActions: Action[] = [
     { key: "F", label: "Open in Finder", handler: onOpenInFinder, icon: Folder },
     { key: "E", label: "Open in Editor", handler: onOpenInEditor, icon: FileCode2 },
     { key: "D", label: "Open in External Diff", handler: onOpenInDiff, icon: GitCompare },
     { key: "T", label: "Open in Terminal", handler: onOpenInTerminal, icon: Terminal },
+  ];
+
+  const infoActions: Action[] = [
     { key: "I", label: "Copy Session ID", handler: onCopyId, icon: Hash },
     { key: "P", label: "Copy Session Path", handler: onCopyPath, icon: Clipboard },
     { key: "R", label: "Rename", handler: () => { setRenaming(true); setRenameValue(session?.name ?? ""); }, icon: Pencil, immediate: true },
     { key: "⌫", matchKey: "Backspace", label: "Delete Session", handler: onDelete, icon: Trash2, destructive: true },
   ];
 
-  const dividerAfterIndex = 5;
+  const actions: Action[] = [...openActions, ...infoActions];
 
   function triggerAction(action: Action) {
     if (action.immediate) {
@@ -177,7 +180,7 @@ export default function SessionActionsModal({
       title={`Session actions: ${session?.name ?? ""}`}
       className="session-actions-dialog"
       overlayClassName="dialog-overlay--action"
-      width={280}
+      width={460}
       onKeyDown={handleKeyDown}
       header={
         <div className="session-actions-header">
@@ -204,17 +207,46 @@ export default function SessionActionsModal({
         </div>
       }
     >
-      <div className="session-actions-list" role="list">
-        {actions.map((action, idx) => {
-          const Icon = action.icon;
-          const isActive = idx === activeIndex;
-          const isConfirmed = confirmedKey === action.key;
-          return (
-            <React.Fragment key={action.key}>
-              {idx === dividerAfterIndex + 1 && (
-                <div className="session-actions-divider" role="separator" />
-              )}
+      <div className="session-actions-columns">
+        <div className="session-actions-column" role="list" aria-label="Open with">
+          <div className="session-actions-column-header">Open With</div>
+          {openActions.map((action, colIdx) => {
+            const idx = colIdx;
+            const Icon = action.icon;
+            const isActive = idx === activeIndex;
+            const isConfirmed = confirmedKey === action.key;
+            return (
               <button
+                key={action.key}
+                ref={getItemRef(idx)}
+                className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}`}
+                role="listitem"
+                disabled={confirmedKey !== null || renaming}
+                onClick={() => triggerAction(action)}
+                onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
+              >
+                <span className="session-actions-row-left">
+                  {isConfirmed
+                    ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
+                    : <Icon size={15} className="session-actions-icon" />
+                  }
+                  <span className="session-actions-label">{action.label}</span>
+                </span>
+                <kbd className="session-actions-kbd">{action.key}</kbd>
+              </button>
+            );
+          })}
+        </div>
+        <div className="session-actions-column" role="list" aria-label="Info and manage">
+          <div className="session-actions-column-header">Info &amp; Manage</div>
+          {infoActions.map((action, colIdx) => {
+            const idx = openActions.length + colIdx;
+            const Icon = action.icon;
+            const isActive = idx === activeIndex;
+            const isConfirmed = confirmedKey === action.key;
+            return (
+              <button
+                key={action.key}
                 ref={getItemRef(idx)}
                 className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}${action.destructive ? " session-actions-item--destructive" : ""}`}
                 role="listitem"
@@ -231,9 +263,9 @@ export default function SessionActionsModal({
                 </span>
                 <kbd className="session-actions-kbd">{action.key}</kbd>
               </button>
-            </React.Fragment>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <div className="session-actions-footer">
