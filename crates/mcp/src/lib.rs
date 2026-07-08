@@ -508,10 +508,10 @@ impl McpHandler {
         run_mcp_command!(Command::CanvasEdgeGet { id }, &state, CanvasEdge, edge, json)
     }
 
-    #[tool(description = "Update a canvas edge's label or metadata")]
-    async fn edge_update(&self, #[tool(param)] id: String, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Update a canvas edge's label, metadata, source, or target")]
+    async fn edge_update(&self, #[tool(param)] id: String, #[tool(param)] source_node_id: Option<String>, #[tool(param)] target_node_id: Option<String>, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeUpdate { id, label, metadata_json }, &state, CanvasEdge, edge, json)
+        run_mcp_command!(Command::CanvasEdgeUpdate { id, source_node_id, target_node_id, label, metadata_json }, &state, CanvasEdge, edge, json)
     }
 
     #[tool(description = "Delete a canvas edge")]

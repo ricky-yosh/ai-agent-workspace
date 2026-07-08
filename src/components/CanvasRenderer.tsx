@@ -41,7 +41,51 @@ export interface CanvasGroup {
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5.0;
 
-export interface CanvasRendererProps {
+// Handle geometry constants
+const HANDLE_LONG = 20;
+const HANDLE_SHORT = 10;
+const HIT_OUTWARD = 10;
+const HIT_INWARD = 2;
+
+type Side = 'top' | 'right' | 'bottom' | 'left';
+
+function getConnectedNodeSides(node: CanvasNode, edges: CanvasEdge[]): Set<Side> {
+  const allConnected = edges.some(
+    e => e.source_node_id === node.id || e.target_node_id === node.id
+  );
+  if (allConnected) {
+    return new Set<Side>(['top', 'right', 'bottom', 'left']);
+  }
+  return new Set<Side>();
+}
+
+function halfPillPath(side: Side): string {
+  const w = HANDLE_LONG / 2;
+  const d = HANDLE_SHORT;
+  switch (side) {
+    case 'top':
+      return `M ${-w} ${d} Q ${-w} 0 0 0 Q ${w} 0 ${w} ${d} Z`;
+    case 'bottom':
+      return `M ${-w} ${-d} Q ${-w} 0 0 0 Q ${w} 0 ${w} ${-d} Z`;
+    case 'left':
+      return `M ${d} ${-w} Q 0 ${-w} 0 0 Q 0 ${w} ${d} ${w} Z`;
+    case 'right':
+      return `M ${-d} ${-w} Q 0 ${-w} 0 0 Q 0 ${w} ${-d} ${w} Z`;
+    default:
+      return '';
+  }
+}
+
+function handleCenter(side: Side, node: CanvasNode): { x: number; y: number } {
+  switch (side) {
+    case 'top': return { x: node.x + node.width / 2, y: node.y };
+    case 'bottom': return { x: node.x + node.width / 2, y: node.y + node.height };
+    case 'left': return { x: node.x, y: node.y + node.height / 2 };
+    case 'right': return { x: node.x + node.width, y: node.y + node.height / 2 };
+  }
+}
+
+interface CanvasRendererProps {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   groups: CanvasGroup[];
@@ -94,9 +138,6 @@ export interface CanvasRendererProps {
   ) => void;
   // Selection
   selectedNodeIds?: Set<string>;
-  // Edge drag state
-  edgeDragSource?: { nodeId: string; x: number; y: number } | null;
-  edgeDragTarget?: { x: number; y: number } | null;
   // Animation
   newNodeIds?: Set<string>;
   deletingNodeIds?: Set<string>;
@@ -113,9 +154,8 @@ export interface CanvasRendererProps {
     endX: number;
     endY: number;
   } | null;
-  // Hover / Alt state (for connection-source breathe effect)
+  // Hover state (for side handles)
   hoveredNodeId?: string | null;
-  isAltPressed?: boolean;
   // Drag state (for cursor style)
   draggedNodeId?: string | null;
   // Inline editing state (for rendering the input inside foreignObject)
@@ -127,6 +167,16 @@ export interface CanvasRendererProps {
   editInputRef?: RefObject<HTMLInputElement | null>;
   // Children rendered inside the transform group (e.g. placement ghosts)
   children?: ReactNode;
+  onHandleMouseDown?: (nodeId: string, side: Side) => void;
+  connectionDragActive?: boolean;
+  ropePoints?: Array<{ x: number; y: number }> | null;
+  dragOverNodeId?: string | null;
+  onArrowheadGrab?: (edgeId: string, endX: number, endY: number) => void;
+  rewireRopePoints?: Array<{ x: number; y: number }> | null;
+  rewireDragOverNodeId?: string | null;
+  rewireActive?: boolean;
+  snappedMidpoint?: { x: number; y: number } | null;
+  rewireSnappedMidpoint?: { x: number; y: number } | null;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -155,8 +205,6 @@ export function CanvasRenderer({
   onCanvasMouseMove,
   onCanvasMouseUp,
   selectedNodeIds = new Set(),
-  edgeDragSource = null,
-  edgeDragTarget = null,
   newNodeIds: _newNodeIds = new Set(),
   deletingNodeIds = new Set(),
   renderNodeContent,
@@ -165,7 +213,6 @@ export function CanvasRenderer({
   renderTags,
   boxSelect = null,
   hoveredNodeId = null,
-  isAltPressed = false,
   draggedNodeId = null,
   editingNodeId = null,
   editingValue = "",
@@ -174,7 +221,18 @@ export function CanvasRenderer({
   onEditBlur,
   editInputRef,
   children,
+  onHandleMouseDown,
+  connectionDragActive = false,
+  ropePoints: ropePointsProp = null,
+  dragOverNodeId = null,
+  onArrowheadGrab,
+  rewireRopePoints: rewireRopePointsProp = null,
+  rewireDragOverNodeId: rewireDragOverNodeIdProp = null,
+  rewireActive = false,
+  snappedMidpoint = null,
+  rewireSnappedMidpoint: rewireSnappedMidpointProp = null,
 }: CanvasRendererProps) {
+  const activeSnappedMidpoint = snappedMidpoint ?? rewireSnappedMidpointProp;
   const viewportRef = useRef<HTMLDivElement>(null);
 
   // ── Internal pan state ────────────────────────────────────────────────
@@ -584,6 +642,18 @@ export function CanvasRenderer({
           animate={{ pathLength: 1 }}
           transition={{ duration: 0.42, ease: "easeOut" }}
         />
+        <path
+          d={path}
+          fill="none"
+          stroke="var(--canvas-amber, #EC9F05)"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeDasharray="6 6"
+          className="rope-dragging"
+          pointerEvents="none"
+          opacity={connectionDragActive || rewireActive ? 0.8 : 0}
+          style={{ transition: 'opacity 0.15s ease' }}
+        />
         <motion.polygon
           points={`
             ${end.x},${end.y}
@@ -602,13 +672,31 @@ export function CanvasRenderer({
           fill="var(--canvas-edge)"
           className="edge-handle"
         />
-        <circle
-          cx={end.x}
-          cy={end.y}
-          r={4}
-          fill="var(--canvas-edge)"
-          className="edge-handle"
-        />
+        <g style={{ cursor: "grab" }}>
+          <circle
+            cx={end.x}
+            cy={end.y}
+            r={12}
+            fill="none"
+            style={{ pointerEvents: "all" }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onArrowheadGrab?.(edge.id, end.x, end.y);
+            }}
+          />
+          <motion.polygon
+            points={`
+              ${end.x},${end.y}
+              ${end.x - arrowSize * Math.cos(arrowAngle - Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle - Math.PI / 6)}
+              ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
+            `}
+            fill="var(--canvas-edge)"
+            initial={false}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
+            style={{ pointerEvents: "none" }}
+          />
+        </g>
         {edge.label && (
           <text
             x={cpX}
@@ -683,19 +771,116 @@ export function CanvasRenderer({
             {edges.map((edge) => renderEdgePath(edge))}
           </AnimatePresence>
 
-          {/* Edge preview (being dragged to create new edge) */}
-          {edgeDragSource && edgeDragTarget && (
-            <line
-              x1={edgeDragSource.x}
-              y1={edgeDragSource.y}
-              x2={edgeDragTarget.x}
-              y2={edgeDragTarget.y}
-              stroke="var(--canvas-edge)"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="edge-dragging"
-              pointerEvents="none"
-            />
+          {/* Physics rope during connection drag */}
+          {ropePointsProp && ropePointsProp.length > 1 && (
+            <>
+              <polyline
+                points={ropePointsProp.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke="var(--canvas-amber, #EC9F05)"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="6 6"
+                className="rope-dragging"
+                pointerEvents="none"
+              />
+              {(() => {
+                const points = ropePointsProp;
+                const tip = points[points.length - 1];
+                const prev = points[points.length - 2] || points[0];
+                const angle =
+                  (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
+                  Math.PI;
+                const isValid = dragOverNodeId !== null;
+                return (
+                  <g
+                    transform={`translate(${tip.x}, ${tip.y}) rotate(${angle})`}
+                    pointerEvents="none"
+                  >
+                    {isValid ? (
+                      <>
+                        <path
+                          d="M 0,0 L -12,-6"
+                          stroke="var(--canvas-amber, #EC9F05)"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          transform="rotate(-10)"
+                        />
+                        <path
+                          d="M 0,0 L -12,6"
+                          stroke="var(--canvas-amber, #EC9F05)"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          transform="rotate(10)"
+                        />
+                      </>
+                    ) : (
+                      <polygon
+                        points="-10,-5 0,0 -10,5"
+                        fill="var(--canvas-amber, #EC9F05)"
+                      />
+                    )}
+                  </g>
+                );
+              })()}
+            </>
+          )}
+
+          {/* Physics rope during rewire */}
+          {rewireRopePointsProp && rewireRopePointsProp.length > 1 && (
+            <>
+              <polyline
+                points={rewireRopePointsProp.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke="var(--canvas-amber, #EC9F05)"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="6 6"
+                className="rope-dragging"
+                pointerEvents="none"
+              />
+              {(() => {
+                const points = rewireRopePointsProp;
+                const tip = points[points.length - 1];
+                const prev = points[points.length - 2] || points[0];
+                const angle =
+                  (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
+                  Math.PI;
+                const isValid = rewireDragOverNodeIdProp !== null;
+                return (
+                  <g
+                    transform={`translate(${tip.x}, ${tip.y}) rotate(${angle})`}
+                    pointerEvents="none"
+                  >
+                    {isValid ? (
+                      <>
+                        <path
+                          d="M 0,0 L -12,-6"
+                          stroke="var(--canvas-amber, #EC9F05)"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          transform="rotate(-10)"
+                        />
+                        <path
+                          d="M 0,0 L -12,6"
+                          stroke="var(--canvas-amber, #EC9F05)"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          transform="rotate(10)"
+                        />
+                      </>
+                    ) : (
+                      <polygon
+                        points="-10,-5 0,0 -10,5"
+                        fill="var(--canvas-amber, #EC9F05)"
+                      />
+                    )}
+                  </g>
+                );
+              })()}
+            </>
           )}
 
           {/* Custom children (e.g. placement ghosts) */}
@@ -795,7 +980,8 @@ export function CanvasRenderer({
                         ? "grabbing"
                         : "grab",
                     pointerEvents: isDragging || isDeleting ? "none" : "auto",
-                  }}
+                    '--handle-opacity': hoveredNodeId === node.id ? 1 : 0,
+                  } as React.CSSProperties}
                   onMouseDown={(e) => {
                     if (!isEditing) onNodeMouseDown?.(node.id, e);
                   }}
@@ -829,12 +1015,72 @@ export function CanvasRenderer({
                     }
                     strokeWidth={isDragging || isSelected || isEditing ? 2 : 1}
                     filter={isDragging ? "url(#drop-shadow)" : undefined}
-                    className={
-                      isAltPressed && hoveredNodeId === node.id
-                        ? "node-connection-source"
-                        : undefined
-                    }
                   />
+
+                  {/* Drop ring during connection drag or rewire */}
+                  {(connectionDragActive || rewireActive) && (dragOverNodeId === node.id || rewireDragOverNodeIdProp === node.id) && (
+                    <rect
+                      x={node.x + 1}
+                      y={node.y + 1}
+                      width={node.width - 2}
+                      height={node.height - 2}
+                      rx={7}
+                      ry={7}
+                      fill="none"
+                      stroke="var(--canvas-success, #22c55e)"
+                      strokeWidth={2}
+                      strokeOpacity={0.8}
+                      className="drop-ring"
+                      pointerEvents="none"
+                    />
+                  )}
+
+                  {/* Side handles */}
+                  {(['top', 'right', 'bottom', 'left'] as Side[]).map((side) => {
+                    const { x: cx, y: cy } = handleCenter(side, node);
+                    const isConnected = getConnectedNodeSides(node, edges).has(side);
+                    const isSnapped = activeSnappedMidpoint !== null &&
+                      Math.abs(activeSnappedMidpoint.x - cx) < 5 &&
+                      Math.abs(activeSnappedMidpoint.y - cy) < 5;
+                    const bobKeyframe = `handle-bob-${side}`;
+                    const hitWidth = HANDLE_LONG + HIT_INWARD + HIT_OUTWARD;
+                    const hitHeight = HANDLE_SHORT + HIT_INWARD + HIT_OUTWARD;
+                    return (
+                      <g
+                        key={side}
+                        transform={`translate(${cx}, ${cy}) scale(${1 / zoom})`}
+                        style={{
+                          opacity: isConnected ? 1 : 'var(--handle-opacity, 0)',
+                          transition: 'opacity var(--canvas-duration-fast, .15s) var(--canvas-ease-state, cubic-bezier(.2,.8,.2,1))',
+                        }}
+                      >
+                        <rect
+                          x={-hitWidth / 2}
+                          y={-hitHeight / 2}
+                          width={hitWidth}
+                          height={hitHeight}
+                          fill="none"
+                          style={{ pointerEvents: 'all', cursor: 'grab' }}
+                          onPointerDown={(e: React.PointerEvent) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            onHandleMouseDown?.(node.id, side);
+                          }}
+                        />
+                        <path
+                          d={halfPillPath(side)}
+                          className={`side-handle${isConnected ? ' connected' : ''}${isSnapped ? ' snapped' : ''}`}
+                          fill={isSnapped ? "var(--canvas-success, #22c55e)" : "var(--text-muted)"}
+                          style={{
+                            pointerEvents: 'none',
+                            animationName: (isConnected || connectionDragActive || rewireActive) ? undefined : bobKeyframe,
+                            transform: isSnapped ? 'scale(1.3)' : undefined,
+                            transformOrigin: isSnapped ? `${cx}px ${cy}px` : undefined,
+                          }}
+                        />
+                      </g>
+                    );
+                  })}
 
                   {/* Node content */}
                   <foreignObject

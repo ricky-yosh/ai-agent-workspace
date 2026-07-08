@@ -200,6 +200,8 @@ pub enum Command {
     },
     CanvasEdgeUpdate {
         id: String,
+        source_node_id: Option<String>,
+        target_node_id: Option<String>,
         label: Option<String>,
         metadata_json: Option<String>,
     },

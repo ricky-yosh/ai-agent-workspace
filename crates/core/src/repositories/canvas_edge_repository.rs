@@ -119,19 +119,23 @@ impl<'a> CanvasEdgeRepository<'a> {
     pub fn update(
         &self,
         id: &str,
+        source_node_id: Option<&str>,
+        target_node_id: Option<&str>,
         label: Option<&str>,
         metadata_json: Option<&str>,
     ) -> Result<CanvasEdge, rusqlite::Error> {
         let existing = self.get(id)?;
         let now = now_epoch_millis();
 
+        let new_source = source_node_id.unwrap_or(&existing.source_node_id);
+        let new_target = target_node_id.unwrap_or(&existing.target_node_id);
         let new_label = label.or(existing.label.as_deref());
         let new_metadata = metadata_json.or(existing.metadata_json.as_deref());
 
         self.conn.execute(
-            "UPDATE canvas_edges SET label = ?1, metadata_json = ?2, updated_at = ?3
-             WHERE id = ?4",
-            params![new_label, new_metadata, now, id],
+            "UPDATE canvas_edges SET source_node_id = ?1, target_node_id = ?2, label = ?3, metadata_json = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![new_source, new_target, new_label, new_metadata, now, id],
         )?;
         self.get(id)
     }
@@ -258,7 +262,7 @@ mod tests {
         let repo = db.canvas_edges(&conn);
 
         let edge = repo.create(&canvas_id, &node1_id, &node2_id, Some("Old Label"), None).unwrap();
-        let updated = repo.update(&edge.id, Some("New Label"), None).unwrap();
+        let updated = repo.update(&edge.id, None, None, Some("New Label"), None).unwrap();
         assert_eq!(updated.label, Some("New Label".to_string()));
     }
 

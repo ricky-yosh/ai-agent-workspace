@@ -17,10 +17,12 @@ import {
   useCanvasViewport,
   useCanvasUndoRedo,
   useCanvasSelection,
-  useCanvasEdgeCreation,
   useCanvasInlineEdit,
   useCanvasNodeDrag,
+  useCanvasEdgeCreation,
+  useCanvasRewire,
 } from "../hooks/canvas";
+import "../canvas/canvas-animations.css";
 
 interface VisualCanvas {
   id: string;
@@ -98,15 +100,25 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     nodes, offsetX, offsetY, zoom, pushUndo,
   });
 
-  // Edge creation
+  // Hovered node ID (for side handles)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  // Edge creation via handle drag-to-connect
   const {
-    edgeDragState, setEdgeDragState,
-    isAltPressed, hoveredNodeId, setHoveredNodeId,
-    handleEdgeDragStart,
-    handleEdgeDragMove,
-    handleEdgeDragEnd,
+    connectionDrag, ropePoints, dragOverNodeId, snappedMidpoint,
+    startConnectionDrag, updateConnectionDrag, endConnectionDrag,
   } = useCanvasEdgeCreation({
     nodes, selectedCanvasId, showToast, setEdges,
+    hoveredNodeId,
+  });
+
+  // Edge rewire via arrowhead grab
+  const {
+    rewire, rewireRopePoints, rewireDragOverNodeId, rewireSnappedMidpoint,
+    startRewire, updateRewire, endRewire,
+  } = useCanvasRewire({
+    nodes, edges, selectedCanvasId, showToast, setEdges,
+    hoveredNodeId,
   });
 
   // Inline edit
@@ -157,24 +169,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   // ── Node drag with edge creation routing ────────────────────────────────
 
-  // Handle node mouse down — route to edge creation (Alt) or drag
+  // Handle node mouse down — directly trigger drag
   const handleNodeMouseDown = useCallback((
     nodeId: string,
     e: React.MouseEvent
   ) => {
-    if (e.altKey) {
-      // Start edge creation instead of drag
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node) return;
-      e.stopPropagation();
-      e.preventDefault();
-      const sourceX = node.x + node.width / 2;
-      const sourceY = node.y + node.height / 2;
-      handleEdgeDragStart(nodeId, sourceX, sourceY);
-      return;
-    }
     dragHandleNodeMouseDown(nodeId, e);
-  }, [nodes, handleEdgeDragStart, dragHandleNodeMouseDown]);
+  }, [dragHandleNodeMouseDown]);
 
   // Handle mouse move on canvas (dispatcher)
   const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
@@ -184,33 +185,45 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       return;
     }
 
+    // Handle connection drag
+    if (connectionDrag) {
+      updateConnectionDrag(canvasX, canvasY);
+      return;
+    }
+
+    // Handle rewire drag
+    if (rewire) {
+      updateRewire(canvasX, canvasY);
+      return;
+    }
+
     // Handle box-select rubber band
     if (boxSelect) {
       handleBoxSelectMove(viewportX, viewportY);
       return;
     }
 
-    // Handle edge drag
-    if (edgeDragState) {
-      handleEdgeDragMove(canvasX, canvasY);
-      return;
-    }
-
     if (!dragState) return;
     handleDragMove(e.clientX, e.clientY);
-  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, edgeDragState, handleEdgeDragMove, placementMode]);
+  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, placementMode, connectionDrag, updateConnectionDrag, rewire, updateRewire]);
 
   // Handle mouse up to end dragging
   const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
-    // Complete edge drag if active
-    if (edgeDragState) {
-      handleEdgeDragEnd(canvasX, canvasY);
-      return;
-    }
-
     // Complete box-select if active
     if (boxSelect) {
       handleBoxSelectEnd();
+    }
+
+    // Complete connection drag if active
+    if (connectionDrag) {
+      endConnectionDrag(canvasX, canvasY);
+      return;
+    }
+
+    // Complete rewire if active
+    if (rewire) {
+      endRewire(canvasX, canvasY);
+      return;
     }
 
     // If we were dragging, record the move(s) for undo
@@ -252,7 +265,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         }
       }
     }
-  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, edgeDragState, handleEdgeDragEnd, handleDragEnd]);
+  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, handleDragEnd, connectionDrag, endConnectionDrag, rewire, endRewire]);
 
   // ── Data fetching ──────────────────────────────────────────────────────
 
@@ -510,23 +523,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     setSelectedNodeIds(new Set());
   }, [nodes, setEditingNodeId, setEditingValue, setSelectedNodeIds]);
 
-  // Handle "Add Edge" from context menu — starts edge creation from this node
-  const handleStartEdgeFromNode = useCallback((nodeId: string | undefined) => {
-    if (!nodeId) return;
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    const sourceX = node.x + node.width / 2;
-    const sourceY = node.y + node.height / 2;
-    setEdgeDragState({
-      sourceNodeId: node.id,
-      sourceX,
-      sourceY,
-      targetX: sourceX,
-      targetY: sourceY,
-    });
-    setContextMenu(null);
-  }, [nodes, setEdgeDragState]);
-
   // Handle "Delete" from context menu — deletes the node
   const handleDeleteNode = useCallback(async (nodeId: string | undefined) => {
     if (!nodeId) return;
@@ -562,7 +558,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   // Context menu items for a node
   const nodeMenuItems: ContextMenuItem[] = [
     { label: "Edit", shortcut: "Enter", onClick: () => handleEditNode(contextMenu?.nodeId) },
-    { label: "Add Edge", shortcut: "Alt+Click", onClick: () => handleStartEdgeFromNode(contextMenu?.nodeId) },
     { label: "", separator: true, onClick: () => {} },
     { label: "Add to Group", disabled: true, onClick: () => {} },
     { label: "Add Tag", disabled: true, onClick: () => {} },
@@ -708,11 +703,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           setCursorCanvasPos(null);
           return;
         }
-        // Cancel edge drag if active
-        if (edgeDragState) {
-          setEdgeDragState(null);
-          return;
-        }
         setSelectedNodeIds(new Set());
         setEditingNodeId(null);
         setEditingValue("");
@@ -723,7 +713,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [deleteSelectedNodes, handleUndo, handleRedo, edgeDragState, placementMode, setSelectedNodeIds, setEditingNodeId, setEditingValue, setEdgeDragState]);
+  }, [deleteSelectedNodes, handleUndo, handleRedo, placementMode, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -759,7 +749,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       if (boxSelect) {
         handleBoxSelectEnd();
       }
-      setEdgeDragState(null);
       handleDragEnd();
     };
 
@@ -773,7 +762,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         clearTimeout(batchUpdatePositionsRef.current);
       }
     };
-  }, [boxSelect, handleBoxSelectEnd, setEdgeDragState, handleDragEnd]);
+  }, [boxSelect, handleBoxSelectEnd, handleDragEnd]);
 
   useTauriEvent<{ session_id: string }>(
     "visual-canvases-changed",
@@ -927,160 +916,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div className="visual-canvas-panel" style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
-      {/* ── Design Tokens ── */}
-      <style>{`
-        .visual-canvas-panel {
-          /* Animation timing */
-          --canvas-duration-fast: .15s;
-          --canvas-duration-normal: .26s;
-          --canvas-duration-slow: .62s;
 
-          /* Animation easing */
-          --canvas-ease-state: cubic-bezier(.2,.8,.2,1);
-          --canvas-ease-spring: cubic-bezier(.19,1.42,.36,1);
-          --canvas-ease-spring-subtle: cubic-bezier(.16,1,.3,1);
-
-          /* Edge animation tokens */
-          --canvas-edge-dash-array: 6 6;
-          --canvas-edge-dash-speed: .68s;
-
-          /* Colors are now provided by the theme system via applyTheme().
-             Canvas-specific tokens (--canvas-*) are set in the theme files. */
-
-          /* Radii */
-          --canvas-radius-node: 10px;
-          --canvas-radius-tag: 8px;
-          --canvas-radius-group: 14px;
-        }
-
-        @keyframes edge-drag-flow {
-          0% { stroke-dashoffset: 0; }
-          100% { stroke-dashoffset: -22px; }
-        }
-
-        .edge-dragging {
-          stroke-dasharray: var(--canvas-edge-dash-array);
-          animation: edge-drag-flow var(--canvas-edge-dash-speed) linear infinite;
-        }
-
-        @keyframes edge-handle-bob {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
-        }
-
-        .edge-handle {
-          animation: edge-handle-bob 3s ease-in-out infinite;
-          cursor: grab;
-        }
-
-        .edge-handle:hover {
-          animation-play-state: paused;
-          transform: scale(1.2);
-          transition: transform var(--canvas-duration-fast) var(--canvas-ease-state);
-        }
-
-        @keyframes node-shockwave-scale {
-          0% {
-            animation-timing-function: cubic-bezier(.16,1,.3,1);
-            transform: translate(-50%, -50%) scale(1);
-          }
-          34% {
-            transform: translate(-50%, -50%) scale(2.2);
-            animation-timing-function: cubic-bezier(.19,1,.22,1);
-          }
-          60% {
-            animation-timing-function: cubic-bezier(.22,1,.36,1);
-            transform: translate(-50%, -50%) scale(1.72);
-          }
-          82% {
-            animation-timing-function: cubic-bezier(.22,1,.36,1);
-            transform: translate(-50%, -50%) scale(1.16);
-          }
-          100% {
-            transform: translate(-50%, -50%) scale(1);
-          }
-        }
-
-        @keyframes node-shockwave-fade {
-          0% { opacity: 0; }
-          14% { opacity: 0.88; }
-          46% { opacity: 0.62; }
-          78% { opacity: 0.22; }
-          100% { opacity: 0; }
-        }
-
-        .node-shockwave {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 26px;
-          height: 26px;
-          margin: -13px 0 0 -13px;
-          border-radius: 50%;
-          border: 1.5px solid var(--canvas-accent);
-          background: var(--canvas-accent);
-          opacity: 0;
-          pointer-events: none;
-          animation:
-            node-shockwave-scale 1.32s cubic-bezier(.16,1,.3,1) both,
-            node-shockwave-fade 1.38s cubic-bezier(.22,1,.36,1) both;
-        }
-
-        @keyframes node-connection-breathe {
-          0%, 100% {
-            opacity: 0.78;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1.025);
-          }
-        }
-
-        .node-connection-source {
-          animation: node-connection-breathe 1.5s ease-in-out infinite;
-        }
-
-        @keyframes tag-enter {
-          0% {
-            opacity: 0;
-            transform: translateY(5px) scale(0.92);
-          }
-          62% {
-            opacity: 1;
-            transform: translateY(-1px) scale(1.045);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        .node-ghost {
-          animation: ghost-pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes ghost-pulse {
-          0%, 100% { opacity: 0.5; }
-          50% { opacity: 0.7; }
-        }
-
-        .tag-pill {
-          padding: 1px 6px;
-          border-radius: var(--canvas-radius-tag);
-          background: var(--canvas-accent);
-          color: #fff;
-          font-size: 9px;
-          font-weight: 500;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .tag-pill-enter {
-          animation: tag-enter 0.26s cubic-bezier(.16,1,.3,1) both;
-        }
-      `}</style>
 
       {/* Header with back button */}
       <div style={{
@@ -1230,8 +1066,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         onCanvasMouseUp={handleMouseUp}
         onCanvasContextMenu={(canvasX, canvasY, screenX, screenY) => setContextMenu({ x: screenX, y: screenY, canvasX, canvasY })}
         selectedNodeIds={selectedNodeIds}
-        edgeDragSource={edgeDragState ? { nodeId: edgeDragState.sourceNodeId, x: edgeDragState.sourceX, y: edgeDragState.sourceY } : null}
-        edgeDragTarget={edgeDragState ? { x: edgeDragState.targetX, y: edgeDragState.targetY } : null}
         newNodeIds={newlyCreatedNodeIds}
         deletingNodeIds={deletingNodeIds}
         tags={tags}
@@ -1291,7 +1125,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           );
         }}
         hoveredNodeId={hoveredNodeId}
-        isAltPressed={isAltPressed}
         draggedNodeId={draggedNodeId}
         editingNodeId={editingNodeId}
         editingValue={editingValue}
@@ -1300,6 +1133,16 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         onEditBlur={confirmEdit}
         editInputRef={editInputRef}
         boxSelect={boxSelect}
+        onHandleMouseDown={(nodeId, side) => startConnectionDrag(nodeId, side)}
+        connectionDragActive={!!connectionDrag}
+        ropePoints={ropePoints}
+        dragOverNodeId={dragOverNodeId}
+        onArrowheadGrab={(edgeId, endX, endY) => startRewire(edgeId, endX, endY)}
+        rewireRopePoints={rewireRopePoints}
+        rewireDragOverNodeId={rewireDragOverNodeId}
+        rewireActive={!!rewire}
+        snappedMidpoint={snappedMidpoint}
+        rewireSnappedMidpoint={rewireSnappedMidpoint}
       >
         {/* Ghost preview for node placement */}
         {placementMode && placementMode.type === 'node' && cursorCanvasPos && (

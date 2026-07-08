@@ -42,11 +42,12 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             {
                 let layouts_repo = state.db.layouts(&conn);
                 let builtins = [
+                    ("Getting Started", Screen::getting_started()),
                     ("General", Screen::default_with_terminal()),
+                    ("Project Hub", Screen::project_hub()),
+                    ("C4 Lab", Screen::c4_lab()),
                     ("File Explorer", Screen::file_explorer()),
                     ("Diff Viewer", Screen::diff_viewer()),
-                    ("C4 Lab", Screen::c4_lab()),
-                    ("Project Hub", Screen::project_hub()),
                 ];
                 for (name, screen) in builtins {
                     if layouts_repo.find_by_name(name).is_err() {
@@ -57,14 +58,26 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
 
             if session.workspaces.is_empty() {
                 let layouts_repo = state.db.layouts(&conn);
-                let general = layouts_repo.find_by_name("General")?;
-                let template_id = general.id;
-                let template_name = general.name;
-                let default_screen = general.screen;
-
+                let workspace_names = [
+                    "Getting Started",
+                    "General",
+                    "Project Hub",
+                    "C4 Lab",
+                    "File Explorer",
+                    "Diff Viewer",
+                ];
                 let workspaces_repo = state.db.workspaces(&conn);
-                let ws = workspaces_repo.create(&session_id, &template_name, &template_id, default_screen)?;
-                sessions_repo.set_active_workspace(&session_id, &ws.id)?;
+                let mut first_ws_id = None;
+                for name in workspace_names {
+                    let layout = layouts_repo.find_by_name(name)?;
+                    let ws = workspaces_repo.create(&session_id, &layout.name, &layout.id, layout.screen)?;
+                    if first_ws_id.is_none() {
+                        first_ws_id = Some(ws.id);
+                    }
+                }
+                if let Some(ws_id) = first_ws_id {
+                    sessions_repo.set_active_workspace(&session_id, &ws_id)?;
+                }
             }
 
             let result = sessions_repo.get(&session_id)
@@ -520,17 +533,16 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("canvas_edge", &id, e))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasEdge(edge)))
         }
-        Command::CanvasEdgeUpdate { id, label, metadata_json } => {
+        Command::CanvasEdgeUpdate { id, source_node_id, target_node_id, label, metadata_json } => {
             let edges = state.db.canvas_edges(&conn);
             let existing = edges.get(&id)
                 .map_err(|e| CommandError::not_found_from_sql("canvas_edge", &id, e))?;
-            // Get the canvas to find session_id
             let canvases = state.db.visual_canvases(&conn);
             let canvas = canvases.get(&existing.canvas_id)
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
             let session_id = canvas.session_id.clone();
             let canvas_id = existing.canvas_id.clone();
-            let edge = edges.update(&id, label.as_deref(), metadata_json.as_deref())
+            let edge = edges.update(&id, source_node_id.as_deref(), target_node_id.as_deref(), label.as_deref(), metadata_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasEdge(edge), DomainEvent::CanvasEdgesChanged { session_id, canvas_id }))
         }
@@ -969,7 +981,7 @@ mod tests {
             _ => panic!("Expected Session"),
         };
 
-        // Open to get the auto-created workspace
+        // Open to get the auto-created workspaces
         let outcome = execute(
             Command::SessionOpen { session_id: session.id.clone() },
             &state,
@@ -978,9 +990,32 @@ mod tests {
             CommandResult::Session(s) => s,
             _ => panic!("Expected Session"),
         };
+        // Session now has 6 workspaces: Getting Started, General, Project Hub, C4 Lab, File Explorer, Diff Viewer
+
+        // Remove all but the last workspace
+        for i in 0..5 {
+            execute(
+                Command::WorkspaceRemove {
+                    session_id: session.id.clone(),
+                    workspace_id: session.workspaces[i].id.clone(),
+                },
+                &state,
+            ).unwrap();
+        }
+
+        // Re-fetch the session (only the last workspace remains)
+        let outcome = execute(
+            Command::SessionOpen { session_id: session.id.clone() },
+            &state,
+        ).unwrap();
+        let session = match outcome.result {
+            CommandResult::Session(s) => s,
+            _ => panic!("Expected Session"),
+        };
+        assert_eq!(session.workspaces.len(), 1, "Should have 1 workspace remaining");
         let ws_id = session.workspaces[0].id.clone();
 
-        // Remove the only workspace
+        // Remove the last workspace
         let outcome = execute(
             Command::WorkspaceRemove {
                 session_id: session.id.clone(),
