@@ -32,7 +32,7 @@ export function getPanelLabel(type: string): string | undefined {
 }
 
 export function listPanelTypes(): PanelListItem[] {
-  const order = ["terminal", "file-tree", "file-viewer", "diff-viewer", "issue-tracker", "visual-canvas", "c4-diagram", "blank"];
+  const order = ["terminal", "file-tree", "file-viewer", "diff-viewer", "git-tree", "issue-tracker", "visual-canvas", "c4-diagram", "blank"];
   const items: PanelListItem[] = [];
   for (const type of order) {
     const label = labelRegistry.get(type);

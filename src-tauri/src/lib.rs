@@ -228,7 +228,7 @@ unit_return!(delete_canvas_node, CanvasNodeDelete { id }, id: String);
 
 command_handler!(list_canvas_edges, CanvasEdgeList { canvas_id }, CanvasEdges, Vec<CanvasEdge>, canvas_id: String);
 command_handler!(get_canvas_edge, CanvasEdgeGet { id }, CanvasEdge, CanvasEdge, id: String);
-command_handler!(update_canvas_edge, CanvasEdgeUpdate { id, label, metadata_json }, CanvasEdge, CanvasEdge, id: String, label: Option<String>, metadata_json: Option<String>);
+command_handler!(update_canvas_edge, CanvasEdgeUpdate { id, source_node_id, target_node_id, label, metadata_json }, CanvasEdge, CanvasEdge, id: String, source_node_id: Option<String>, target_node_id: Option<String>, label: Option<String>, metadata_json: Option<String>);
 unit_return!(delete_canvas_edge, CanvasEdgeDelete { id }, id: String);
 
 // ── Canvas Group commands ──────────────────────────────────────
@@ -461,6 +461,62 @@ fn get_git_diff(
 
     ai_agent_workspace_git_operations::get_diff(&working_dir, staged)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn search_history(
+    state: tauri::State<AppState>,
+    session_id: String,
+    keyword: Option<String>,
+    author: Option<String>,
+    after: Option<String>,
+    before: Option<String>,
+    max_results: Option<u32>,
+) -> Result<Vec<ai_agent_workspace_git_operations::CommitInfo>, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+
+    ai_agent_workspace_git_operations::search_history(
+        &working_dir,
+        keyword.as_deref(),
+        author.as_deref(),
+        after.as_deref(),
+        before.as_deref(),
+        max_results,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_commit_diff(
+    state: tauri::State<AppState>,
+    session_id: String,
+    hash: Option<String>,
+    hash_from: Option<String>,
+    hash_to: Option<String>,
+) -> Result<String, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+
+    use std::process::Command;
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(&working_dir);
+
+    if let Some(h) = hash {
+        cmd.args(["show", "--stat", "-p", &h]);
+    } else if let (Some(from), Some(to)) = (hash_from, hash_to) {
+        cmd.args(["diff", &format!("{}..{}", from, to)]);
+    } else {
+        return Err("Either 'hash' or both 'hash_from' and 'hash_to' must be provided".to_string());
+    }
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git command failed: {}", stderr.trim()));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 #[tauri::command]
@@ -814,6 +870,8 @@ pub fn run() {
             read_file,
             list_directory,
             get_git_diff,
+            search_history,
+            get_commit_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
