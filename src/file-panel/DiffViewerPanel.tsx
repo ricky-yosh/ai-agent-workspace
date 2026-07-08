@@ -3,7 +3,7 @@ import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelIdentity } from "../PanelContext";
 import { safeInvoke } from "../safeInvoke";
-import { usePanelActionBridge } from "../providers/PanelActionBridgeProvider";
+import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
 import { parseUnifiedDiff } from "./renderers/DiffRenderer";
 import { useVirtualRows } from "./virtualizer";
 
@@ -17,6 +17,11 @@ interface GitDiffResult {
 }
 
 type DiffTab = "unstaged" | "staged";
+
+interface ExternalDiffState {
+  content: string;
+  title: string;
+}
 
 // ---------------------------------------------------------------------------
 // useGitDiff hook
@@ -132,22 +137,37 @@ function flattenDiffFiles(files: ReturnType<typeof parseUnifiedDiff>): FlatItem[
 
 function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelIdentity();
-  const bridge = usePanelActionBridge();
+  const registry = useViewerRegistry();
   const [activeTab, setActiveTab] = useState<DiffTab>("unstaged");
+  const [externalDiff, setExternalDiff] = useState<ExternalDiffState | null>(null);
 
   // --- Bridge integration: listen for external show-diff requests ---
   useEffect(() => {
-    return bridge.registerShowDiffHandler((payload) => {
+    return registry.registerShowDiffHandler((payload) => {
       if (payload.staged !== undefined) {
         setActiveTab(payload.staged ? "staged" : "unstaged");
       }
     });
-  }, [bridge]);
+  }, [registry]);
+
+  // --- Listen for external diff content (commit diffs, range diffs, etc.) ---
+  useEffect(() => {
+    function handleOpenDiff(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.content) {
+        setExternalDiff({ content: detail.content, title: detail.title ?? "" });
+      }
+    }
+    window.addEventListener("viewer:open-diff-content", handleOpenDiff);
+    return () => window.removeEventListener("viewer:open-diff-content", handleOpenDiff);
+  }, []);
 
   const isStaged = activeTab === "staged";
   const { diff, loading, error, refetch } = useGitDiff(sessionId, isStaged);
 
-  const files = useMemo(() => parseUnifiedDiff(diff), [diff]);
+  const displayDiff = externalDiff?.content ?? diff;
+
+  const files = useMemo(() => parseUnifiedDiff(displayDiff), [displayDiff]);
   const totalLines = files.reduce((sum, f) => sum + f.lines.length, 0);
   const flatItems = useMemo(() => flattenDiffFiles(files), [files]);
 
@@ -192,6 +212,35 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           active={activeTab === "staged"}
           onClick={() => setActiveTab("staged")}
         />
+        {externalDiff && (
+          <>
+            <span style={{ color: "var(--border)", margin: "0 4px" }}>|</span>
+            <span
+              style={{
+                padding: "4px 8px",
+                fontSize: 12,
+                color: "var(--accent)",
+                borderRadius: 4,
+                background: "rgba(56, 132, 255, 0.1)",
+              }}
+            >
+              {externalDiff.title}
+            </span>
+            <button
+              onClick={() => setExternalDiff(null)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 11,
+                padding: "2px 4px",
+              }}
+            >
+              ✕
+            </button>
+          </>
+        )}
         <div style={{ flex: 1 }} />
         <button
           onClick={refetch}
@@ -241,7 +290,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           </div>
         )}
 
-        {!loading && !error && !diff && (
+        {!loading && !error && !displayDiff && (
           <div
             style={{
               padding: 16,
@@ -254,7 +303,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
           </div>
         )}
 
-        {!loading && !error && diff && (
+        {!loading && !error && displayDiff && (
           <div
             ref={scrollRef}
             style={{ height: "100%", overflow: "auto" }}

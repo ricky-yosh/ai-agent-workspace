@@ -110,7 +110,7 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
 
   // Register/unregister with the viewer registry
   useEffect(() => {
-    registry.registerViewer(areaId, openTab, workspaceId);
+    registry.registerViewer(areaId, openTab, workspaceId, "file");
     return () => registry.unregisterViewer(areaId);
   }, [registry, areaId, openTab, workspaceId]);
 

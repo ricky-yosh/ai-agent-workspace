@@ -15,8 +15,9 @@ export function registerViewer(
   areaId: string,
   openFile: (filePath: string) => void,
   workspaceId: string,
+  contentType: string,
 ): void {
-  defaultRegistry.registerViewer(areaId, openFile, workspaceId);
+  defaultRegistry.registerViewer(areaId, openFile, workspaceId, contentType);
 }
 
 export function unregisterViewer(areaId: string): void {

@@ -19,10 +19,10 @@ import {
 const registeredAreas: string[] = [];
 const listenerCleanups: Array<() => void> = [];
 
-function reg(areaId: string, workspaceId = "w1") {
+function reg(areaId: string, workspaceId = "w1", contentType = "file") {
   const openFile = vi.fn();
   registeredAreas.push(areaId);
-  registerViewer(areaId, openFile, workspaceId);
+  registerViewer(areaId, openFile, workspaceId, contentType);
   return openFile;
 }
 

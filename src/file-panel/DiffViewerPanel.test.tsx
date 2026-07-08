@@ -12,9 +12,9 @@ vi.mock("../safeInvoke", () => ({
 }));
 
 const mockRegisterShowDiffHandler = vi.fn(() => () => {});
-vi.mock("../providers/PanelActionBridgeProvider", () => ({
-  PanelActionBridgeProvider: ({ children }: { children: React.ReactNode }) => children,
-  usePanelActionBridge: () => ({
+vi.mock("../providers/ViewerRegistryProvider", () => ({
+  ViewerRegistryProvider: ({ children }: { children: React.ReactNode }) => children,
+  useViewerRegistry: () => ({
     registerShowDiffHandler: mockRegisterShowDiffHandler,
   }),
 }));

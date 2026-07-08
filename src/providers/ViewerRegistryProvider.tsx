@@ -14,10 +14,16 @@ import { createContext, useContext, useRef, type ReactNode } from "react";
 
 type OpenFileFn = (filePath: string) => void;
 
+export interface ShowDiffPayload {
+  filePath?: string;
+  staged?: boolean;
+}
+
 export interface ViewerInfo {
   areaId: string;
   openFile: OpenFileFn;
   workspaceId: string;
+  contentType: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,8 +39,8 @@ export class ViewerRegistry {
 
   // --- Registration ---
 
-  registerViewer(areaId: string, openFile: OpenFileFn, workspaceId: string): void {
-    const info: ViewerInfo = { areaId, openFile, workspaceId };
+  registerViewer(areaId: string, openFile: OpenFileFn, workspaceId: string, contentType: string): void {
+    const info: ViewerInfo = { areaId, openFile, workspaceId, contentType };
     this.viewerMap.set(areaId, info);
     this.lastFocusedViewer = info;
   }
@@ -60,10 +66,19 @@ export class ViewerRegistry {
   // --- Queries ---
 
   getLastFocusedViewer(workspaceId?: string): ViewerInfo | null {
-    if (!workspaceId) return this.lastFocusedViewer;
-    if (this.lastFocusedViewer?.workspaceId === workspaceId) return this.lastFocusedViewer;
+    return this.getLastFocusedViewerByType("file", workspaceId);
+  }
+
+  getLastFocusedViewerByType(contentType: string, workspaceId?: string): ViewerInfo | null {
+    if (this.lastFocusedViewer?.contentType === contentType) {
+      if (!workspaceId || this.lastFocusedViewer.workspaceId === workspaceId) {
+        return this.lastFocusedViewer;
+      }
+    }
     for (const info of this.viewerMap.values()) {
-      if (info.workspaceId === workspaceId) return info;
+      if (info.contentType === contentType) {
+        if (!workspaceId || info.workspaceId === workspaceId) return info;
+      }
     }
     return null;
   }
@@ -107,6 +122,45 @@ export class ViewerRegistry {
         (fn) => fn !== listener,
       );
     };
+  }
+
+  // --- Diff viewer dispatch ---
+
+  private showDiffHandler: ((payload: ShowDiffPayload) => void) | null = null;
+  private pendingShowDiff: ShowDiffPayload | null = null;
+
+  registerShowDiffHandler(handler: (payload: ShowDiffPayload) => void): () => void {
+    this.showDiffHandler = handler;
+    if (this.pendingShowDiff) {
+      const payload = this.pendingShowDiff;
+      this.pendingShowDiff = null;
+      queueMicrotask(() => handler(payload));
+    }
+    return () => {
+      if (this.showDiffHandler === handler) {
+        this.showDiffHandler = null;
+      }
+    };
+  }
+
+  requestShowDiff(filePath?: string, staged?: boolean): void {
+    if (this.showDiffHandler) {
+      this.showDiffHandler({ filePath, staged });
+    } else {
+      this.pendingShowDiff = { filePath, staged };
+    }
+  }
+
+  hasDiffViewer(): boolean {
+    return this.showDiffHandler !== null;
+  }
+
+  // --- Diff content dispatch (for commit diffs, range diffs, etc.) ---
+
+  dispatchDiffContent(content: string, title: string): void {
+    window.dispatchEvent(
+      new CustomEvent("viewer:open-diff-content", { detail: { content, title } }),
+    );
   }
 }
 

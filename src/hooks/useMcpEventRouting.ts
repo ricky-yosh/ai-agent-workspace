@@ -3,7 +3,6 @@ import { useTauriEvent } from "./useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
 import type { WorkspaceInstance } from "./useWorkspaceManager";
 import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
-import { usePanelActionBridge } from "../providers/PanelActionBridgeProvider";
 import type { Screen } from "../types/screen";
 
 export function useMcpEventRouting(params: {
@@ -17,7 +16,6 @@ export function useMcpEventRouting(params: {
 }) {
   const { sessionId, workspaceId, screen, focusedAreaIdRef, onError, handleScreenChange, setFocusedAreaId } = params;
   const registry = useViewerRegistry();
-  const bridge = usePanelActionBridge();
 
   const panelContextRef = useRef<{
     screen: Screen | null;
@@ -85,9 +83,9 @@ export function useMcpEventRouting(params: {
       const ctx = panelContextRef.current;
       if (!ctx.sessionId || session_id !== ctx.sessionId) return;
 
-      if (bridge.hasDiffViewerHandler()) {
+      if (registry.hasDiffViewer()) {
         // A diff viewer is mounted — deliver the command directly
-        bridge.requestShowDiff(file_path, staged);
+        registry.requestShowDiff(file_path, staged);
       } else {
         // No diff viewer exists — create one by splitting the focused area
         const focusedId = focusedAreaIdRef.current;
@@ -115,11 +113,11 @@ export function useMcpEventRouting(params: {
               setFocusedAreaId(newArea.id);
               // The DiffViewerPanel will mount and register its handler,
               // then pick up the pending show-diff action.
-              bridge.requestShowDiff(file_path, staged);
+              registry.requestShowDiff(file_path, staged);
             });
           })
           .catch(console.error);
       }
-    }, [bridge, onError, handleScreenChange]),
+    }, [registry, onError, handleScreenChange]),
   );
 }

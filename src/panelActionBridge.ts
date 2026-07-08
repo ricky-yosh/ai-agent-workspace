@@ -1,24 +1,24 @@
 /**
  * Diff Viewer Action Bridge — thin re-export.
  *
- * Backed by a default PanelActionBridge instance.
- * Prefer using usePanelActionBridge() hook in React components.
+ * Backed by a default ViewerRegistry instance.
+ * Prefer using useViewerRegistry() hook in React components.
  */
 
-import { PanelActionBridge } from "./providers/PanelActionBridgeProvider";
+import { ViewerRegistry } from "./providers/ViewerRegistryProvider";
 
-const defaultBridge = new PanelActionBridge();
+const defaultRegistry = new ViewerRegistry();
 
-export type { ShowDiffPayload } from "./providers/PanelActionBridgeProvider";
+export type { ShowDiffPayload } from "./providers/ViewerRegistryProvider";
 
 export function registerShowDiffHandler(handler: (payload: { filePath?: string; staged?: boolean }) => void): () => void {
-  return defaultBridge.registerShowDiffHandler(handler);
+  return defaultRegistry.registerShowDiffHandler(handler);
 }
 
 export function requestShowDiff(filePath?: string, staged?: boolean): void {
-  defaultBridge.requestShowDiff(filePath, staged);
+  defaultRegistry.requestShowDiff(filePath, staged);
 }
 
 export function hasDiffViewerHandler(): boolean {
-  return defaultBridge.hasDiffViewerHandler();
+  return defaultRegistry.hasDiffViewer();
 }
