@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { LayoutTemplate, Search, Plus, ArrowUpDown, Pencil, Trash2, Check } from "lucide-react";
+import { LayoutTemplate, Search, ArrowUpDown, Pencil, Trash2, Check, Settings2 } from "lucide-react";
 import type { Layout } from "./types/screen";
 import { Dialog } from "./components/Dialog";
 import TemplateMiniature from "./components/TemplateMiniature";
@@ -12,7 +12,7 @@ interface NewWorkspaceModalProps {
   onSelect: (templateId: string) => void;
   onRenameTemplate: (id: string, newName: string) => void;
   onDeleteTemplate: (id: string) => void;
-  initialTab?: "picker" | "manager";
+  initialEditing?: boolean;
 }
 
 export default function NewWorkspaceModal({
@@ -22,64 +22,47 @@ export default function NewWorkspaceModal({
   onSelect,
   onRenameTemplate,
   onDeleteTemplate,
-  initialTab = "picker",
+  initialEditing = false,
 }: NewWorkspaceModalProps) {
-  const [tab, setTab] = useState<"picker" | "manager">("picker");
+  const [editing, setEditing] = useState(false);
 
   const [filterQuery, setFilterQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [confirmedId, setConfirmedId] = useState<string | null>(null);
 
-  const [mgSearchQuery, setMgSearchQuery] = useState("");
-  const [mgSortOrder, setMgSortOrder] = useState<"asc" | "desc">("asc");
-  const [mgActiveIndex, setMgActiveIndex] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-  const pickerSearchRef = useRef<HTMLInputElement>(null);
-  const mgSearchRef = useRef<HTMLInputElement>(null);
-  const pickerItemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const mgItemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const searchRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const editingInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
-      setTab(initialTab);
+      setEditing(initialEditing);
       setFilterQuery("");
       setActiveIndex(0);
-      setMgSearchQuery("");
-      setMgSortOrder("asc");
-      setMgActiveIndex(0);
+      setSortOrder("asc");
+      setConfirmedId(null);
       setEditingId(null);
       setEditValue("");
       setConfirmingDeleteId(null);
-      setConfirmedId(null);
     }
-  }, [open, initialTab]);
+  }, [open, initialEditing]);
 
   useEffect(() => {
-    if (!open) return;
-    if (tab === "picker") {
-      pickerSearchRef.current?.focus();
-      setMgActiveIndex(0);
-    } else {
-      mgSearchRef.current?.focus();
-      setActiveIndex(0);
-    }
-  }, [tab, open]);
+    if (open) searchRef.current?.focus();
+  }, [open]);
 
   useEffect(() => {
-    pickerItemRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
+    itemRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [filterQuery]);
-
-  useEffect(() => {
-    mgItemRefs.current.get(mgActiveIndex)?.scrollIntoView({ block: "nearest" });
-  }, [mgActiveIndex]);
 
   useEffect(() => {
     if (editingId && editingInputRef.current) {
@@ -88,26 +71,27 @@ export default function NewWorkspaceModal({
     }
   }, [editingId]);
 
-  const filtered = useMemo(
-    () => templates.filter((t) => t.name.toLowerCase().includes(filterQuery.toLowerCase())),
-    [templates, filterQuery]
-  );
-
-  const filteredForManager = useMemo(() => {
-    const q = mgSearchQuery.toLowerCase().trim();
+  const visible = useMemo(() => {
+    const q = filterQuery.toLowerCase().trim();
     const result = q
       ? templates.filter((t) => t.name.toLowerCase().includes(q))
       : [...templates];
-    result.sort((a, b) => {
-      const cmp = a.name.localeCompare(b.name);
-      return mgSortOrder === "asc" ? cmp : -cmp;
-    });
+    if (editing) {
+      result.sort((a, b) => {
+        const cmp = a.name.localeCompare(b.name);
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
     return result;
-  }, [templates, mgSearchQuery, mgSortOrder]);
+  }, [templates, filterQuery, editing, sortOrder]);
 
-  const selectedTemplate = tab === "picker"
-    ? filtered[activeIndex] ?? null
-    : filteredForManager[mgActiveIndex] ?? null;
+  useEffect(() => {
+    if (activeIndex >= visible.length) {
+      setActiveIndex(Math.max(0, visible.length - 1));
+    }
+  }, [visible.length, activeIndex]);
+
+  const selectedTemplate = visible[activeIndex] ?? null;
 
   const handleSelect = useCallback(
     (templateId: string) => {
@@ -128,85 +112,29 @@ export default function NewWorkspaceModal({
     setEditingId(null);
   }
 
-  function handlePickerKey(e: React.KeyboardEvent) {
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
-        break;
-      case "Home":
-        e.preventDefault();
-        setActiveIndex(0);
-        break;
-      case "End":
-        e.preventDefault();
-        setActiveIndex(filtered.length - 1);
-        break;
-      case "Enter": {
-        e.preventDefault();
-        const t = filtered[activeIndex];
-        if (t) handleSelect(t.id);
-        break;
-      }
-    }
+  function startRename(t: Layout) {
+    if (t.built_in) return;
+    setEditingId(t.id);
+    setEditValue(t.name);
+    setConfirmingDeleteId(null);
   }
 
-  function handleManagerKey(e: React.KeyboardEvent) {
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setMgActiveIndex((i) => Math.min(i + 1, filteredForManager.length - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setMgActiveIndex((i) => Math.max(i - 1, 0));
-        break;
-      case "Home":
-        e.preventDefault();
-        setMgActiveIndex(0);
-        break;
-      case "End":
-        e.preventDefault();
-        setMgActiveIndex(filteredForManager.length - 1);
-        break;
-      case "Enter": {
-        e.preventDefault();
-        const t = filteredForManager[mgActiveIndex];
-        if (t && !t.built_in) {
-          setEditingId(t.id);
-          setEditValue(t.name);
-        }
-        break;
+  function toggleEditing() {
+    setEditing((prev) => {
+      const next = !prev;
+      // Leaving edit mode: clear any in-flight edit/delete affordances.
+      if (!next) {
+        setEditingId(null);
+        setConfirmingDeleteId(null);
       }
-      case "Delete":
-      case "Backspace": {
-        e.preventDefault();
-        const t = filteredForManager[mgActiveIndex];
-        if (!t || t.built_in) break;
-        if (confirmingDeleteId === t.id) {
-          onDeleteTemplate(t.id);
-          setConfirmingDeleteId(null);
-        } else {
-          setConfirmingDeleteId(t.id ?? null);
-        }
-        break;
-      }
-    }
+      return next;
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.metaKey && e.key === "1") {
+    if (e.metaKey && (e.key === "e" || e.key === "E")) {
       e.preventDefault();
-      setTab("picker");
-      return;
-    }
-    if (e.metaKey && e.key === "2") {
-      e.preventDefault();
-      setTab("manager");
+      toggleEditing();
       return;
     }
 
@@ -229,10 +157,48 @@ export default function NewWorkspaceModal({
       return;
     }
 
-    if (tab === "picker") {
-      handlePickerKey(e);
-    } else {
-      handleManagerKey(e);
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActiveIndex((i) => Math.min(i + 1, visible.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActiveIndex((i) => Math.max(i - 1, 0));
+        break;
+      case "Home":
+        e.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setActiveIndex(visible.length - 1);
+        break;
+      case "Enter": {
+        e.preventDefault();
+        const t = visible[activeIndex];
+        if (!t) break;
+        if (editing) {
+          startRename(t);
+        } else {
+          handleSelect(t.id);
+        }
+        break;
+      }
+      case "Delete":
+      case "Backspace": {
+        if (!editing) break;
+        e.preventDefault();
+        const t = visible[activeIndex];
+        if (!t || t.built_in) break;
+        if (confirmingDeleteId === t.id) {
+          onDeleteTemplate(t.id);
+          setConfirmingDeleteId(null);
+        } else {
+          setConfirmingDeleteId(t.id);
+        }
+        break;
+      }
     }
   }
 
@@ -240,246 +206,157 @@ export default function NewWorkspaceModal({
     <Dialog
       open={open}
       onClose={onClose}
-      title="New Workspace"
-      className="new-workspace-dialog"
+      title={editing ? "Edit Templates" : "New Workspace"}
+      className={`new-workspace-dialog${editing ? " nwm-editing" : ""}`}
       overlayClassName="dialog-overlay--action"
       width={600}
       autoFocus={false}
       onKeyDown={handleKeyDown}
       header={
-        <div className="nwm-tabs" role="tablist">
+        <div className="nwm-header">
+          <div className="nwm-header-title">
+            {editing ? <Settings2 size={13} /> : <LayoutTemplate size={13} />}
+            {editing ? "Edit Templates" : "New Workspace"}
+          </div>
           <button
-            className={`nwm-tab${tab === "picker" ? " nwm-tab--active" : ""}`}
-            role="tab"
-            aria-selected={tab === "picker"}
-            onClick={() => setTab("picker")}
+            className={`nwm-edit-toggle${editing ? " nwm-edit-toggle--on" : ""}`}
+            onClick={toggleEditing}
+            title="Toggle edit mode (⌘E)"
           >
-            <Plus size={12} />
-            New Workspace
-          </button>
-          <button
-            className={`nwm-tab${tab === "manager" ? " nwm-tab--active" : ""}`}
-            role="tab"
-            aria-selected={tab === "manager"}
-            onClick={() => setTab("manager")}
-          >
-            <LayoutTemplate size={12} />
-            Templates
+            {editing ? <Check size={12} /> : <Pencil size={12} />}
+            {editing ? "Done" : "Edit"}
           </button>
         </div>
       }
     >
       <div className="nwm-body">
         <div className="nwm-left">
-          {tab === "picker" && (
-            <>
-              <div className="new-workspace-search">
-                <Search size={14} className="new-workspace-search-icon" />
-                <input
-                  ref={pickerSearchRef}
-                  className="new-workspace-search-input"
-                  placeholder="Filter templates…"
-                  value={filterQuery}
-                  onChange={(e) => setFilterQuery(e.target.value)}
-                />
-              </div>
+          <div className="new-workspace-search">
+            <Search size={14} className="new-workspace-search-icon" />
+            <input
+              ref={searchRef}
+              className="new-workspace-search-input"
+              placeholder={editing ? "Search templates…" : "Filter templates…"}
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+            />
+            {editing && (
+              <button
+                className="nwm-sort-btn"
+                onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+                title={sortOrder === "asc" ? "Sort Z–A" : "Sort A–Z"}
+                tabIndex={-1}
+              >
+                <ArrowUpDown size={12} />
+              </button>
+            )}
+          </div>
 
-              {templates.length === 0 ? (
-                <div className="new-workspace-empty">
-                  <span className="new-workspace-empty-icon" aria-hidden="true">
-                    <LayoutTemplate size={32} strokeWidth={1.5} />
-                  </span>
-                  <span className="new-workspace-empty-text">No templates available</span>
-                  <span className="new-workspace-empty-hint">Create a template to get started</span>
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="new-workspace-empty">
-                  <span className="new-workspace-empty-text">No matching templates</span>
-                  <span className="new-workspace-empty-hint">Try a different search term</span>
-                </div>
-              ) : (
-                <div
-                  className="new-workspace-list"
-                  role="listbox"
-                  aria-label="Layout templates"
-                >
-                  {filtered.map((t, idx) => {
-                    const panelCount = t.screen.areas.length;
-                    const isConfirmed = confirmedId === t.id;
-                    return (
-                      <div
-                        key={t.id}
-                        ref={(el) => {
-                          if (el) pickerItemRefs.current.set(idx, el);
-                          else pickerItemRefs.current.delete(idx);
+          {templates.length === 0 ? (
+            <div className="new-workspace-empty">
+              <span className="new-workspace-empty-icon" aria-hidden="true">
+                <LayoutTemplate size={32} strokeWidth={1.5} />
+              </span>
+              <span className="new-workspace-empty-text">No templates available</span>
+              <span className="new-workspace-empty-hint">Save a layout to get started</span>
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="new-workspace-empty">
+              <span className="new-workspace-empty-text">No matching templates</span>
+              <span className="new-workspace-empty-hint">Try a different search term</span>
+            </div>
+          ) : (
+            <div className="new-workspace-list" role="listbox" aria-label="Layout templates">
+              {visible.map((t, idx) => {
+                const isActive = idx === activeIndex;
+                const isRenaming = editingId === t.id;
+                const isConfirmingDelete = confirmingDeleteId === t.id;
+                const isConfirmed = confirmedId === t.id;
+                return (
+                  <div
+                    key={t.id}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(idx, el);
+                      else itemRefs.current.delete(idx);
+                    }}
+                    className={`new-workspace-item${isActive ? " new-workspace-item-active" : ""}${isConfirmed ? " new-workspace-item--confirmed" : ""}${editing ? " new-workspace-item--edit" : ""}`}
+                    role="option"
+                    aria-selected={isActive}
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => {
+                      setActiveIndex(idx);
+                      if (!editing) handleSelect(t.id);
+                    }}
+                    onDoubleClick={() => {
+                      if (editing) startRename(t);
+                    }}
+                    onMouseEnter={() => { if (!confirmedId) setActiveIndex(idx); }}
+                  >
+                    {isRenaming ? (
+                      <input
+                        ref={editingInputRef}
+                        className="nwm-manager-rename-input"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Enter") commitRename();
+                          if (e.key === "Escape") setEditingId(null);
                         }}
-                        className={`new-workspace-item${idx === activeIndex ? " new-workspace-item-active" : ""}${isConfirmed ? " new-workspace-item--confirmed" : ""}`}
-                        role="option"
-                        aria-selected={idx === activeIndex}
-                        tabIndex={idx === activeIndex ? 0 : -1}
-                        onClick={() => handleSelect(t.id)}
-                        onMouseEnter={() => { if (!confirmedId) setActiveIndex(idx); }}
-                      >
-                        <span className="new-workspace-item-name">{t.name}</span>
-                        {isConfirmed
-                          ? <Check size={13} className="new-workspace-item-check" />
-                          : <span className="new-workspace-item-meta">{panelCount} panel{panelCount !== 1 ? "s" : ""}</span>
-                        }
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        onBlur={commitRename}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="new-workspace-item-name">{t.name}</span>
+                    )}
 
-              <div className="new-workspace-footer">
-                <span className="new-workspace-footer-hints">
-                  <kbd>↑</kbd><kbd>↓</kbd> navigate
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>↵</kbd> create
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>⌘</kbd><kbd>2</kbd> templates
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>Esc</kbd> close
-                </span>
-              </div>
-            </>
-          )}
-
-          {tab === "manager" && (
-            <>
-              <div className="new-workspace-search">
-                <Search size={14} className="new-workspace-search-icon" />
-                <input
-                  ref={mgSearchRef}
-                  className="new-workspace-search-input"
-                  placeholder="Search templates…"
-                  value={mgSearchQuery}
-                  onChange={(e) => {
-                    setMgSearchQuery(e.target.value);
-                    setMgActiveIndex(0);
-                  }}
-                />
-                <button
-                  className="nwm-sort-btn"
-                  onClick={() => setMgSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
-                  title={mgSortOrder === "asc" ? "Sort Z–A" : "Sort A–Z"}
-                  tabIndex={-1}
-                >
-                  <ArrowUpDown size={12} />
-                </button>
-              </div>
-
-              <div className="nwm-manager-list" role="listbox">
-                {filteredForManager.length === 0 && (
-                  <div className="new-workspace-empty">
-                    <span className="new-workspace-empty-text">
-                      {mgSearchQuery ? `No results for "${mgSearchQuery}"` : "No templates saved"}
-                    </span>
-                  </div>
-                )}
-                {filteredForManager.map((t, idx) => {
-                  const isActive = idx === mgActiveIndex;
-                  const isEditing = editingId === t.id;
-                  const isConfirming = confirmingDeleteId === t.id;
-                  return (
-                    <div
-                      key={t.id}
-                      ref={(el) => {
-                        if (el) mgItemRefs.current.set(idx, el);
-                        else mgItemRefs.current.delete(idx);
-                      }}
-                      className={`nwm-manager-item${isActive ? " nwm-manager-item--active" : ""}`}
-                      role="option"
-                      aria-selected={isActive}
-                      tabIndex={isActive ? 0 : -1}
-                      onClick={() => setMgActiveIndex(idx)}
-                      onFocus={() => setMgActiveIndex(idx)}
-                      onDoubleClick={() => {
-                        if (!t.built_in) {
-                          setEditingId(t.id);
-                          setEditValue(t.name);
-                        }
-                      }}
-                    >
-                      {isEditing ? (
-                        <div className="nwm-manager-rename">
-                          <input
-                            ref={editingInputRef}
-                            className="nwm-manager-rename-input"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              e.stopPropagation();
-                              if (e.key === "Enter") commitRename();
-                              if (e.key === "Escape") setEditingId(null);
-                            }}
-                            onBlur={commitRename}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      ) : (
-                        <span className="nwm-manager-name">{t.name}</span>
-                      )}
-                      <div className="nwm-manager-actions">
-                        {!t.built_in && (
+                    {!isRenaming && (
+                      editing ? (
+                        <div className="nwm-manager-actions">
                           <button
-                            className="nwm-manager-btn"
+                            className={`nwm-manager-btn${t.built_in ? " nwm-manager-btn--disabled" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEditingId(t.id);
-                              setEditValue(t.name);
-                              setMgActiveIndex(idx);
+                              startRename(t);
                             }}
-                            title="Rename"
+                            title={t.built_in ? "Built-in templates can't be renamed" : "Rename"}
                             tabIndex={-1}
                           >
                             <Pencil size={12} />
                           </button>
-                        )}
-                        <button
-                          className={`nwm-manager-btn nwm-manager-btn--delete${isConfirming ? " nwm-manager-btn--confirm" : ""}${t.built_in ? " nwm-manager-btn--disabled" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (t.built_in) return;
-                            if (isConfirming) {
-                              onDeleteTemplate(t.id);
-                              setConfirmingDeleteId(null);
-                            } else {
-                              setConfirmingDeleteId(t.id);
-                              setMgActiveIndex(idx);
+                          <button
+                            className={`nwm-manager-btn nwm-manager-btn--delete${isConfirmingDelete ? " nwm-manager-btn--confirm" : ""}${t.built_in ? " nwm-manager-btn--disabled" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (t.built_in) return;
+                              setActiveIndex(idx);
+                              if (isConfirmingDelete) {
+                                onDeleteTemplate(t.id);
+                                setConfirmingDeleteId(null);
+                              } else {
+                                setConfirmingDeleteId(t.id);
+                              }
+                            }}
+                            title={
+                              t.built_in
+                                ? "Built-in templates can't be deleted"
+                                : isConfirmingDelete
+                                ? "Click again to confirm"
+                                : "Delete"
                             }
-                          }}
-                          title={
-                            t.built_in
-                              ? "Built-in templates can't be deleted"
-                              : isConfirming
-                              ? "Click again to confirm"
-                              : "Delete"
-                          }
-                          tabIndex={-1}
-                        >
-                          {isConfirming ? <Check size={12} strokeWidth={3} /> : <Trash2 size={12} />}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="new-workspace-footer">
-                <span className="new-workspace-footer-hints">
-                  <kbd>↑</kbd><kbd>↓</kbd> navigate
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>↵</kbd> rename
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>⌫</kbd> delete
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>⌘</kbd><kbd>1</kbd> new
-                  <span className="new-workspace-footer-sep" />
-                  <kbd>Esc</kbd> close
-                </span>
-              </div>
-            </>
+                            tabIndex={-1}
+                          >
+                            {isConfirmingDelete ? <Check size={12} strokeWidth={3} /> : <Trash2 size={12} />}
+                          </button>
+                        </div>
+                      ) : isConfirmed ? (
+                        <Check size={13} className="new-workspace-item-check" />
+                      ) : null
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -509,6 +386,30 @@ export default function NewWorkspaceModal({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="new-workspace-footer">
+        <span className="new-workspace-footer-hints">
+          <kbd>↑</kbd><kbd>↓</kbd> navigate
+          <span className="new-workspace-footer-sep" />
+          {editing ? (
+            <>
+              <kbd>↵</kbd> rename
+              <span className="new-workspace-footer-sep" />
+              <kbd>⌫</kbd> delete
+              <span className="new-workspace-footer-sep" />
+              <kbd>⌘</kbd><kbd>E</kbd> done
+            </>
+          ) : (
+            <>
+              <kbd>↵</kbd> create
+              <span className="new-workspace-footer-sep" />
+              <kbd>⌘</kbd><kbd>E</kbd> edit
+            </>
+          )}
+          <span className="new-workspace-footer-sep" />
+          <kbd>Esc</kbd> close
+        </span>
       </div>
     </Dialog>
   );

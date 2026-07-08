@@ -178,7 +178,7 @@ impl<'a> SessionRepository<'a> {
 
     fn get_workspaces(&self, session_id: &str) -> Result<Vec<WorkspaceInstance>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, template_id, current_tree FROM workspaces WHERE session_id = ?1",
+            "SELECT id, name, template_id, current_tree FROM workspaces WHERE session_id = ?1 ORDER BY rowid",
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
             let tree_json: String = row.get(3)?;

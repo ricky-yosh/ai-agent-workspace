@@ -34,7 +34,6 @@ import { isMac } from "./utils/platform";
 import { TerminalCacheProvider, useTerminalCache } from "./providers/TerminalCacheProvider";
 import { WebGLPoolProvider } from "./providers/WebGLPoolProvider";
 import { ViewerRegistryProvider } from "./providers/ViewerRegistryProvider";
-import { PanelActionBridgeProvider } from "./providers/PanelActionBridgeProvider";
 
 interface PanelActions {
   navigateFocus: (direction: 'up' | 'down' | 'left' | 'right') => void;
@@ -92,7 +91,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
 
   const [templates, setTemplates] = useState<Layout[]>([]);
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
-  const [newWorkspaceInitialTab, setNewWorkspaceInitialTab] = useState<"picker" | "manager">("picker");
+  const [newWorkspaceInitialEditing, setNewWorkspaceInitialEditing] = useState(false);
   const [saveAsTarget, setSaveAsTarget] = useState<Screen | null>(null);
   const [saveAsName, setSaveAsName] = useState("");
   const [focusedAreaId, setFocusedAreaId] = useState<string | null>(null);
@@ -116,7 +115,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
   }, [toggleZoom, toggleZoomRef]);
 
   useEffect(() => {
-    openNewWorkspaceRef.current = () => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(prev => !prev); };
+    openNewWorkspaceRef.current = () => { setNewWorkspaceInitialEditing(false); setNewWorkspaceOpen(prev => !prev); };
   }, [openNewWorkspaceRef]);
 
   const panelContextRef = useRef<{
@@ -325,14 +324,14 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
         onRenameWorkspace={handleRenameWorkspace}
         onResetToTemplate={handleResetToTemplate}
         onSaveAsTemplate={handleSaveAsTemplate}
-        onOpenNewWorkspace={() => { setNewWorkspaceInitialTab("picker"); setNewWorkspaceOpen(true); }}
-        onManageTemplates={() => { setNewWorkspaceInitialTab("manager"); setNewWorkspaceOpen(true); }}
+        onOpenNewWorkspace={() => { setNewWorkspaceInitialEditing(false); setNewWorkspaceOpen(true); }}
+        onManageTemplates={() => { setNewWorkspaceInitialEditing(true); setNewWorkspaceOpen(true); }}
         openTabActionsRef={openTabActionsRef}
         closeTabActionsRef={closeTabActionsRef}
       />
       <NewWorkspaceModal
         open={newWorkspaceOpen}
-        initialTab={newWorkspaceInitialTab}
+        initialEditing={newWorkspaceInitialEditing}
         onClose={() => setNewWorkspaceOpen(false)}
         templates={templates}
         onSelect={(templateId) => {
@@ -453,7 +452,6 @@ function App() {
     <TerminalCacheProvider>
       <WebGLPoolProvider>
         <ViewerRegistryProvider>
-          <PanelActionBridgeProvider>
             <ToastProvider>
               <SessionProvider>
                 <div className="app-layout">
@@ -468,7 +466,6 @@ function App() {
               </SessionProvider>
               <ToastContainer />
             </ToastProvider>
-          </PanelActionBridgeProvider>
         </ViewerRegistryProvider>
       </WebGLPoolProvider>
     </TerminalCacheProvider>

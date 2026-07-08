@@ -130,6 +130,14 @@ impl Screen {
     }
 
     /// Create a new screen with a single terminal panel (full-screen).
+    /// Getting Started layout: full-screen blank panel (rendered as GettingStartedPanel).
+    pub fn getting_started() -> Self {
+        let mut screen = Screen::new();
+        screen.areas[0].panel_type = "blank".to_string();
+        screen
+    }
+
+    /// Create a new screen with a single terminal panel (full-screen).
     pub fn default_with_terminal() -> Self {
         let mut screen = Screen::new();
         screen.areas[0].panel_type = "terminal".to_string();
