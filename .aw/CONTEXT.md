@@ -33,6 +33,10 @@
 | **C4 Level** | One of four abstraction layers in a C4 Diagram: Context (system + actors), Container (apps, DBs, services), Component (modules, packages), Code (classes, functions with inline snippets). | |
 | **Code Intelligence Index** | Repo-scoped structural data extracted by tree-sitter/LSP: symbols, definitions, references, call graphs, import relationships, file structure. Incrementally updated via content fingerprints. | Symbol Index |
 | **Code Intelligence Vector Store** | Repo-scoped semantic embeddings of code chunks (functions, classes, docstrings). Regenerated on demand, not incrementally. | Embedding Store |
+| **Side Handle** | A half-pill interactive element on a node's border (top/right/bottom/left) that starts edge creation via press-and-drag. Rendered as an SVG `<path>` with an invisible hit-area `<rect>` behind it. Always present in the DOM; visibility controlled by CSS custom properties on the parent node `<g>`. | Connection point, port, anchor |
+| **Handle State** | One of three visual states per handle: **hidden** (node not hovered, side unconnected), **bobbing** (node hovered, side unconnected — plays a side-specific bob keyframe animation), **still** (side is connected — full opacity, no animation). State is derived from `hoveredNodeId` in panel state + edge data from the canvas store. | |
+| **Handle Hit Area** | An invisible SVG `<rect>` behind each visible handle, larger than the handle (10px bias outward, 2px toward node). Uses `fill="none" pointer-events: all` to capture mouse events. The visible handle has `pointer-events: none`. | |
+| **Canvas Interaction Hover Tracking** | `hoveredNodeId` stored in panel-level React state (not in a dedicated hook). Set by `onMouseEnter`/`onMouseLeave` on each node `<motion.g>`. Drives handle visibility, bob/connected state, and future drop-target validation. | |
 
 ## Relationships
 
