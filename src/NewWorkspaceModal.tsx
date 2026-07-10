@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { LayoutTemplate, Search, ArrowUpDown, Pencil, Trash2, Check, Settings2 } from "lucide-react";
+import { LayoutTemplate, ArrowUpDown, Pencil, Trash2, Check, Settings2 } from "lucide-react";
 import type { Layout } from "./types/screen";
 import { Dialog } from "./components/Dialog";
+import SearchBar from "./components/SearchBar";
 import TemplateMiniature from "./components/TemplateMiniature";
 import "./NewWorkspaceModal.css";
 
@@ -231,26 +232,24 @@ export default function NewWorkspaceModal({
     >
       <div className="nwm-body">
         <div className="nwm-left">
-          <div className="new-workspace-search">
-            <Search size={14} className="new-workspace-search-icon" />
-            <input
-              ref={searchRef}
-              className="new-workspace-search-input"
-              placeholder={editing ? "Search templates…" : "Filter templates…"}
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-            />
-            {editing && (
-              <button
-                className="nwm-sort-btn"
-                onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
-                title={sortOrder === "asc" ? "Sort Z–A" : "Sort A–Z"}
-                tabIndex={-1}
-              >
-                <ArrowUpDown size={12} />
-              </button>
-            )}
-          </div>
+          <SearchBar
+            ref={searchRef}
+            value={filterQuery}
+            onChange={setFilterQuery}
+            placeholder={editing ? "Search templates…" : "Filter templates…"}
+            trailing={
+              editing ? (
+                <button
+                  className="nwm-sort-btn"
+                  onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
+                  title={sortOrder === "asc" ? "Sort Z–A" : "Sort A–Z"}
+                  tabIndex={-1}
+                >
+                  <ArrowUpDown size={12} />
+                </button>
+              ) : null
+            }
+          />
 
           {templates.length === 0 ? (
             <div className="new-workspace-empty">

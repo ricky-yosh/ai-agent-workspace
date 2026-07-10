@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
+import SearchBar from "./components/SearchBar";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { safeInvoke } from "./safeInvoke";
 import ReactMarkdown from "react-markdown";
@@ -431,65 +432,62 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
-      <div className="issue-filter-search" onClick={() => filterInputRef.current?.focus()}>
-        <Search size={14} className="issue-filter-search-icon" />
-        <input
-          ref={filterInputRef}
-          type="text"
-          value={filterQuery}
-          onChange={(e) => {
-            setFilterQuery(e.target.value);
+      <SearchBar
+        ref={filterInputRef}
+        value={filterQuery}
+        onChange={(v) => {
+          setFilterQuery(v);
+          setFocusedIndex(null);
+        }}
+        placeholder="Filter issues… (press /)"
+        onMouseDown={() => {
+          filterInputRef.current?.focus();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            setFilterQuery("");
             setFocusedIndex(null);
-          }}
-          onMouseDown={() => {
-            filterInputRef.current?.focus();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              setFilterQuery("");
-              setFocusedIndex(null);
-              rowRefs.current.get(0)?.focus();
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              if (displayedIssues.length > 0) {
-                moveFocus(0);
-              }
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              if (displayedIssues.length > 0) {
-                moveFocus(displayedIssues.length - 1);
-              }
+            rowRefs.current.get(0)?.focus();
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (displayedIssues.length > 0) {
+              moveFocus(0);
             }
-          }}
-          onBlur={(e) => {
-            if (!panelRef.current?.contains(e.relatedTarget as Node)) {
-              setFocusedIndex(null);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (displayedIssues.length > 0) {
+              moveFocus(displayedIssues.length - 1);
             }
-          }}
-          placeholder="Filter issues… (press /)"
-          className="issue-filter-search-input"
-        />
-        {filterQuery && (
-          <span className="issue-filter-count">
-            {displayedIssues.length}/{issues.length}
-          </span>
-        )}
-        {filterQuery && (
-          <button
-            className="issue-filter-clear"
-            onClick={() => {
-              setFilterQuery("");
-              setFocusedIndex(null);
-              filterInputRef.current?.focus();
-            }}
-            aria-label="Clear filter"
-            type="button"
-          >
-            <X size={12} />
-          </button>
-        )}
-      </div>
+          }
+        }}
+        onBlur={(e) => {
+          if (!panelRef.current?.contains(e.relatedTarget as Node)) {
+            setFocusedIndex(null);
+          }
+        }}
+        trailing={
+          filterQuery ? (
+            <>
+              <span className="issue-filter-count">
+                {displayedIssues.length}/{issues.length}
+              </span>
+              <button
+                className="issue-filter-clear"
+                onClick={() => {
+                  setFilterQuery("");
+                  setFocusedIndex(null);
+                  filterInputRef.current?.focus();
+                }}
+                aria-label="Clear filter"
+                type="button"
+              >
+                <X size={12} />
+              </button>
+            </>
+          ) : null
+        }
+      />
       <div ref={listRef} className="issue-tracker-list">
         {filterQuery && displayedIssues.length === 0 ? (
           <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>

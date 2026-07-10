@@ -82,33 +82,6 @@
 }
 
 /* ── Filter search ───────────────────────────────────────── */
-.issue-filter-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.issue-filter-search-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.issue-filter-search-input {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.issue-filter-search-input::placeholder {
-  color: var(--text-muted);
-}
-
 .issue-filter-count {
   font-size: 11px;
   color: var(--text-muted);
