@@ -2,11 +2,11 @@
 
 ## Problem Statement
 
-A user working on a Visual Canvas cannot easily create edges between nodes — the current mechanism requires holding Alt and click-dragging from a node to another node, which is undiscoverable and uses a crude straight-line preview. Once an edge exists, there is no way to reconnect it to a different node without deleting and recreating it. The connection experience lacks visual feedback: no affordances for where edges can be created, no physics-based preview of the connection line, no validation animations on valid drops. Beyond the canvas, the app has no way to browse git commit history and open commits in the diff viewer.
+A user working on a Visual Canvas cannot easily create edges between nodes — the current mechanism requires holding Alt and click-dragging from a node to another node, which is undiscoverable and uses a crude straight-line preview. Once an edge exists, there is no way to reconnect it to a different node without deleting and recreating it. The connection experience lacks visual feedback: no affordances for where edges can be created, no physics-based preview of the connection line, no validation animations on valid drops. Beyond the canvas, the app has no way to browse git commit history as a proper graph with branch topology, or inspect commit diffs alongside metadata.
 
 ## Solution
 
-Replace Alt+click-drag edge creation with four visible side handles per node that appear on hover, bob to signal availability, and become still when connected. Dragging from a handle draws a physics-simulated rope with marching-ants animation that validates the drop target with a green ring and pincer arrowhead, then commits the edge into the canvas. Existing edges can be rewired by grabbing the arrowhead, detaching the target end, and dropping on a new node. A new standalone git tree panel shows commit history grouped by author, date, or branch, and dispatches selected commits or commit ranges to the diff viewer. The viewer dispatch pattern used by the file tree is extracted into a reusable abstraction so future panels can dispatch to any viewer type.
+Replace Alt+click-drag edge creation with four visible side handles per node that appear on hover, bob to signal availability, and become still when connected. Dragging from a handle draws a physics-simulated rope with marching-ants animation that validates the drop target with a green ring and pincer arrowhead, then commits the edge into the canvas. Existing edges can be rewired by grabbing the arrowhead, detaching the target end, and dropping on a new node. A new git tree panel renders the commit history as a proper DAG (directed acyclic graph) with colored branch lines, commit dots, and ref labels on a graph canvas column, alongside resizable author/message/date text columns. Selecting a commit shows its metadata in a detail pane and opens its diff in the diff viewer. Two-phase data loading fetches graph topology instantly, then lazily loads commit details for visible rows. The viewer dispatch pattern used by the file tree is extracted into a reusable abstraction so future panels can dispatch to any viewer type.
 
 ## User Stories
 
@@ -52,18 +52,30 @@ Replace Alt+click-drag edge creation with four visible side handles per node tha
 26. As a canvas user, I want handle appearances and connection animations to respect my reduced-motion preference, so that the interface is accessible.
 27. As a canvas user, I want a unified set of animation timing and easing tokens used consistently across all canvas interactions, so that the motion feels coherent rather than a patchwork of different speeds.
 
-### Git tree panel
+### Git tree panel — DAG graph
 
-28. As a user, I want to see my repository's commit history in a hierarchical tree view (grouped by author, date, or branch), so that I can understand recent activity at a glance.
-29. As a user, I want each entry to show the commit message, author, relative date, and abbreviated hash, so that I have enough information to decide if a commit is interesting.
-30. As a user, I want to click a single commit and have its diff open in the diff viewer, so that I can inspect what changed.
-31. As a user, I want to select a range of commits and see their cumulative diff in the diff viewer, so that I can understand changes over a period or across a batch of work.
-32. As a user, I want a refresh button to re-fetch the latest commit history, so that the tree stays current as I make new commits.
+28. As a user, I want to see my repository's commit history as a proper git graph (DAG) with colored branch lines, merge forks, and commit dots, so that I can understand the branching structure and commit topology at a glance.
+29. As a user, I want the graph canvas to be the leftmost column in the panel, with text columns (hash, author, message, date) to its right, so that I can scan commit metadata while tracing branch lines.
+30. As a user, I want the graph to load near-instantly by first fetching only topology data (commit SHAs, parent relationships, branch/tag refs), and then lazily loading author/date/message details for visible rows as I scroll, so that even large repos feel responsive.
+31. As a user, I want branch names, tags, and remote tracking branches shown as colored pill labels on the graph lines, with a clear HEAD indicator, so that I can orient myself within the repository's branch structure.
+32. As a user, I want each branch line colored deterministically by branch identity using theme-compatible colors, so that I can visually track a branch through the graph without confusion.
+33. As a user, I want to resize the columns by dragging separators between them, and have my preferred widths persist across sessions, so that I can optimize the layout for the data I care about most.
+34. As a user, I want to navigate the commit list with arrow keys (up/down) and open a selected commit's diff by pressing Enter, so that I can browse history efficiently without leaving the keyboard.
+35. As a user, I want to clear my selection with Escape, so that I can quickly reset focus.
+36. As a user, I want to click a commit and see its diff in the Diff Viewer Panel, so that I can inspect what changed in that commit.
+37. As a user, I want to see the selected commit's metadata (full hash, author, date, full message, files changed) in a detail pane within the git tree panel itself, so that I have all commit information visible at once without switching panels.
+38. As a user, I want the detail pane to be toggleable and resizable relative to the graph list, so that I can show or hide it as needed.
+39. As a user, I want to copy the full commit hash from the detail pane with a single click, so that I can share it or use it in commands.
+40. As a user, I want a search bar at the top of the panel that filters commits by keyword, author, or date range in real-time, so that I can find specific commits without scrolling through the entire history.
+41. As a user, I want the graph to handle large histories (10K+ commits) smoothly via virtual scrolling, so that performance doesn't degrade on mature repositories.
+42. As a user, I want a refresh button to re-fetch the latest commit graph, so that it stays current as I make new commits.
+43. As a user, I want the panel to show a loading indicator during initial fetch and an empty state when there are no commits, so that I'm never left wondering if it's broken.
+44. As a user, I want the panel's visual design (fonts, spacing, colors, borders) to match the rest of the app's panels, so that it feels like a native part of the application rather than a bolt-on.
 
 ### Viewer dispatch extraction
 
-33. As a panel developer, I want a reusable mechanism to dispatch content to the appropriate viewer panel, so that future panels (like git tree) don't need to reimplement the file-viewer coordination pattern.
-34. As a user, I want the existing file tree → file viewer dispatch to continue working exactly as before after the extraction, so that the refactor is transparent to me.
+45. As a panel developer, I want a reusable mechanism to dispatch content to the appropriate viewer panel, so that future panels (like git tree) don't need to reimplement the file-viewer coordination pattern.
+46. As a user, I want the existing file tree → file viewer dispatch to continue working exactly as before after the extraction, so that the refactor is transparent to me.
 
 ## Implementation Decisions
 
@@ -77,6 +89,11 @@ Replace Alt+click-drag edge creation with four visible side handles per node tha
 - **`useCanvasEdgeCreation` (Alt+click-drag)** is removed as part of the handle system work. The `onMouseEnter`/`onMouseLeave` handlers on the node `<g>` are repurposed for `setHoveredNodeId`.
 - **The Clapet teardown** is the source of truth for geometry constants, keyframe timings, and interaction state machines. Colors come from the app's existing theme, not the teardown's palette.
 - **Mechanics are built before animations** — each interaction (handles, rope, drag, rewire, snapping) works with minimal or no animation first, then the keyframe catalog is applied.
+- **Git tree panel uses two-phase loading** — Phase 1 fetches topology only (SHA, parent hashes, ref decorations) which is fast; Phase 2 lazily fetches author/date/message details via persistent `git cat-file --batch` for visible viewport rows. This matches Zed's architecture and keeps initial load near-instant.
+- **Lane assignment runs in TypeScript** — the greedy column algorithm is ~2-5ms for 1,000 commits. Running it in Rust would add IPC serialization overhead without a speed benefit.
+- **Git graph renders in SVG** — CSS variable theming works natively, React reconciliation handles row rendering, and `@tanstack/react-virtual` provides viewport virtualization. Canvas was rejected due to manual text layout, no CSS var support, and imperative API incompatibility with React.
+- **Commit metadata and diff are separate** — clicking a commit dispatches the diff to the Diff Viewer Panel and shows metadata (hash, author, date, message, files changed) in the Git Tree Panel's detail pane.
+- **All git tree panel styling uses app design tokens** (CSS variables for fonts, spacing, colors, borders) — no ad-hoc inline styles. Must match the visual language of File Tree, Terminal, Issue Tracker, and other panels.
 
 ### Modules
 
@@ -86,6 +103,8 @@ Replace Alt+click-drag edge creation with four visible side handles per node tha
 - **Endpoint Geometry Resolver**: Given two node rectangles and an optional source side, computes the best connecting border midpoints. Implements the `dP()` (directional pick — choose the side of each rect facing the other) then `hP()` (handle point — compute that side's border midpoint) pipeline from the teardown. Interface: `resolveEdgeEndpoints(sourceRect: Rect, targetRect: Rect, sourceSide?: Side): { from: Point; to: Point }`.
 - **Snapping Engine**: Computes distance from the rope tip to each of a target node's four side midpoints. Returns the closest one and its distance. Interface: `findNearestHandle(point: Point, nodeRect: Rect): { side: Side; distance: number; midpoint: Point }`.
 - **Handle State Machine**: Pure derivation from hover state + node data + edge data. Determines whether each handle is hidden, bobbing, or still. Interface: `getHandleStates(hoveredNodeId: string | null, nodes: NodeData[], edges: EdgeData[]): Map<string, SideState[]>`. `SideState` = `{ visible: boolean; bobbing: boolean }`.
+- **Lane Assignment Algorithm**: Port of the greedy column (lane) assignment algorithm from CommitGraph / tig. Input: `{ sha: string; parent_hashes: string[] }[]` (commits in topological order). Output: `{ sha: string; column: number; row: number }[]`. Handles octopus merges, cross-branch merges, branch collapse (branch ends), and branch-out (new branch forks). Interface: `computeLanes(commits: CommitTopology[]): CommitPosition[]`. Runs in O(n × b) where n is commits and b is active branches.
+- **Branch Color Palette**: Given a branch identity (SHA of the branch's first commit), returns one of 8-10 theme-compatible CSS variable color tokens. Deterministic — the same branch always gets the same color across refreshes. Interface: `getBranchColor(branchFirstSha: string): string`.
 
 #### UI modules (React components/hooks)
 
@@ -97,7 +116,12 @@ Replace Alt+click-drag edge creation with four visible side handles per node tha
 - **RewireArrowhead Component**: Arrowhead with three morph states — chevron, dot, claw. Handles the grab affordance, hover detection, and state transitions.
 - **Animation Primitives**: Centralized CSS `@keyframes` catalog and design tokens. The existing inline `<style>` block in VisualCanvasPanel is refactored into a shared location. All animations are gated on `[data-motion="full"]` using the existing motion-preference system. Minimum subset includes: handle bob (4), edge drag flow, brush-connected, shockwave, pincer upper/lower, and two timing functions (state change `0.15s cubic-bezier(.2,.8,.2,1)` and physical response `0.62s cubic-bezier(.19,1.42,.36,1)`).
 - **Viewer Dispatch Abstraction**: Generalizes `ViewerRegistry` to support dispatch targets beyond file-views. A viewer registers with a `contentType` (e.g., `"file"`, `"diff"`), and dispatchers ask for the last-focused viewer of a given type. The existing `PanelActionBridge` pattern for diff-viewer dispatch is absorbed into this abstraction.
-- **Git Tree Panel**: New panel type registered alongside file-viewer, diff-viewer, visual-canvas, etc. Fetches commit history via the existing `search_history` operation, groups results, and renders a collapsible tree. Dispatches commit/range selections to a diff-viewer via the viewer dispatch abstraction. Requires a new backend command to fetch the diff for a specific commit or commit range.
+- **Git Graph Canvas**: SVG component that renders the git DAG for visible rows only. Draws branch lines as colored `<path>` elements connecting parent/child commit dots, commit dots as `<circle>` elements, and ref labels as pill-shaped `<rect>`+`<text>`. Rendered as the leftmost column in each virtualized row.
+- **Resizable Column**: A column wrapper with a drag-handle separator on the right edge. Tracks width in component state, persists to localStorage on drag-end. Columns can have minimum widths but no maximum.
+- **Commit Row**: One row in the virtualized list. Renders the graph canvas cell + hash cell + author cell + message cell + date cell. Each cell uses the app's design tokens for fonts and spacing.
+- **Search Bar**: Input bar at the top of the git tree panel. Filters commits in real-time by keyword (searches message), author (searches author name), and date range. Results highlight matching text in the message column. Reuses the existing `search_history` backend command for server-side filtering.
+- **Commit Detail Pane**: Bottom section of the git tree panel (toggleable/resizable split from the graph list). Shows full hash (with copy button), author name and email, absolute and relative date, full commit message, and a files changed list (from `git diff-tree --stat`). Collapses when no commit is selected.
+- **Git Tree Panel**: Rewritten panel component composing Graph Canvas, Resizable Columns, Search Bar, and Commit Detail Pane. Uses `@tanstack/react-virtual` for viewport virtualization. Orchestrates two-phase data loading: fetches topology on mount, then lazily fetches details as rows enter the viewport. Handles keyboard navigation (arrow keys, Enter, Escape). All styling uses app CSS variables.
 
 #### Integrated orchestrator hooks
 
@@ -107,18 +131,22 @@ Replace Alt+click-drag edge creation with four visible side handles per node tha
 ### Color tokens
 
 - All new canvas UI uses the app's existing CSS custom properties (e.g., `--canvas-edge`, `--text-muted`). No colors from the Clapet teardown palette are imported. If the app lacks a color token for a new concept (e.g., amber for in-flight edges), a token is added to the existing token set rather than hardcoded.
+- Git tree panel uses the app's panel design tokens for fonts, spacing, borders, and background colors. Branch line colors cycle through 8-10 theme-compatible hues keyed deterministically by the branch's first commit SHA.
 
 ### Backend changes
 
-- New Tauri command: `get_commit_diff` — fetches the diff for a specific commit hash or a range between two commits. Updates the existing `search_history` and `get_git_diff` commands if needed for range support.
-- No changes to the canvas edge data model — `create_canvas_edge` and `update_canvas_edge` (for rewire) already exist.
-- No new SQLite tables. Canvas edge mutations use existing CDC events. Handle state is purely ephemeral frontend state.
+- **`CommitInfo` struct extended** with `parent_hashes: Vec<String>` and `refs: Vec<String>` (branch, tag, remote ref names pointing to the commit). Both serializable via serde.
+- **New Tauri command: `get_graph_topology`** — takes `session_id` and optional `max_count` (default 500). Runs `git log --all --topo-order --format="%H|%P|%D" --max-count=<n>`. Parses output into `Vec<CommitInfo>` with `parent_hashes` and `refs` populated; author/date/message fields are empty (filled later by lazy detail fetch). SHA line format: pipe-separated with space within parent list and ref decorators.
+- **New Tauri command: `get_commit_details`** — takes `session_id` and `shas: Vec<String>`. Runs `git cat-file --batch` via stdin with each SHA. Parses output into `Vec<CommitInfo>` with author, date, and message populated. Called lazily only for commits in the current viewport.
+- **New Tauri command: `get_commit_diff`** — already implemented from issue 007. Fetches diff for a specific commit hash or a range between two commits via `git show` or `git diff`. Used when the user clicks a commit to view its diff.
+- **New Tauri command: `get_diff_tree`** — takes `session_id` and `hash`. Runs `git diff-tree --stat <hash>` to get the files-changed list for the Commit Detail Pane.
+- No new SQLite tables. Canvas edge mutations use existing CDC events. Handle state is purely ephemeral frontend state. Git history data is transient (fetched from git, not persisted).
 
 ## Testing Decisions
 
 ### What makes a good test
 
-Tests verify external behavior (inputs → outputs) of pure-logic modules, not implementation details like which CSS class is applied or how many `useEffect` calls fire. A good test asserts that given these inputs, the function produces these outputs, including edge cases. Components and hooks that render SVG, manage mouse events, or animate are not tested — their correctness is validated through manual visual QA.
+Tests verify external behavior (inputs → outputs) of pure-logic modules, not implementation details like which CSS class is applied or how many `useEffect` calls fire. A good test asserts that given these inputs, the function produces these outputs, including edge cases. Components and hooks that render SVG, manage mouse events, or animate are not tested — their correctness is validated through manual visual QA. Shell-command-based Rust commands are tested manually.
 
 ### Modules tested
 
@@ -126,14 +154,17 @@ Tests verify external behavior (inputs → outputs) of pure-logic modules, not i
 - **Endpoint Geometry Resolver**: Correct endpoints for all 16 combinations of source/target sides, overlapping rects, zero-width/zero-height rects, extreme size differences.
 - **Snapping Engine**: Nearest-handle selection for points at every side, corners, center, and far away. All four sides as closest.
 - **Handle State Machine**: Correct states for: no hover, hover with unconnected node, hover with fully-connected node, hover with partially-connected node, multiple edges sharing sides.
+- **Lane Assignment Algorithm**: 6+ tests covering: linear history (every commit has one parent, single lane), single branch fork (two branches diverging), octopus merge (3+ parents merging into one child), cross-branch merge (merging from a branch that is to the right), branch collapse (branch ends, lane reclaimed), fast-forward chain (sequence of single-parent commits on one branch).
 
 ### Prior art
 
 - `src/types/errors.test.ts` — pure-function tests with simple input/output assertions
 - `src/file-panel/cache.test.ts` — module-level state fixture with `beforeEach` reset
 - `src/screenLayout.geometry.test.ts` — geometry function tests with table-style cases
+- `src/canvas/ropePhysics.test.ts` — Verlet integration tests with multi-frame settling
+- `src/canvas/snapping.test.ts` — geometry tests for nearest-handle selection
 
-Tests are written in Vitest, colocated with source files (e.g., `src/canvas/ropePhysics.test.ts` alongside `ropePhysics.ts`). Test framework is already configured in `vite.config.ts` with `jsdom` environment and `@testing-library/jest-dom/vitest` matchers.
+Tests are written in Vitest, colocated with source files (e.g., `src/panels/git/laneAssignment.test.ts` alongside `laneAssignment.ts`). Test framework is already configured in `vite.config.ts` with `jsdom` environment and `@testing-library/jest-dom/vitest` matchers.
 
 ## Out of Scope
 
@@ -143,9 +174,14 @@ Tests are written in Vitest, colocated with source files (e.g., `src/canvas/rope
 - **AI-driven handle or edge mutations**: Handles remain human-interaction-only. The AI does not trigger handle visibility or edge creation through CDC events in this phase.
 - **Git tree panel branching/checkout operations**: The panel is read-only — it browses and inspects commits. It does not checkout branches, create tags, or stage changes.
 - **Undo support for rewire**: Rewire operations produce undoable canvas commands, but undoing a rewire restores the edge to its original endpoint state — complex redo state for multi-step rewires is not supported.
+- **Git graph collab/remote support**: The graph shows commits from the local repository only. Remote-tracking branch refs are shown as labels, but the graph does not fetch from remotes or visualize divergent remote histories.
+- **Context menu actions on commits**: Right-clicking a commit does not show a context menu (cherry-pick, revert, reset, checkout). Clicking a commit opens its diff — that is the only action.
+- **Graph filtering by branch**: The graph always shows `--all` branches. Filtering to a single branch's history is not supported.
 
 ## Further Notes
 
 - The Clapet teardown file (`clapet-design-teardown.html` in the repo root) is the reference implementation for all interaction patterns, physics constants, geometry math, and keyframe definitions. When a decision conflicts between the teardown and a different source, the teardown wins.
-- The map and child tickets live at `.scratch/canvas-ux/`. Implementation follows the ticket dependency order: unblocked tickets (001, 002, 007) first, then sequentially through the dependency chain.
-- Domain vocabulary is in `.aw/CONTEXT.md`. Implementation agents should consult it for canonical definitions of Side Handle, Handle State, Handle Hit Area, and Canvas Interaction Hover Tracking.
+- The map and child tickets live at `.scratch/canvas-ux/`. Implementation follows the ticket dependency order.
+- Domain vocabulary is in `.aw/CONTEXT.md`. Implementation agents should consult it for canonical definitions of Side Handle, Handle State, Handle Hit Area, Canvas Interaction Hover Tracking, Git Graph Canvas, Lane, Branch Line, Ref Label, Commit Row, Commit Detail Pane, Two-Phase Loading, and Greedy Column Assignment.
+- The lane assignment algorithm reference is CommitGraph's `computePosition.ts` (~120 lines of clean TypeScript) with edge case handling verified against tig's `graph-v2.c`.
+- Git tree panel architecture is documented in ADR 0016 at `.aw/adr/0016-git-graph-panel.md`.
