@@ -520,6 +520,67 @@ fn get_commit_diff(
 }
 
 #[tauri::command]
+fn get_graph_topology(
+    state: tauri::State<AppState>,
+    session_id: String,
+    max_count: Option<u32>,
+) -> Result<Vec<ai_agent_workspace_git_operations::CommitInfo>, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+    ai_agent_workspace_git_operations::get_graph_topology(&working_dir, max_count)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_commit_details(
+    state: tauri::State<AppState>,
+    session_id: String,
+    shas: Vec<String>,
+) -> Result<Vec<ai_agent_workspace_git_operations::CommitInfo>, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+    ai_agent_workspace_git_operations::get_commit_details(&working_dir, &shas)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_diff_tree(
+    state: tauri::State<AppState>,
+    session_id: String,
+    hash: String,
+) -> Result<String, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+    ai_agent_workspace_git_operations::get_diff_tree(&working_dir, &hash)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_diff_numstat(
+    state: tauri::State<AppState>,
+    session_id: String,
+    hash: String,
+) -> Result<String, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+    ai_agent_workspace_git_operations::get_diff_numstat(&working_dir, &hash)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_file_diff(
+    state: tauri::State<AppState>,
+    session_id: String,
+    hash: String,
+    file_path: String,
+) -> Result<String, String> {
+    let working_dir = state.db.get_working_directory(&session_id)
+        .map_err(|e| format!("Session not found: {}", e))?;
+    ai_agent_workspace_git_operations::get_file_diff(&working_dir, &hash, &file_path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_in_app(path: String, app_name: String) -> Result<(), String> {
     use std::process::Command;
     let status = Command::new("/usr/bin/open")
@@ -872,6 +933,11 @@ pub fn run() {
             get_git_diff,
             search_history,
             get_commit_diff,
+            get_graph_topology,
+            get_commit_details,
+            get_diff_tree,
+            get_diff_numstat,
+            get_file_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

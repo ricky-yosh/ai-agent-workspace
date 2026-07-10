@@ -34,6 +34,8 @@ pub struct CommitInfo {
     pub author_email: String,
     pub date: String,
     pub message: String,
+    pub parent_hashes: Vec<String>,
+    pub refs: Vec<String>,
 }
 
 /// Blame entry returned by blame.
@@ -87,7 +89,7 @@ pub fn search_history(
     let max = max_results.unwrap_or(50);
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo_path)
-        .args(["log", "--format=%H|%an|%ae|%aI|%s"])
+        .args(["log", "--format=%H|%an|%ae|%aI|%s|%P|%D"])
         .arg(format!("--max-count={}", max));
     if let Some(kw) = keyword {
         cmd.arg(format!("--grep={}", kw));
@@ -111,18 +113,242 @@ pub fn search_history(
     let commits: Vec<CommitInfo> = stdout.lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(5, '|').collect();
-            if parts.len() < 5 { return None; }
+            let parts: Vec<&str> = line.splitn(7, '|').collect();
+            if parts.len() < 7 { return None; }
+            let parent_hashes: Vec<String> = if parts[5].is_empty() {
+                Vec::new()
+            } else {
+                parts[5].split_whitespace().map(|s| s.to_string()).collect()
+            };
+            let refs: Vec<String> = if parts[6].is_empty() {
+                Vec::new()
+            } else {
+                parts[6].split(", ").map(|s| s.trim().to_string()).collect()
+            };
             Some(CommitInfo {
                 hash: parts[0].to_string(),
                 author_name: parts[1].to_string(),
                 author_email: parts[2].to_string(),
                 date: parts[3].to_string(),
                 message: parts[4].to_string(),
+                parent_hashes,
+                refs,
             })
         })
         .collect();
     Ok(commits)
+}
+
+/// Get the commit graph topology: SHAs, parent relationships, and ref decorations.
+pub fn get_graph_topology(repo_path: &str, max_count: Option<u32>) -> Result<Vec<CommitInfo>, GitError> {
+    if !is_git_repo(repo_path) {
+        return Err(GitError::NotGitRepo(repo_path.to_string()));
+    }
+    let n = max_count.unwrap_or(500);
+    let output = Command::new("git")
+        .arg("-C").arg(repo_path)
+        .args(["log", "--all", "--topo-order", "--format=%H|%P|%D|%an|%aI|%s"])
+        .arg(format!("--max-count={}", n))
+        .output()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to run git: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitError::CommandFailed(format!("git log failed: {}", stderr.trim())));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let commits: Vec<CommitInfo> = stdout.lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let mut parts = line.splitn(6, '|');
+            let hash = parts.next().unwrap_or("").to_string();
+            let parent_hashes: Vec<String> = parts.next()
+                .unwrap_or("")
+                .split_whitespace()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+            let refs: Vec<String> = parts.next()
+                .unwrap_or("")
+                .split(", ")
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim().to_string())
+                .collect();
+            let author_name = parts.next().unwrap_or("").to_string();
+            let date = parts.next().unwrap_or("").to_string();
+            let message = parts.next().unwrap_or("").to_string();
+            Some(CommitInfo {
+                hash,
+                author_name,
+                author_email: String::new(),
+                date,
+                message,
+                parent_hashes,
+                refs,
+            })
+        })
+        .collect();
+    Ok(commits)
+}
+
+use std::io::Write;
+
+/// Get author, date, and message details for a batch of SHAs.
+pub fn get_commit_details(repo_path: &str, shas: &[String]) -> Result<Vec<CommitInfo>, GitError> {
+    if !is_git_repo(repo_path) {
+        return Err(GitError::NotGitRepo(repo_path.to_string()));
+    }
+    let mut cmd = Command::new("git")
+        .arg("-C").arg(repo_path)
+        .args(["cat-file", "--batch"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to spawn git: {}", e)))?;
+    {
+        let stdin = cmd.stdin.as_mut().unwrap();
+        for sha in shas {
+            stdin.write_all(sha.as_bytes())
+                .map_err(|e| GitError::IoError(format!("Failed to write to git stdin: {}", e)))?;
+            stdin.write_all(b"\n")
+                .map_err(|e| GitError::IoError(format!("Failed to write to git stdin: {}", e)))?;
+        }
+    }
+    let output = cmd.wait_with_output()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to read git output: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitError::CommandFailed(format!("git cat-file failed: {}", stderr.trim())));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut commits: Vec<CommitInfo> = Vec::new();
+    let mut rest = stdout.as_ref();
+    let expected = shas.len();
+    for sha in shas {
+        let header_end = match rest.find('\n') {
+            Some(pos) => pos,
+            None => break,
+        };
+        let header = &rest[..header_end];
+        rest = &rest[header_end + 1..];
+        if header.is_empty() || header.contains(" missing") {
+            continue;
+        }
+        let size_prefix = if header.ends_with('\r') {
+            let without_cr = &header[..header.len() - 1];
+            let len_pos = without_cr.rfind(' ').unwrap_or(header.len());
+            &without_cr[..len_pos]
+        } else {
+            let len_pos = header.rfind(' ').unwrap_or(header.len());
+            &header[..len_pos]
+        };
+        let size_str = &size_prefix[size_prefix.rfind(' ').unwrap_or(0)..].trim();
+        let size: usize = size_str.parse().unwrap_or(0);
+        if rest.len() < size + 1 {
+            break;
+        }
+        let raw = &rest[..size];
+        rest = &rest[size + 1..];
+        let mut author_name = String::new();
+        let mut author_email = String::new();
+        let mut date = String::new();
+        let mut message_lines: Vec<&str> = Vec::new();
+        let mut in_message = false;
+        for raw_line in raw.lines() {
+            if in_message {
+                message_lines.push(raw_line);
+            } else if raw_line.is_empty() {
+                in_message = true;
+            } else if let Some(rest_line) = raw_line.strip_prefix("author ") {
+                let lt_pos = rest_line.find('<').unwrap_or(rest_line.len());
+                let gt_pos = rest_line[lt_pos..].find('>').unwrap_or(0);
+                author_name = rest_line[..lt_pos].trim().to_string();
+                author_email = rest_line[lt_pos + 1..lt_pos + gt_pos].to_string();
+                let remainder = rest_line[lt_pos + gt_pos + 1..].trim();
+                if let Some(ts) = remainder.split_whitespace().next() {
+                    date = ts.to_string();
+                }
+            }
+        }
+        let message = message_lines.join("\n").trim().to_string();
+        commits.push(CommitInfo {
+            hash: sha.clone(),
+            author_name,
+            author_email,
+            date,
+            message,
+            parent_hashes: Vec::new(),
+            refs: Vec::new(),
+        });
+    }
+    while commits.len() < expected {
+        for sha in shas {
+            if !commits.iter().any(|c| c.hash == *sha) {
+                commits.push(CommitInfo {
+                    hash: sha.clone(),
+                    author_name: String::new(),
+                    author_email: String::new(),
+                    date: String::new(),
+                    message: String::new(),
+                    parent_hashes: Vec::new(),
+                    refs: Vec::new(),
+                });
+                break;
+            }
+        }
+        if commits.len() >= expected {
+            break;
+        }
+    }
+    Ok(commits)
+}
+
+/// Get the files-changed stat output for a commit.
+pub fn get_diff_tree(repo_path: &str, hash: &str) -> Result<String, GitError> {
+    if !is_git_repo(repo_path) {
+        return Err(GitError::NotGitRepo(repo_path.to_string()));
+    }
+    let output = Command::new("git")
+        .arg("-C").arg(repo_path)
+        .args(["diff-tree", "--stat", hash])
+        .output()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to run git: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitError::CommandFailed(format!("git diff-tree failed: {}", stderr.trim())));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub fn get_diff_numstat(repo_path: &str, hash: &str) -> Result<String, GitError> {
+    if !is_git_repo(repo_path) {
+        return Err(GitError::NotGitRepo(repo_path.to_string()));
+    }
+    let output = Command::new("git")
+        .arg("-C").arg(repo_path)
+        .args(["diff-tree", "--numstat", hash])
+        .output()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to run git: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitError::CommandFailed(format!("git diff-tree failed: {}", stderr.trim())));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub fn get_file_diff(repo_path: &str, hash: &str, file_path: &str) -> Result<String, GitError> {
+    if !is_git_repo(repo_path) {
+        return Err(GitError::NotGitRepo(repo_path.to_string()));
+    }
+    let output = Command::new("git")
+        .arg("-C").arg(repo_path)
+        .args(["show", hash, "--", file_path])
+        .output()
+        .map_err(|e| GitError::CommandFailed(format!("Failed to run git: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitError::CommandFailed(format!("git show failed: {}", stderr.trim())));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Run git blame on a file to see per-line ownership.
