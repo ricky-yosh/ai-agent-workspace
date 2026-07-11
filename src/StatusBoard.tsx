@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Plus } from "lucide-react";
-import { Button, CopyButton } from "./components/ui";
+import { Button, CopyButton, SegmentedControl } from "./components/ui";
 import { safeInvoke } from "./safeInvoke";
 import { useSessions } from "./SessionContext";
 import type { BinaryStatus } from "./types/status-board";
@@ -141,24 +141,13 @@ export default function StatusBoard() {
           Register this app's MCP server with your coding agent.
         </p>
 
-        {/* Agent selector (segmented control) */}
-        <div
-          className="agent-selector"
-          role="radiogroup"
-          aria-label="Select agent"
-        >
-          {AGENTS.map((agent) => (
-            <Button
-              key={agent.id}
-              variant={selectedAgent === agent.id ? "primary" : "ghost"}
-              size="sm"
-              onClick={() => setSelectedAgent(agent.id)}
-              role="radio"
-              aria-checked={selectedAgent === agent.id}
-            >
-              {agent.label}
-            </Button>
-          ))}
+        <div style={{ marginBottom: 12 }}>
+          <SegmentedControl
+            options={AGENTS.map((a) => ({ value: a.id, label: a.label }))}
+            value={selectedAgent}
+            onChange={setSelectedAgent}
+            ariaLabel="Select agent"
+          />
         </div>
 
         {/* Snippet area */}

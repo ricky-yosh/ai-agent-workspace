@@ -8,3 +8,5 @@ export { CopyButton } from "./CopyButton";
 export type { CopyButtonProps } from "./CopyButton";
 export { MenuItem } from "./MenuItem";
 export type { MenuItemProps } from "./MenuItem";
+export { SegmentedControl } from "./SegmentedControl";
+export type { SegmentedControlProps } from "./SegmentedControl";

@@ -149,41 +149,7 @@
   text-wrap: pretty;
 }
 
-/* ── Agent selector (segmented control) ── */
-
-.agent-selector {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-primary);
-  padding: 2px;
-  border-radius: var(--radius-control);
-  margin-bottom: 12px;
-}
-
-.agent-selector-btn {
-  flex: 1;
-  padding: 5px 10px;
-  border: none;
-  border-radius: calc(var(--radius-control) - 2px);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s, color 0.12s;
-  user-select: none;
-}
-
-.agent-selector-btn:hover {
-  color: var(--text-primary);
-}
-
-.agent-selector-btn.active {
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
+/* ── Agent selector is a SegmentedControl primitive ── */
 
 /* ── Snippet card ── */
 
