@@ -1,0 +1,112 @@
+.ui-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  padding: 7px 10px;
+  border-radius: var(--radius-md, 6px);
+  cursor: default;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  color: var(--text-primary);
+  font-size: var(--font-size-base, 13px);
+  line-height: 22px;
+}
+
+.ui-menu-item:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 120, 212, 0.10) 0%,
+    rgba(0, 120, 212, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.ui-menu-item--active {
+  background: rgba(0, 120, 212, 0.15);
+}
+
+.ui-menu-item:focus-visible {
+  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
+  outline: none;
+}
+
+.ui-menu-item:disabled {
+  opacity: 1;
+}
+
+.ui-menu-item__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-width: 0;
+}
+
+.ui-menu-item__leading {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ui-menu-item:hover .ui-menu-item__leading,
+.ui-menu-item--active .ui-menu-item__leading {
+  color: var(--text-primary);
+}
+
+.ui-menu-item__spacer {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.ui-menu-item__label {
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ui-menu-item__trailing {
+  flex-shrink: 0;
+}
+
+.ui-menu-item--confirmed {
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: rgb(134, 239, 172);
+}
+
+.ui-menu-item--destructive {
+  color: var(--danger, oklch(0.56 0.195 28.8));
+}
+
+.ui-menu-item--destructive .ui-menu-item__leading {
+  color: var(--danger, oklch(0.56 0.195 28.8));
+}
+
+.ui-menu-item--destructive:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(239, 68, 68, 0.12) 0%,
+    rgba(239, 68, 68, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.ui-menu-item--active.ui-menu-item--destructive {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+:root[data-motion="full"] .ui-menu-item {
+  transition: background var(--duration-fast, 100ms), transform var(--duration-fast, 100ms);
+}
+
+:root[data-motion="full"] .ui-menu-item--confirmed {
+  transition: background var(--duration-fast, 100ms), color var(--duration-fast, 100ms);
+}
+
+:root[data-motion="full"] .ui-menu-item:active:not(:disabled) {
+  transform: scale(0.96);
+}
