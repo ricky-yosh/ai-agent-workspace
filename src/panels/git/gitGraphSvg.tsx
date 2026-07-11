@@ -21,35 +21,41 @@ const LANE_OPACITY = 0.6;
 interface LaneProps {
   /** 0-based column index */
   column: number;
-  /** Whether the lane is active in this row (if false, renders nothing) */
-  active: boolean;
+  /** Draw the half from the top of the row to the dot line. */
+  up: boolean;
+  /** Draw the half from the dot line to the bottom of the row. */
+  down: boolean;
+  /** When true this is the commit's own dot cell — leave a gap around the dot. */
+  isDot: boolean;
   /** Stroke color for the lane line(s) */
   color: string;
-  /** When true, splits the vertical line above/below the dot (used at branch/merge points) */
-  hasGap: boolean;
 }
 
 /**
- * Renders vertical lane line(s) for a given column in a row.
- * - If `hasGap` is false: a single full-height `<line>`.
- * - If `hasGap` is true: two `<line>` segments (above and below the dot position).
+ * Renders the vertical lane half-segments for a column in a row.
+ *
+ * Only the halves an edge actually needs are drawn, so a branch tip (no `up`)
+ * or base (no `down`) renders as a clean stub instead of a full-height line
+ * that over-runs the endpoint. When the commit's own dot sits in this column
+ * (`isDot`) the halves stop short of the dot, leaving a gap for the circle;
+ * a pass-through lane draws straight through the centre.
  */
-export const Lane: React.FC<LaneProps> = ({ column, active, color, hasGap }) => {
-  if (!active) return null;
+export const Lane: React.FC<LaneProps> = ({ column, up, down, isDot, color }) => {
+  if (!up && !down) return null;
 
   const x = colCenterX(column);
-
-  if (hasGap) {
-    return (
-      <>
-        <line x1={x} y1={0} x2={x} y2={DOT_CENTER_Y - DOT_RADIUS} stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
-        <line x1={x} y1={DOT_CENTER_Y + DOT_RADIUS} x2={x} y2={ROW_HEIGHT} stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
-      </>
-    );
-  }
+  const topEnd = isDot ? DOT_CENTER_Y - DOT_RADIUS : DOT_CENTER_Y;
+  const bottomStart = isDot ? DOT_CENTER_Y + DOT_RADIUS : DOT_CENTER_Y;
 
   return (
-    <line x1={x} y1={0} x2={x} y2={ROW_HEIGHT} stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
+    <>
+      {up && (
+        <line x1={x} y1={0} x2={x} y2={topEnd} stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
+      )}
+      {down && (
+        <line x1={x} y1={bottomStart} x2={x} y2={ROW_HEIGHT} stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
+      )}
+    </>
   );
 };
 
@@ -58,26 +64,22 @@ export const Lane: React.FC<LaneProps> = ({ column, active, color, hasGap }) => 
 /* ------------------------------------------------------------------ */
 
 interface ConnectorProps {
-  /** Source column (where the connector originates) */
   fromCol: number;
-  /** Target column (where the connector arrives) */
   toCol: number;
-  /** Stroke color */
   color: string;
+  kind: "merge" | "checkout";
 }
 
-/**
- * Renders a cubic bezier connector between two columns, used for branch/merge
- * visualisation. The curve arcs from `fromCol` downward to `toCol`.
- */
-export const Connector: React.FC<ConnectorProps> = ({ fromCol, toCol, color }) => {
+export const Connector: React.FC<ConnectorProps> = ({ fromCol, toCol, color, kind }) => {
   const fromX = colCenterX(fromCol);
   const toX = colCenterX(toCol);
-  const curveStartY = DOT_CENTER_Y + DOT_RADIUS + 2;
-  const d = `M ${fromX} ${curveStartY} C ${fromX} ${ROW_HEIGHT - 2} ${toX} 0 ${toX} ${ROW_HEIGHT - 2}`;
-
+  const fromY = DOT_CENTER_Y;
+  const toY = kind === "merge" ? ROW_HEIGHT : DOT_CENTER_Y;
+  const dy = Math.abs(toY - fromY) || 8;
+  const cpY = kind === "merge" ? toY - dy : fromY + dy;
+  const dPath = `M ${fromX} ${fromY} C ${fromX} ${fromY + dy} ${toX} ${cpY} ${toX} ${toY}`;
   return (
-    <path d={d} fill="none" stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} />
+    <path d={dPath} fill="none" stroke={color} strokeWidth={LANE_STROKE_WIDTH} opacity={LANE_OPACITY} strokeLinecap="round" />
   );
 };
 

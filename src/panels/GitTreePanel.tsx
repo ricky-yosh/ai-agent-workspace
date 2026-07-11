@@ -193,8 +193,9 @@ function getRefLabelColor(ref: string): string {
 function shortRefName(ref: string): string {
   if (ref.startsWith("tag: ")) return ref.slice(5);
   if (ref.startsWith("HEAD -> ")) return ref.slice(8);
-  const idx = ref.lastIndexOf("/");
-  return idx >= 0 ? ref.slice(idx + 1) : ref;
+  if (ref.startsWith("refs/heads/")) return ref.slice("refs/heads/".length);
+  if (ref.startsWith("refs/remotes/")) return ref.slice("refs/remotes/".length);
+  return ref;
 }
 
 function GitTreePanel({ panelType: _panelType }: PanelProps) {
@@ -288,9 +289,9 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               return {
                 ...row,
                 hash: detail.hash.slice(0, 7),
-                author: detail.author_name,
-                message: detail.message,
-                relativeDate: relativeDate(detail.date),
+                author: detail.author_name || row.author,
+                message: detail.message || row.message,
+                relativeDate: detail.date ? relativeDate(detail.date) : row.relativeDate,
                 refLabels: detail.refs.length > 0 ? detail.refs : row.refLabels,
               };
             }),
@@ -337,7 +338,8 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
   const shaToPosRef = useRef<Map<string, CommitPosition>>(new Map());
   const rowColorsRef = useRef<string[][]>([]);
   const maxColumnRef = useRef(0);
-  const columnActivityRef = useRef<boolean[][]>([]);
+  const segUpRef = useRef<boolean[][]>([]);
+  const segDownRef = useRef<boolean[][]>([]);
   const rowConnectorsRef = useRef<ConnectorData[][]>([]);
 
   useEffect(() => {
@@ -363,7 +365,8 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
 
     const layout: GraphLayout = computeGraphLayout(topology, positions);
     maxColumnRef.current = layout.maxColumn;
-    columnActivityRef.current = layout.columnActivity;
+    segUpRef.current = layout.segUp;
+    segDownRef.current = layout.segDown;
     rowColorsRef.current = layout.rowColors;
     rowConnectorsRef.current = layout.rowConnectors;
 
@@ -619,14 +622,12 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
       if (!row) return null;
 
       const maxCol = maxColumnRef.current;
-      const active = columnActivityRef.current[rowIndex] || [];
+      const segUp = segUpRef.current[rowIndex] || [];
+      const segDown = segDownRef.current[rowIndex] || [];
       const connectors = rowConnectorsRef.current[rowIndex] || [];
       const rowColors = rowColorsRef.current[rowIndex] || [];
       const svgWidth = (maxCol + 1) * LANE_WIDTH;
       const isHead = row.refLabels.some((ref) => ref.startsWith("HEAD ->"));
-
-      const gapCols = new Set<number>();
-      connectors.forEach((c) => { gapCols.add(c.fromCol); gapCols.add(c.toCol); });
 
       return (
         <svg
@@ -638,9 +639,10 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
             <Lane
               key={`col-${col}`}
               column={col}
-              active={active[col]}
+              up={!!segUp[col]}
+              down={!!segDown[col]}
+              isDot={col === row.column}
               color={rowColors[col] || "#666"}
-              hasGap={gapCols.has(col)}
             />
           ))}
           {connectors.map((conn, idx) => (
@@ -648,7 +650,8 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               key={`conn-${idx}`}
               fromCol={conn.fromCol}
               toCol={conn.toCol}
-              color={rowColors[conn.toCol] || "#666"}
+              color={conn.color}
+              kind={conn.kind}
             />
           ))}
           <Dot column={row.column} color={row.color} />
@@ -895,33 +898,33 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                     }
                     handleCommitClick(row.sha);
                   }}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: ROW_HEIGHT,
-                    transform: `translateY(${virtualItem.start}px)`,
-                    display: "flex",
-                    alignItems: "center",
-                    borderBottom: "1px solid var(--border)",
-                    cursor: "pointer",
-                    background:
-                      isIndexSelected(virtualItem.index, selectionStart, selectionEnd)
-                        ? "var(--accent-color, #3b82f6)22"
-                        : "transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
-                      (e.currentTarget as HTMLElement).style.background =
-                        "var(--panel-hover-bg, rgba(128,128,128,0.08))";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                    }
-                  }}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: ROW_HEIGHT,
+                      transform: `translateY(${virtualItem.start}px)`,
+                      display: "flex",
+                      alignItems: "center",
+                      borderBottom: "1px solid var(--border)",
+                      cursor: "pointer",
+                      background:
+                        isIndexSelected(virtualItem.index, selectionStart, selectionEnd)
+                          ? "var(--accent-subtle)"
+                          : "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
+                        (e.currentTarget as HTMLElement).style.background =
+                          "var(--panel-hover-bg, rgba(128,128,128,0.08))";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
+                        (e.currentTarget as HTMLElement).style.background = "transparent";
+                      }
+                    }}
                 >
                   <div
                     style={{
