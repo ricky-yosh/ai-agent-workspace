@@ -387,6 +387,11 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           e.preventDefault();
           filterInputRef.current?.focus();
           break;
+        case "c":
+        case "C":
+          e.preventDefault();
+          setIssueModalOpen({ mode: "create" });
+          break;
         case "e":
         case "E":
           if (focusedIndex !== null && displayedIssues[focusedIndex]) {
@@ -434,10 +439,16 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (issues.length === 0) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-        <div style={{ marginBottom: 12 }}>No issues yet.</div>
-        <Button variant="primary" size="sm" onClick={() => setIssueModalOpen({ mode: "create" })}>
-          <Plus size={14} /> New issue
+      <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, padding: 16, color: "var(--text-muted)", fontSize: 13, outline: "none", textAlign: "center" }} onKeyDown={handleKeyDown}>
+        <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>○</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>No issues yet</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 220, lineHeight: 1.4 }}>
+            Track tasks, bugs, and feature requests
+          </div>
+        </div>
+        <Button variant="primary" size="md" onClick={() => setIssueModalOpen({ mode: "create" })}>
+          <Plus size={14} /> New issue <kbd className="issue-kbd">c</kbd>
         </Button>
         {sessionId && (
           <IssueModal
@@ -516,7 +527,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           variant="secondary"
           size="sm"
           onClick={() => setIssueModalOpen({ mode: "create" })}
-          title="New issue"
+          title="New issue (c)"
         >
           <Plus size={14} />
         </Button>
