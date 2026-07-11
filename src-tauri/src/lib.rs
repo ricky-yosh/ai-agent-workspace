@@ -201,7 +201,7 @@ unit_return!(remove_workspace, WorkspaceRemove { session_id, workspace_id }, ses
 unit_return!(rename_workspace, WorkspaceRename { session_id, workspace_id, new_name }, session_id: String, workspace_id: String, new_name: String);
 unit_return!(set_active_workspace, WorkspaceSetActive { session_id, workspace_id }, session_id: String, workspace_id: String);
 workspace_return!(reset_workspace_to_template, WorkspaceReset { session_id, workspace_id }, session_id: String, workspace_id: String);
-workspace_return!(split_area, SplitArea { session_id, workspace_id, area_id, axis, factor }, session_id: String, workspace_id: String, area_id: String, axis: ai_agent_workspace_core::Axis, factor: f64);
+workspace_return!(split_area, SplitArea { session_id, workspace_id, area_id, axis, factor, new_panel_type }, session_id: String, workspace_id: String, area_id: String, axis: ai_agent_workspace_core::Axis, factor: f64, new_panel_type: Option<String>);
 workspace_return!(join_areas, JoinAreas { session_id, workspace_id, source_area_id, target_area_id }, session_id: String, workspace_id: String, source_area_id: String, target_area_id: String);
 workspace_return!(close_area, CloseArea { session_id, workspace_id, area_id }, session_id: String, workspace_id: String, area_id: String);
 workspace_return!(resize_edge, ResizeEdge { session_id, workspace_id, edge_id, position }, session_id: String, workspace_id: String, edge_id: String, position: f64);

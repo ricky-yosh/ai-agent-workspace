@@ -329,10 +329,10 @@ impl McpHandler {
     }
 
     #[tool(description = "Split an area in the workspace screen")]
-    async fn split_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] axis: Axis, #[tool(param)] factor: f64) -> Result<CallToolResult, rmcp::Error> {
+    async fn split_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] axis: Axis, #[tool(param)] factor: f64, #[tool(param)] new_panel_type: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SplitArea { session_id, workspace_id, area_id, axis, factor }, &state, Workspace, ws, json)
+        run_mcp_command!(Command::SplitArea { session_id, workspace_id, area_id, axis, factor, new_panel_type }, &state, Workspace, ws, json)
     }
 
     #[tool(description = "Join two adjacent areas. source_area_id is absorbed (removed) and target_area_id survives (grows to fill the space).")]

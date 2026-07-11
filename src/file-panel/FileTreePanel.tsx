@@ -342,31 +342,18 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
     if (!sid || !wid || !aid) return;
 
     try {
-      // Split the tree panel vertically (60/40)
-      const result = await safeInvoke<{ current_screen: import("../types/screen").Screen }>(
-        "split_area",
-        { sessionId: sid, workspaceId: wid, areaId: aid, axis: "vertical", factor: 0.6 },
-        (msg) => console.error("[FileTreePanel] split error:", msg),
-      );
-
-      // Find the new area (the one that wasn't in the old screen)
-      const newArea = result.current_screen.areas.find(
-        (a) => a.id !== aid,
-      );
-      if (!newArea) return;
-
       // Set pending file so the viewer opens it on mount
       registry.setPendingFile(filePath);
 
-      // Change the new area's panel type to file-viewer
-      const updatedResult = await safeInvoke<{ current_screen: import("../types/screen").Screen }>(
-        "change_panel_type",
-        { sessionId: sid, workspaceId: wid, areaId: newArea.id, panelType: "file-viewer" },
-        (msg) => console.error("[FileTreePanel] change_panel_type error:", msg),
+      // Split the tree panel vertically (60/40) and set new area to file-viewer atomically
+      const result = await safeInvoke<{ current_screen: import("../types/screen").Screen }>(
+        "split_area",
+        { sessionId: sid, workspaceId: wid, areaId: aid, axis: "vertical", factor: 0.6, newPanelType: "file-viewer" },
+        (msg) => console.error("[FileTreePanel] split error:", msg),
       );
 
       // Update the screen
-      onScreenChangeRef.current(updatedResult.current_screen);
+      onScreenChangeRef.current(result.current_screen);
     } catch (err) {
       console.error("[FileTreePanel] Failed to create viewer:", err);
     }

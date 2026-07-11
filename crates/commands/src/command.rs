@@ -71,6 +71,7 @@ pub enum Command {
         area_id: String,
         axis: ai_agent_workspace_core::Axis,
         factor: f64,
+        new_panel_type: Option<String>,
     },
     JoinAreas {
         session_id: String,

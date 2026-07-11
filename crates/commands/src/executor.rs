@@ -249,12 +249,12 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let screen = ws.current_screen.clone();
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
-        Command::SplitArea { session_id, workspace_id, area_id, axis, factor } => {
+        Command::SplitArea { session_id, workspace_id, area_id, axis, factor, new_panel_type } => {
             let workspaces_repo = state.db.workspaces(&conn);
             let ws = workspaces_repo.get(&workspace_id)
                 .map_err(|e| CommandError::not_found_from_sql("workspace", &workspace_id, e))?;
             let mut screen = ws.current_screen.clone();
-            graph::area_split(&mut screen, &area_id, axis, factor)
+            graph::area_split_with_type(&mut screen, &area_id, axis, factor, new_panel_type.as_deref())
                 .map_err(|e| CommandError::invalid_input(&e))?;
             graph::validate_screen(&screen)
                 .map_err(|e| CommandError::internal(&format!("validation failed: {}", e)))?;
@@ -1164,6 +1164,7 @@ mod tests {
                 area_id: area_id.clone(),
                 axis: ai_agent_workspace_core::Axis::Vertical,
                 factor: 0.5,
+                new_panel_type: None,
             },
             &state,
         ).unwrap();
@@ -1278,6 +1279,7 @@ mod tests {
                 area_id: area_id.clone(),
                 axis: ai_agent_workspace_core::Axis::Vertical,
                 factor: 0.5,
+                new_panel_type: None,
             },
             &state,
         ).unwrap();
@@ -1330,6 +1332,7 @@ mod tests {
                 area_id: area_id.clone(),
                 axis: ai_agent_workspace_core::Axis::Horizontal,
                 factor: 0.5,
+                new_panel_type: None,
             },
             &state,
         ).unwrap();
@@ -1697,6 +1700,7 @@ mod tests {
                 area_id: area_id.clone(),
                 axis: ai_agent_workspace_core::Axis::Vertical,
                 factor: 0.5,
+                new_panel_type: None,
             },
             &state,
         ).unwrap();

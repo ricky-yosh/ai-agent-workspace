@@ -460,6 +460,10 @@ pub fn validate_screen(screen: &Screen) -> Result<(), String> {
 }
 
 pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -> Result<String, String> {
+    area_split_with_type(screen, area_id, axis, factor, None)
+}
+
+pub fn area_split_with_type(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64, new_panel_type: Option<&str>) -> Result<String, String> {
     let (old_v1, old_v2, old_v3, old_v4, old_panel_type, old_terminal_id) = {
         let old_area = screen.get_area(area_id).ok_or_else(|| "Area not found".to_string())?;
         (
@@ -471,6 +475,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
             old_area.terminal_id.clone(),
         )
     };
+    let new_area_panel_type = new_panel_type.unwrap_or(&old_panel_type).to_string();
 
     let (x1, y1, y2, x4) = {
         let v1 = screen.vertices.iter().find(|v| v.id == old_v1).ok_or("Missing vertex")?;
@@ -517,7 +522,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
                     v2: old_v2.clone(),
                     v3: old_v3.clone(),
                     v4: sv2_id.clone(),
-                    panel_type: old_panel_type.clone(),
+                    panel_type: new_area_panel_type.clone(),
                     terminal_id: None,
                 };
                 let old_mod = Area {
@@ -538,7 +543,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
                     v2: sv1_id.clone(),
                     v3: sv2_id.clone(),
                     v4: old_v4.clone(),
-                    panel_type: old_panel_type.clone(),
+                    panel_type: new_area_panel_type.clone(),
                     terminal_id: None,
                 };
                 let old_mod = Area {
@@ -588,7 +593,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
                     v2: sv2_id.clone(),
                     v3: old_v3.clone(),
                     v4: old_v4.clone(),
-                    panel_type: old_panel_type.clone(),
+                    panel_type: new_area_panel_type.clone(),
                     terminal_id: None,
                 };
                 let old_mod = Area {
@@ -609,7 +614,7 @@ pub fn area_split(screen: &mut Screen, area_id: &str, axis: Axis, factor: f64) -
                     v2: old_v2.clone(),
                     v3: sv2_id.clone(),
                     v4: sv1_id.clone(),
-                    panel_type: old_panel_type.clone(),
+                    panel_type: new_area_panel_type.clone(),
                     terminal_id: None,
                 };
                 let old_mod = Area {
