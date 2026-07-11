@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Plus } from "lucide-react";
-import { Button, CopyButton, SegmentedControl } from "./components/ui";
+import { Button, SnippetCard, SegmentedControl } from "./components/ui";
 import { safeInvoke } from "./safeInvoke";
 import { useSessions } from "./SessionContext";
 import type { BinaryStatus } from "./types/status-board";
@@ -151,15 +151,9 @@ export default function StatusBoard() {
         </div>
 
         {/* Snippet area */}
-        <div className="agent-snippet">
-          <p className="agent-method-hint">{currentAgent.methodHint}</p>
-          <div className="agent-snippet-codewrap">
-            <pre className="agent-snippet-code">
-              <code>{snippet}</code>
-            </pre>
-            <CopyButton text={snippet} label="Copy" disabled={!data} />
-          </div>
-        </div>
+        <SnippetCard hint={currentAgent.methodHint} copyText={snippet} disabled={!data}>
+          {snippet}
+        </SnippetCard>
       </div>
 
       {/* ── Start a session CTA ── */}

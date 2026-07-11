@@ -10,3 +10,7 @@ export { MenuItem } from "./MenuItem";
 export type { MenuItemProps } from "./MenuItem";
 export { SegmentedControl } from "./SegmentedControl";
 export type { SegmentedControlProps } from "./SegmentedControl";
+export { Textarea } from "./Textarea";
+export type { TextareaProps } from "./Textarea";
+export { SnippetCard } from "./SnippetCard";
+export type { SnippetCardProps } from "./SnippetCard";

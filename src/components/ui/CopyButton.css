@@ -4,15 +4,15 @@
   gap: var(--space-1, 4px);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 4px);
-  background: transparent;
-  color: var(--text-muted);
+  background: var(--bg-elevated, rgba(128, 128, 128, 0.10));
+  color: var(--text-primary);
   font-family: inherit;
   cursor: pointer;
   user-select: none;
   line-height: 1;
 }
 
-.ui-copy-button:hover:not(:disabled) {
+.ui-copy-button--idle:hover:not(:disabled) {
   background: var(--bg-hover, rgba(128, 128, 128, 0.12));
   color: var(--text-primary);
 }
@@ -52,11 +52,21 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1em;
-  height: 1em;
+}
+
+.ui-copy-button--sm .ui-copy-button__icon-wrap {
+  width: 14px;
+  height: 14px;
+}
+
+.ui-copy-button--md .ui-copy-button__icon-wrap {
+  width: 16px;
+  height: 16px;
 }
 
 .ui-copy-button__icon {
+  position: absolute;
+  inset: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;

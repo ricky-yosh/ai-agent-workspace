@@ -30,7 +30,7 @@ export function CopyButton({ text, label, size = "sm", disabled = false }: CopyB
   const classes = [
     "ui-copy-button",
     `ui-copy-button--${size}`,
-    state !== "idle" ? `ui-copy-button--${state}` : "",
+    `ui-copy-button--${state}`,
     disabled ? "ui-copy-button--disabled" : "",
   ].filter(Boolean).join(" ");
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 // lucide icons now provided by CopyButton
-import { Button, Input, CopyButton } from "../components/ui";
+import { Button, Input, CopyButton, SnippetCard } from "../components/ui";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
@@ -543,35 +543,17 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
+          minHeight: 0,
           gap: 12,
           textAlign: "center",
         }}
       >
         <div style={{ fontSize: 32, opacity: 0.4 }}>&#9670;</div>
         <div style={{ fontWeight: 500, fontSize: 14 }}>No C4 diagrams yet.</div>
-        <div style={{ maxWidth: 320, lineHeight: 1.5 }}>
-          To generate one, ask the AI:
-        </div>
-        <div style={{ position: "relative", maxWidth: 400 }}>
-          <div
-            style={{
-              padding: "10px 40px 10px 14px",
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: "var(--bg-secondary)",
-              fontFamily: "var(--font-mono, monospace)",
-              fontSize: 11,
-              color: "var(--text-primary)",
-              wordBreak: "break-word",
-              lineHeight: 1.5,
-            }}
-          >
-            Use the aiaw <code style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</code>{" "}
-            tool to create a C4 diagram of the codebase
-          </div>
-          <div style={{ position: "absolute", top: 6, right: 6 }}>
-            <CopyButton text={zeroStatePrompt} size="sm" />
-          </div>
+        <div style={{ flexShrink: 1, minHeight: 0, overflow: "auto", width: "100%", maxWidth: 400 }}>
+          <SnippetCard hint="To generate one, ask the AI:" copyText={zeroStatePrompt}>
+            Use the aiaw <span style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</span> tool to create a C4 diagram of the codebase
+          </SnippetCard>
         </div>
       </div>
     );

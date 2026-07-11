@@ -1,4 +1,4 @@
-import { type ReactNode, type InputHTMLAttributes, useId } from "react";
+import { forwardRef, type ReactNode, type InputHTMLAttributes, useId } from "react";
 import "./Input.css";
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value"> {
@@ -10,7 +10,7 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   onChange?: (value: string) => void;
 }
 
-export function Input({
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
   label,
   error,
   leadingIcon,
@@ -23,7 +23,7 @@ export function Input({
   className,
   id: idProp,
   ...rest
-}: InputProps) {
+}, ref) {
   const autoId = useId();
   const id = idProp ?? autoId;
   const hasError = typeof error === "string" && error.length > 0;
@@ -38,6 +38,7 @@ export function Input({
       <div className="ui-input__wrapper">
         {leadingIcon && <span className="ui-input__icon ui-input__icon--leading">{leadingIcon}</span>}
         <input
+          ref={ref}
           id={id}
           type={type}
           className="ui-input__field"
@@ -52,4 +53,4 @@ export function Input({
       {hasError && <span className="ui-input__error">{error}</span>}
     </div>
   );
-}
+});

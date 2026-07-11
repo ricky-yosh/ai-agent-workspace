@@ -80,18 +80,6 @@ const styles = {
     gap: 8,
     marginTop: 20,
   },
-  actionBtn: {
-    padding: "7px 14px",
-    fontSize: 12,
-    fontWeight: 500,
-    color: "var(--text-primary)",
-    background: "rgba(255, 255, 255, 0.06)",
-    border: "1px solid rgba(255, 255, 255, 0.10)",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    lineHeight: "18px",
-  },
 } as const;
 
 const shortcuts = [

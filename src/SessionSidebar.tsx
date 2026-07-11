@@ -443,24 +443,26 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
           </Button>
           <div className="sidebar-header-content">
             {activeSessionId ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const sid = activeSessionId;
-                  setActiveSessionId(null);
-                  if (sid) {
-                    safeInvoke("close_session", { sessionId: sid }, (msg) => addToast({ type: "error", message: msg })).then(() => {
-                      refreshSessions();
-                    }).catch(console.error);
-                  }
-                }}
-                title="Back to all sessions"
-                aria-label="Close session and return to all sessions"
-              >
-                <ArrowLeft size={14} />
-                <span>{sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}</span>
-              </Button>
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const sid = activeSessionId;
+                    setActiveSessionId(null);
+                    if (sid) {
+                      safeInvoke("close_session", { sessionId: sid }, (msg) => addToast({ type: "error", message: msg })).then(() => {
+                        refreshSessions();
+                      }).catch(console.error);
+                    }
+                  }}
+                  title="Back to home"
+                  aria-label="Close session and return to home"
+                >
+                  <ArrowLeft size={14} />
+                  <span style={{ fontWeight: "var(--font-weight-semibold)", fontSize: "var(--font-size-base)", letterSpacing: "0.2px" }}>{sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}</span>
+                </Button>
+              </div>
             ) : (
               <h2 className="sidebar-title">Sessions</h2>
             )}

@@ -151,110 +151,6 @@
 
 /* ── Agent selector is a SegmentedControl primitive ── */
 
-/* ── Snippet card ── */
-
-.agent-snippet {
-  background: var(--bg-panel);
-  border-radius: var(--radius-island);
-  padding: 16px;
-  box-shadow: var(--shadow-island);
-}
-
-.agent-method-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  user-select: none;
-}
-
-.agent-snippet-code {
-  margin: 0;
-  padding: 12px 44px 12px 12px;
-  background: var(--bg-primary);
-  border-radius: var(--radius-control);
-  font-family: monospace;
-  font-size: 12px;
-  color: var(--text-primary);
-  line-height: 1.5;
-  overflow-x: auto;
-  white-space: pre;
-  word-break: normal;
-  user-select: text;
-}
-
-.agent-snippet-codewrap {
-  position: relative;
-}
-
-.snippet-copy-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-control);
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.snippet-copy-btn::after {
-  content: "";
-  position: absolute;
-  inset: -7px;
-}
-
-.snippet-copy-icon-wrap {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.snippet-copy-icon {
-  position: absolute;
-}
-
-.snippet-copy-icon-hidden {
-  opacity: 0;
-  transform: scale(0.25);
-  filter: blur(4px);
-  pointer-events: none;
-}
-
-.snippet-copy-icon-visible {
-  opacity: 1;
-  transform: scale(1);
-  filter: blur(0px);
-}
-
-.snippet-copy-btn:hover:not(:disabled) {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-.snippet-copy-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.snippet-copy-btn.copied {
-  background: rgba(39, 174, 96, 0.15);
-  color: oklch(0.65 0.14 160);
-}
-
-.snippet-copy-btn.failed {
-  background: rgba(211, 47, 47, 0.15);
-  color: var(--danger);
-}
-
 /* ── "Open a folder" CTA ── */
 
 .status-cta-section {
@@ -294,18 +190,6 @@
 
 :root[data-motion="full"] .status-card-action:active {
   transform: scale(0.96);
-}
-
-:root[data-motion="full"] .snippet-copy-btn {
-  transition: background 0.12s, color 0.12s, opacity 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-motion="full"] .snippet-copy-btn:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-:root[data-motion="full"] .snippet-copy-icon {
-  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 :root[data-motion="full"] .status-cta-button {
