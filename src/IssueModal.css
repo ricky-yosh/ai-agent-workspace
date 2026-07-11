@@ -1,0 +1,213 @@
+/* IssueModal — keyboard-first command-palette styling, aligned with the
+   shared modal visual language (see NewWorkspaceModal.css). */
+
+.issue-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.issue-modal-header svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.issue-modal-error {
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--danger-subtle);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* ── Sub-page back link ──────────────────────────────── */
+
+.issue-modal-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.issue-modal-back {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.issue-modal-back:hover {
+  color: var(--text-primary);
+}
+
+/* ── List (actions + label picker) ───────────────────── */
+
+.issue-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.issue-modal-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  transition: background var(--duration-fast, 120ms);
+}
+
+.issue-modal-item:hover {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 120, 212, 0.10) 0%,
+    rgba(0, 120, 212, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.issue-modal-item.issue-modal-item--active {
+  background: rgba(0, 120, 212, 0.15);
+}
+
+.issue-modal-item.issue-modal-item--destructive {
+  color: var(--danger);
+}
+
+.issue-modal-item.issue-modal-item--destructive svg {
+  color: var(--danger);
+}
+
+.issue-modal-item svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.issue-modal-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: issue-modal-spin 0.6s linear infinite;
+}
+
+@keyframes issue-modal-spin {
+  to { transform: rotate(360deg); }
+}
+
+.issue-modal-item-body {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-modal-item-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.issue-modal-item-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.issue-modal-pill {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.issue-modal-item-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+.issue-modal-item--active .issue-modal-item-key {
+  color: var(--text-muted);
+}
+
+/* Label picker row */
+.issue-modal-picker-idx {
+  width: 16px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.issue-modal-picker-pill {
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.issue-modal-picker-current {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Footer: hint bar ────────────────────────────────── */
+
+.issue-modal-hints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.issue-modal-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.issue-modal-hints kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+  color: var(--text-dim);
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { Button } from "./components/ui";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
@@ -10,6 +10,7 @@ import { useTauriEvent } from "./hooks/useTauriEvent";
 import { safeInvoke } from "./safeInvoke";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import IssueModal from "./IssueModal";
 import "./IssueTrackerPanel.css";
 
 function labelStyle(label: string): { background: string; color: string } {
@@ -85,6 +86,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
+  const [issueModalOpen, setIssueModalOpen] = useState<{ mode: "create" } | { mode: "edit"; issue: Issue } | null>(null);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -385,6 +387,13 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           e.preventDefault();
           filterInputRef.current?.focus();
           break;
+        case "e":
+        case "E":
+          if (focusedIndex !== null && displayedIssues[focusedIndex]) {
+            e.preventDefault();
+            setIssueModalOpen({ mode: "edit", issue: displayedIssues[focusedIndex] });
+          }
+          break;
         default: {
           if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
             const char = e.key.toLowerCase();
@@ -426,69 +435,92 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   if (issues.length === 0) {
     return (
       <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-        No issues yet. Ask the AI to create one.
+        <div style={{ marginBottom: 12 }}>No issues yet.</div>
+        <Button variant="primary" size="sm" onClick={() => setIssueModalOpen({ mode: "create" })}>
+          <Plus size={14} /> New issue
+        </Button>
+        {sessionId && (
+          <IssueModal
+            open={issueModalOpen !== null}
+            onClose={() => setIssueModalOpen(null)}
+            sessionId={sessionId}
+            issue={issueModalOpen?.mode === "edit" ? issueModalOpen.issue : undefined}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
-      <SearchBar
-        ref={filterInputRef}
-        value={filterQuery}
-        onChange={(v) => {
-          setFilterQuery(v);
-          setFocusedIndex(null);
-        }}
-        placeholder="Filter issues… (press /)"
-        onMouseDown={() => {
-          filterInputRef.current?.focus();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            setFilterQuery("");
-            setFocusedIndex(null);
-            rowRefs.current.get(0)?.focus();
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            if (displayedIssues.length > 0) {
-              moveFocus(0);
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <SearchBar
+            ref={filterInputRef}
+            value={filterQuery}
+            onChange={(v) => {
+              setFilterQuery(v);
+              setFocusedIndex(null);
+            }}
+            placeholder="Filter issues… (press /)"
+            onMouseDown={() => {
+              filterInputRef.current?.focus();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setFilterQuery("");
+                setFocusedIndex(null);
+                rowRefs.current.get(0)?.focus();
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                if (displayedIssues.length > 0) {
+                  moveFocus(0);
+                }
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                if (displayedIssues.length > 0) {
+                  moveFocus(displayedIssues.length - 1);
+                }
+              }
+            }}
+            onBlur={(e) => {
+              if (!panelRef.current?.contains(e.relatedTarget as Node)) {
+                setFocusedIndex(null);
+              }
+            }}
+            trailing={
+              filterQuery ? (
+                <>
+                  <span className="issue-filter-count">
+                    {displayedIssues.length}/{issues.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setFilterQuery("");
+                      setFocusedIndex(null);
+                      filterInputRef.current?.focus();
+                    }}
+                    aria-label="Clear filter"
+                  >
+                    <X size={12} />
+                  </Button>
+                </>
+              ) : null
             }
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            if (displayedIssues.length > 0) {
-              moveFocus(displayedIssues.length - 1);
-            }
-          }
-        }}
-        onBlur={(e) => {
-          if (!panelRef.current?.contains(e.relatedTarget as Node)) {
-            setFocusedIndex(null);
-          }
-        }}
-        trailing={
-          filterQuery ? (
-            <>
-              <span className="issue-filter-count">
-                {displayedIssues.length}/{issues.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setFilterQuery("");
-                  setFocusedIndex(null);
-                  filterInputRef.current?.focus();
-                }}
-                aria-label="Clear filter"
-              >
-                <X size={12} />
-              </Button>
-            </>
-          ) : null
-        }
-      />
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setIssueModalOpen({ mode: "create" })}
+          title="New issue"
+        >
+          <Plus size={14} />
+        </Button>
+      </div>
       <div ref={listRef} className="issue-tracker-list">
         {filterQuery && displayedIssues.length === 0 ? (
           <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
@@ -554,6 +586,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                       setExpandedId(isSelected ? null : issue.id);
                       moveFocus(idx);
                     }}
+                    onDoubleClick={() => setIssueModalOpen({ mode: "edit", issue })}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span style={{ color: "var(--text-muted)", fontWeight: 600, minWidth: 48, fontVariantNumeric: "tabular-nums" }}>
@@ -656,6 +689,15 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           </AnimatePresence>
         )}
       </div>
+
+      {sessionId && (
+        <IssueModal
+          open={issueModalOpen !== null}
+          onClose={() => setIssueModalOpen(null)}
+          sessionId={sessionId}
+          issue={issueModalOpen?.mode === "edit" ? issueModalOpen.issue : undefined}
+        />
+      )}
     </div>
   );
 }

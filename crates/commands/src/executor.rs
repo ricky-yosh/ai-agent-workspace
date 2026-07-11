@@ -324,9 +324,10 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let screen = ws.current_screen.clone();
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
-        Command::IssueCreate { session_id, title, body } => {
+        Command::IssueCreate { session_id, title, body, labels } => {
             let issues = state.db.issues(&conn);
-            let issue = issues.create(&session_id, &title, &body)?;
+            let labels_ref = labels.as_deref();
+            let issue = issues.create(&session_id, &title, &body, labels_ref)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Issue(issue), DomainEvent::IssuesChanged { session_id }))
         }
         Command::IssueList { session_id } => {
@@ -1384,11 +1385,9 @@ mod tests {
 
         // Create an issue
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: session.id.clone(),
+            Command::IssueCreate {session_id: session.id.clone(),
                 title: "Bug".to_string(),
-                body: "Something broke".to_string(),
-            },
+                body: "Something broke".to_string(), labels: None},
             &state,
         ).unwrap();
 
@@ -1437,11 +1436,9 @@ mod tests {
         let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: sid.clone(),
+            Command::IssueCreate {session_id: sid.clone(),
                 title: "Issue 1".to_string(),
-                body: "".to_string(),
-            },
+                body: "".to_string(), labels: None},
             &state,
         ).unwrap();
         assert_eq!(outcome.events.len(), 1);
@@ -1467,11 +1464,9 @@ mod tests {
         let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: sid.clone(),
+            Command::IssueCreate {session_id: sid.clone(),
                 title: "Test".to_string(),
-                body: "".to_string(),
-            },
+                body: "".to_string(), labels: None},
             &state,
         ).unwrap();
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
@@ -1516,11 +1511,9 @@ mod tests {
         let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: sid.clone(),
+            Command::IssueCreate {session_id: sid.clone(),
                 title: "Original".to_string(),
-                body: "".to_string(),
-            },
+                body: "".to_string(), labels: None},
             &state,
         ).unwrap();
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
@@ -1565,11 +1558,9 @@ mod tests {
         let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: sid.clone(),
+            Command::IssueCreate {session_id: sid.clone(),
                 title: "Test".to_string(),
-                body: "".to_string(),
-            },
+                body: "".to_string(), labels: None},
             &state,
         ).unwrap();
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
@@ -1638,11 +1629,9 @@ mod tests {
         let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
 
         let outcome = execute(
-            Command::IssueCreate {
-                session_id: sid.clone(),
+            Command::IssueCreate {session_id: sid.clone(),
                 title: "To Delete".to_string(),
-                body: "".to_string(),
-            },
+                body: "".to_string(), labels: None},
             &state,
         ).unwrap();
         let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };

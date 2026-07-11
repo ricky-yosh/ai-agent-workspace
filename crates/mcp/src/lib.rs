@@ -367,7 +367,7 @@ impl McpHandler {
     async fn issue_create(&self, #[tool(param)] title: String, #[tool(param)] body: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueCreate { session_id, title, body }, &state, Issue, issue, json)
+        run_mcp_command!(Command::IssueCreate { session_id, title, body, labels: None }, &state, Issue, issue, json)
     }
 
     #[tool(description = "List all issues in the current session")]

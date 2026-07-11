@@ -99,6 +99,7 @@ pub enum Command {
         session_id: String,
         title: String,
         body: String,
+        labels: Option<Vec<String>>,
     },
     IssueList {
         session_id: String,

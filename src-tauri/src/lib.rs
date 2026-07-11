@@ -209,6 +209,9 @@ workspace_return!(change_panel_type, ChangePanelType { session_id, workspace_id,
 
 // ── Issue commands ──────────────────────────────────────────────────
 
+command_handler!(create_issue, IssueCreate { session_id, title, body, labels }, Issue, Issue, session_id: String, title: String, body: String, labels: Option<Vec<String>>);
+command_handler!(update_issue, IssueUpdate { id, session_id, title, body, labels, state }, Issue, Issue, id: String, session_id: Option<String>, title: Option<String>, body: Option<String>, labels: Option<Vec<String>>, state: Option<String>);
+command_handler!(delete_issue, IssueDelete { id, session_id }, Unit, (), id: String, session_id: Option<String>);
 command_handler!(list_issues, IssueList { session_id }, Issues, Vec<Issue>, session_id: String);
 command_handler!(get_issue, IssueGet { id, session_id }, Issue, Issue, id: String, session_id: Option<String>);
 
@@ -893,6 +896,9 @@ pub fn run() {
             close_area,
             resize_edge,
             change_panel_type,
+            create_issue,
+            update_issue,
+            delete_issue,
             list_issues,
             get_issue,
             list_visual_canvases,

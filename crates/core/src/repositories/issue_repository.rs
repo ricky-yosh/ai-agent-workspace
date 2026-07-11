@@ -27,15 +27,18 @@ impl<'a> IssueRepository<'a> {
         }
     }
 
-    pub fn create(&self, session_id: &str, title: &str, body: &str) -> Result<Issue, rusqlite::Error> {
+    pub fn create(&self, session_id: &str, title: &str, body: &str, labels: Option<&[String]>) -> Result<Issue, rusqlite::Error> {
         let id = Uuid::new_v4().to_string();
         let number = self.next_number(session_id)?;
         let now = now_epoch_millis();
-        let labels = r#"["needs-triage"]"#;
+        let default_labels = [String::from("needs-triage")];
+        let final_labels = labels.unwrap_or(&default_labels);
+        let labels_json = serde_json::to_string(final_labels).unwrap();
+        let labels_vec: Vec<String> = final_labels.to_vec();
         self.conn.execute(
             "INSERT INTO issues (id, session_id, number, title, body, state, labels, author, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![id, session_id, number, title, body, "open", labels, "ai", now, now],
+            params![id, session_id, number, title, body, "open", labels_json, "ai", now, now],
         )?;
         Ok(Issue {
             id,
@@ -44,7 +47,7 @@ impl<'a> IssueRepository<'a> {
             title: title.to_string(),
             body: body.to_string(),
             state: "open".to_string(),
-            labels: vec!["needs-triage".to_string()],
+            labels: labels_vec,
             author: "ai".to_string(),
             created_at: epoch_millis_to_iso(now),
             updated_at: epoch_millis_to_iso(now),
@@ -285,7 +288,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "Something broke").unwrap();
+        let issue = repo.create(&session.id, "Bug", "Something broke", None).unwrap();
         assert_eq!(issue.number, 1);
         assert_eq!(issue.title, "Bug");
         assert_eq!(issue.body, "Something broke");
@@ -302,8 +305,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue1 = repo.create(&session.id, "First", "").unwrap();
-        let issue2 = repo.create(&session.id, "Second", "").unwrap();
+        let issue1 = repo.create(&session.id, "First", "", None).unwrap();
+        let issue2 = repo.create(&session.id, "Second", "", None).unwrap();
         assert_eq!(issue1.number, 1);
         assert_eq!(issue2.number, 2);
     }
@@ -317,9 +320,9 @@ mod tests {
         let session2 = sessions.create("/tmp", "B").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session1.id, "First", "").unwrap();
-        let i2 = repo.create(&session2.id, "Second", "").unwrap();
-        let i3 = repo.create(&session1.id, "Third", "").unwrap();
+        let i1 = repo.create(&session1.id, "First", "", None).unwrap();
+        let i2 = repo.create(&session2.id, "Second", "", None).unwrap();
+        let i3 = repo.create(&session1.id, "Third", "", None).unwrap();
         assert_eq!(i1.number, 1);
         assert_eq!(i2.number, 1);
         assert_eq!(i3.number, 2);
@@ -333,7 +336,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         assert_eq!(issue.labels, vec!["needs-triage"]);
     }
 
@@ -346,9 +349,9 @@ mod tests {
         let session2 = sessions.create("/tmp", "B").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session1.id, "S1-I1", "").unwrap();
-        repo.create(&session1.id, "S1-I2", "").unwrap();
-        repo.create(&session2.id, "S2-I1", "").unwrap();
+        repo.create(&session1.id, "S1-I1", "", None).unwrap();
+        repo.create(&session1.id, "S1-I2", "", None).unwrap();
+        repo.create(&session2.id, "S2-I1", "", None).unwrap();
 
         let list = repo.list_by_session(&session1.id).unwrap();
         assert_eq!(list.len(), 2);
@@ -366,7 +369,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "Something broke").unwrap();
+        let issue = repo.create(&session.id, "Bug", "Something broke", None).unwrap();
         let fetched = repo.get(&issue.id).unwrap();
         assert_eq!(fetched.id, issue.id);
         assert_eq!(fetched.title, "Bug");
@@ -394,7 +397,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Original Title", "Original body").unwrap();
+        let issue = repo.create(&session.id, "Original Title", "Original body", None).unwrap();
 
         // Update only title
         let updated = repo.update(&issue.id, Some("New Title"), None, None, None).unwrap();
@@ -421,7 +424,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         let initial_updated_millis = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
             .unwrap()
             .timestamp_millis();
@@ -443,7 +446,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         assert_eq!(issue.state, "open");
 
         let initial_updated = chrono::DateTime::parse_from_rfc3339(&issue.updated_at)
@@ -467,7 +470,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         repo.close(&issue.id).unwrap();
         let reopened = repo.update(&issue.id, None, None, None, Some("open")).unwrap();
         assert_eq!(reopened.state, "open");
@@ -481,7 +484,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         let ad_hoc = vec!["bug".to_string(), "needs-triage".to_string(), "ui".to_string()];
         let updated = repo.update(&issue.id, None, None, Some(&ad_hoc), None).unwrap();
         assert_eq!(updated.labels, ad_hoc);
@@ -499,7 +502,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "Bug", "").unwrap();
+        let issue = repo.create(&session.id, "Bug", "", None).unwrap();
         assert_eq!(issue.created_at, issue.updated_at);
     }
 
@@ -511,8 +514,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "Open 1", "").unwrap();
-        let i2 = repo.create(&session.id, "Open 2", "").unwrap();
+        let i1 = repo.create(&session.id, "Open 1", "", None).unwrap();
+        let i2 = repo.create(&session.id, "Open 2", "", None).unwrap();
 
         // Manually close i2 by updating state (no close command yet in issue 01)
         conn.execute(
@@ -536,7 +539,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let issue = repo.create(&session.id, "To Delete", "Gone").unwrap();
+        let issue = repo.create(&session.id, "To Delete", "Gone", None).unwrap();
         repo.delete(&issue.id).unwrap();
         let result = repo.get(&issue.id);
         assert!(result.is_err());
@@ -550,8 +553,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session.id, "Issue 1", "").unwrap();
-        repo.create(&session.id, "Issue 2", "").unwrap();
+        repo.create(&session.id, "Issue 1", "", None).unwrap();
+        repo.create(&session.id, "Issue 2", "", None).unwrap();
 
         sessions.delete(&session.id).unwrap();
 
@@ -567,8 +570,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session.id, "Issue 1", "").unwrap();
-        repo.create(&session.id, "Issue 2", "").unwrap();
+        repo.create(&session.id, "Issue 1", "", None).unwrap();
+        repo.create(&session.id, "Issue 2", "", None).unwrap();
 
         sessions.delete(&session.id).unwrap();
 
@@ -584,8 +587,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "Open issue", "").unwrap();
-        let i2 = repo.create(&session.id, "Closed issue", "").unwrap();
+        let i1 = repo.create(&session.id, "Open issue", "", None).unwrap();
+        let i2 = repo.create(&session.id, "Closed issue", "", None).unwrap();
         repo.close(&i2.id).unwrap();
 
         let open = repo.search(&session.id, Some("open"), None, None).unwrap();
@@ -605,9 +608,9 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "Ready issue", "").unwrap();
+        let i1 = repo.create(&session.id, "Ready issue", "", None).unwrap();
         repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
-        let _i2 = repo.create(&session.id, "Triage issue", "").unwrap();
+        let _i2 = repo.create(&session.id, "Triage issue", "", None).unwrap();
 
         let ready = repo.search(&session.id, None, Some("ready-for-agent"), None).unwrap();
         assert_eq!(ready.len(), 1);
@@ -625,8 +628,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session.id, "Fix the login bug", "").unwrap();
-        repo.create(&session.id, "Update docs", "").unwrap();
+        repo.create(&session.id, "Fix the login bug", "", None).unwrap();
+        repo.create(&session.id, "Update docs", "", None).unwrap();
 
         let results = repo.search(&session.id, None, None, Some("LOGIN")).unwrap();
         assert_eq!(results.len(), 1);
@@ -641,8 +644,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session.id, "Issue A", "auth failure in production").unwrap();
-        repo.create(&session.id, "Issue B", "unrelated content").unwrap();
+        repo.create(&session.id, "Issue A", "auth failure in production", None).unwrap();
+        repo.create(&session.id, "Issue B", "unrelated content", None).unwrap();
 
         let results = repo.search(&session.id, None, None, Some("auth failure")).unwrap();
         assert_eq!(results.len(), 1);
@@ -657,10 +660,10 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "Bug report", "crash on startup").unwrap();
+        let i1 = repo.create(&session.id, "Bug report", "crash on startup", None).unwrap();
         repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
 
-        let i2 = repo.create(&session.id, "Bug report", "crash on startup").unwrap();
+        let i2 = repo.create(&session.id, "Bug report", "crash on startup", None).unwrap();
         repo.close(&i2.id).unwrap();
         repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
 
@@ -677,8 +680,8 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        repo.create(&session.id, "A", "").unwrap();
-        repo.create(&session.id, "B", "").unwrap();
+        repo.create(&session.id, "A", "", None).unwrap();
+        repo.create(&session.id, "B", "", None).unwrap();
 
         let results = repo.search(&session.id, None, None, None).unwrap();
         assert_eq!(results.len(), 2);
@@ -692,7 +695,7 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i = repo.create(&session.id, "Done", "").unwrap();
+        let i = repo.create(&session.id, "Done", "", None).unwrap();
         repo.close(&i.id).unwrap();
 
         let next = repo.get_next(&session.id).unwrap();
@@ -719,10 +722,10 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "Needs triage", "").unwrap();
-        let i2 = repo.create(&session.id, "Ready for agent", "").unwrap();
+        let i1 = repo.create(&session.id, "Needs triage", "", None).unwrap();
+        let i2 = repo.create(&session.id, "Ready for agent", "", None).unwrap();
         repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
-        let i3 = repo.create(&session.id, "Needs info", "").unwrap();
+        let i3 = repo.create(&session.id, "Needs info", "", None).unwrap();
         repo.update(&i3.id, None, None, Some(&["needs-info".to_string()]), None).unwrap();
 
         let next = repo.get_next(&session.id).unwrap().unwrap();
@@ -745,9 +748,9 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "First", "").unwrap();
+        let i1 = repo.create(&session.id, "First", "", None).unwrap();
         repo.update(&i1.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
-        let i2 = repo.create(&session.id, "Second", "").unwrap();
+        let i2 = repo.create(&session.id, "Second", "", None).unwrap();
         repo.update(&i2.id, None, None, Some(&["ready-for-agent".to_string()]), None).unwrap();
 
         let next = repo.get_next(&session.id).unwrap().unwrap();
@@ -777,10 +780,10 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "A", "").unwrap();
-        let i2 = repo.create(&session.id, "B", "").unwrap();
+        let i1 = repo.create(&session.id, "A", "", None).unwrap();
+        let i2 = repo.create(&session.id, "B", "", None).unwrap();
         repo.close(&i2.id).unwrap();
-        repo.create(&session.id, "C", "").unwrap();
+        repo.create(&session.id, "C", "", None).unwrap();
 
         let summary = repo.summarize(&session.id).unwrap();
         assert_eq!(summary.total, 3);
@@ -799,9 +802,9 @@ mod tests {
         let session = sessions.create("/tmp", "Test").unwrap();
         let repo = db.issues(&conn);
 
-        let i1 = repo.create(&session.id, "A", "").unwrap();
+        let i1 = repo.create(&session.id, "A", "", None).unwrap();
         repo.update(&i1.id, None, None, Some(&["bug".to_string(), "ready-for-agent".to_string()]), None).unwrap();
-        let i2 = repo.create(&session.id, "B", "").unwrap();
+        let i2 = repo.create(&session.id, "B", "", None).unwrap();
         repo.update(&i2.id, None, None, Some(&["bug".to_string()]), None).unwrap();
 
         let summary = repo.summarize(&session.id).unwrap();
