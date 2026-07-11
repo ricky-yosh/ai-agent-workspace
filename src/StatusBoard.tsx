@@ -167,7 +167,7 @@ export default function StatusBoard() {
           onClick={() => setShowNewSessionDialog(true)}
         >
           <Plus size={16} />
-          {" "}New session
+          {" "}New session <kbd className="status-kbd">⌘N</kbd>
         </Button>
       </div>
     </div>
