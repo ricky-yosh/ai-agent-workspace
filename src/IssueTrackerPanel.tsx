@@ -464,7 +464,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   return (
     <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <SearchBar
             ref={filterInputRef}

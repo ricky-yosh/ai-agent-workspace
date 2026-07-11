@@ -13,7 +13,9 @@ import { parseNumstatToTree } from "./git/fileTreeParser";
 import type { FileTreeEntry } from "./git/fileTreeParser";
 import { CommitQuickOpenModal, type CommitQuickMatch } from "./git/CommitQuickOpenModal";
 import { LANE_WIDTH, ROW_HEIGHT, Lane, Connector, Dot, HeadRing } from "./git/gitGraphSvg";
-import { Button, Input } from "../components/ui";
+import { Button } from "../components/ui";
+import { X } from "lucide-react";
+import SearchBar from "../components/SearchBar";
 
 interface CommitInfo {
   hash: string;
@@ -751,41 +753,56 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
       </div>
 
       {/* Search bar */}
-      <div
-        style={{
-          padding: "6px 8px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexShrink: 0,
-        }}
-      >
-        <Input
-          placeholder="Filter commits..."
-          value={searchQuery}
-          onChange={(v) => setSearchQuery(v)}
-          style={{ flex: 1 }}
-        />
-        {/* NOTE: <select> not migrated — no Select primitive exists */}
-        <select
-          value={searchField}
-          onChange={(e) =>
-            setSearchField(e.target.value as "keyword" | "author" | "date")
-          }
-          style={{
-            background: "var(--input-bg, transparent)",
-            color: "var(--text-primary)",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            padding: "3px 6px",
-            fontSize: 11,
-          }}
-        >
-          <option value="keyword">Message</option>
-          <option value="author">Author</option>
-          <option value="date">Date range</option>
-        </select>
+      <div style={{ display: "flex", flexShrink: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <SearchBar
+            value={searchQuery}
+            onChange={(v) => setSearchQuery(v)}
+            placeholder="Filter commits…"
+            trailing={
+              <>
+                {/* NOTE: <select> not migrated — no Select primitive exists */}
+                <select
+                  value={searchField}
+                  onChange={(e) =>
+                    setSearchField(e.target.value as "keyword" | "author" | "date")
+                  }
+                  style={{
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    border: "none",
+                    padding: 0,
+                    fontSize: 11,
+                    cursor: "pointer",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <option value="keyword">Message</option>
+                  <option value="author">Author</option>
+                  <option value="date">Date range</option>
+                </select>
+                {searchQuery && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {rows.length}
+                  </span>
+                )}
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear filter"
+                  >
+                    <X size={12} />
+                  </Button>
+                )}
+              </>
+            }
+          />
+        </div>
       </div>
 
       <div

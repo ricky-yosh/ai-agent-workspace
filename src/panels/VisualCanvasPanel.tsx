@@ -6,8 +6,9 @@ import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
 import { Badge, Button } from "../components/ui";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import SearchBar from "../components/SearchBar";
 import CanvasModal from "../CanvasModal";
 import {
   CanvasRenderer,
@@ -52,6 +53,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [tags, setTags] = useState<CanvasTag[]>([]);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [canvasModalOpen, setCanvasModalOpen] = useState<{ mode: "create" } | { mode: "rename"; canvas: VisualCanvas } | null>(null);
+  const [canvasFilterQuery, setCanvasFilterQuery] = useState("");
+  const canvasFilterInputRef = useRef<HTMLInputElement>(null);
+  const canvasListRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -689,6 +693,22 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   // ── Effects ────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    function onGlobalKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "/" &&
+        canvasListRef.current?.contains(document.activeElement) &&
+        document.activeElement !== canvasFilterInputRef.current
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        canvasFilterInputRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onGlobalKeyDown, { capture: true });
+    return () => document.removeEventListener("keydown", onGlobalKeyDown, { capture: true });
+  }, []);
+
+  useEffect(() => {
     fetchCanvases();
   }, [fetchCanvases]);
 
@@ -809,6 +829,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     );
   }
 
+  const filteredCanvases = canvasFilterQuery
+    ? canvases.filter((c) => c.name.toLowerCase().includes(canvasFilterQuery.toLowerCase()))
+    : canvases;
+
   // If no canvas is selected, show the canvas list
   if (!selectedCanvasId) {
     if (canvases.length === 0) {
@@ -859,6 +883,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
     return (
       <div
+        ref={canvasListRef}
         tabIndex={0}
         style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box", outline: "none" }}
         onKeyDown={(e) => {
@@ -868,9 +893,31 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           }
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "0 4px" }}>
-          <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1 }}>
-            Canvases
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <SearchBar
+              ref={canvasFilterInputRef}
+              value={canvasFilterQuery}
+              onChange={setCanvasFilterQuery}
+              placeholder="Filter canvases… (press /)"
+              trailing={
+                canvasFilterQuery ? (
+                  <>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {filteredCanvases.length}/{canvases.length}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCanvasFilterQuery("")}
+                      aria-label="Clear filter"
+                    >
+                      <X size={12} />
+                    </Button>
+                  </>
+                ) : null
+              }
+            />
           </div>
           <Button
             variant="secondary"
@@ -881,8 +928,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             <Plus size={14} />
           </Button>
         </div>
+        {filteredCanvases.length === 0 ? (
+          <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
+            {canvasFilterQuery ? "No matching canvases" : "No canvases yet"}
+          </div>
+        ) : (
         <AnimatePresence mode="popLayout">
-          {canvases.map((canvas, idx) => (
+          {filteredCanvases.map((canvas, idx) => (
             <motion.div
               key={canvas.id}
               layout
@@ -913,6 +965,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             </motion.div>
           ))}
         </AnimatePresence>
+        )}
 
         {sessionId && (
           <CanvasModal
