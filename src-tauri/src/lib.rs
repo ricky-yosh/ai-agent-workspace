@@ -218,6 +218,9 @@ command_handler!(get_issue, IssueGet { id, session_id }, Issue, Issue, id: Strin
 // ── Visual Canvas commands ──────────────────────────────────────────
 
 command_handler!(list_visual_canvases, VisualCanvasList { session_id }, VisualCanvases, Vec<VisualCanvas>, session_id: String);
+command_handler!(create_visual_canvas, VisualCanvasCreate { session_id, name }, VisualCanvas, VisualCanvas, session_id: String, name: String);
+unit_return!(delete_visual_canvas, VisualCanvasDelete { id }, id: String);
+command_handler!(rename_visual_canvas, VisualCanvasRename { id, name }, VisualCanvas, VisualCanvas, id: String, name: String);
 
 // ── Canvas Node commands ────────────────────────────────────────────
 
@@ -902,6 +905,9 @@ pub fn run() {
             list_issues,
             get_issue,
             list_visual_canvases,
+            create_visual_canvas,
+            delete_visual_canvas,
+            rename_visual_canvas,
             create_canvas_node,
             list_canvas_nodes,
             get_canvas_node,

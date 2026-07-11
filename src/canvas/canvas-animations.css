@@ -89,53 +89,6 @@
   animation: none;
 }
 
-@keyframes node-shockwave-scale {
-  0% {
-    animation-timing-function: cubic-bezier(.16,1,.3,1);
-    transform: translate(-50%, -50%) scale(1);
-  }
-  34% {
-    transform: translate(-50%, -50%) scale(2.2);
-    animation-timing-function: cubic-bezier(.19,1,.22,1);
-  }
-  60% {
-    animation-timing-function: cubic-bezier(.22,1,.36,1);
-    transform: translate(-50%, -50%) scale(1.72);
-  }
-  82% {
-    animation-timing-function: cubic-bezier(.22,1,.36,1);
-    transform: translate(-50%, -50%) scale(1.16);
-  }
-  100% {
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-
-@keyframes node-shockwave-fade {
-  0% { opacity: 0; }
-  14% { opacity: 0.88; }
-  46% { opacity: 0.62; }
-  78% { opacity: 0.22; }
-  100% { opacity: 0; }
-}
-
-:root[data-motion="full"] .node-shockwave {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  border-radius: 50%;
-  border: 1.5px solid var(--canvas-accent);
-  background: var(--canvas-accent);
-  opacity: 0;
-  pointer-events: none;
-  animation:
-    node-shockwave-scale 1.32s cubic-bezier(.16,1,.3,1) both,
-    node-shockwave-fade 1.38s cubic-bezier(.22,1,.36,1) both;
-}
-
 @keyframes node-connection-breathe {
   0%, 100% {
     opacity: 0.78;

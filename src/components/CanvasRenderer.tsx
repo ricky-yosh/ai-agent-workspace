@@ -140,11 +140,9 @@ interface CanvasRendererProps {
   // Selection
   selectedNodeIds?: Set<string>;
   // Animation
-  newNodeIds?: Set<string>;
   deletingNodeIds?: Set<string>;
   // Rendering overrides
   renderNodeContent?: (node: CanvasNode) => ReactNode;
-  renderNodeOverlay?: (node: CanvasNode) => ReactNode;
   // Tags (optional)
   tags?: Array<{ id: string; node_id: string; tag: string }>;
   renderTags?: (nodeId: string) => ReactNode;
@@ -206,10 +204,8 @@ export function CanvasRenderer({
   onCanvasMouseMove,
   onCanvasMouseUp,
   selectedNodeIds = new Set(),
-  newNodeIds: _newNodeIds = new Set(),
   deletingNodeIds = new Set(),
   renderNodeContent,
-  renderNodeOverlay,
   tags = [],
   renderTags,
   boxSelect = null,
@@ -1171,8 +1167,6 @@ export function CanvasRenderer({
                         </foreignObject>
                       )}
 
-                  {/* Render overlay (e.g. shockwave) */}
-                  {renderNodeOverlay?.(node)}
                 </motion.g>
               );
             })}

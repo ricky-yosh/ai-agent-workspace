@@ -41,14 +41,14 @@ export const lightTheme: ThemeDefinition = {
   [T.STATUS_PAUSED]: 'oklch(0.680 0.160 64.054)',
   [T.STATUS_MISSING]: 'oklch(0.560 0.195 28.806)',
 
-  // Canvas
+  // Canvas — aligned to app's blue accent (hue 251°)
   [T.CANVAS_BG]: 'oklch(0.965 0.002 286.000)',
   [T.CANVAS_NODE_BG]: 'oklch(1.000 0.000 0.000)',
-  [T.CANVAS_NODE_BORDER]: 'oklch(0.541 0.247 293.009 / 0.33)',
-  [T.CANVAS_NODE_SELECTED]: 'oklch(0.541 0.247 293.009)',
-  [T.CANVAS_EDGE]: 'oklch(0.541 0.247 293.009)',
-  [T.CANVAS_ACCENT]: 'oklch(0.610 0.123 311.242)',
-  [T.CANVAS_ACCENT_BRIGHT]: 'oklch(0.450 0.120 311.242)',
+  [T.CANVAS_NODE_BORDER]: 'oklch(0.500 0.160 251.000 / 0.25)',
+  [T.CANVAS_NODE_SELECTED]: 'oklch(0.600 0.200 251.000)',
+  [T.CANVAS_EDGE]: 'oklch(0.500 0.140 251.000)',
+  [T.CANVAS_ACCENT]: 'oklch(0.500 0.180 251.313)',
+  [T.CANVAS_ACCENT_BRIGHT]: 'oklch(0.350 0.140 251.000)',
 
   // Syntax
   [T.SYNTAX_FG]: 'oklch(0.220 0.002 286.000)',

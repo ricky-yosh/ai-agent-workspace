@@ -6,7 +6,9 @@ import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
 import { Badge, Button } from "../components/ui";
+import { Plus } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
+import CanvasModal from "../CanvasModal";
 import {
   CanvasRenderer,
   type CanvasNode,
@@ -49,12 +51,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [groups, setGroups] = useState<CanvasGroup[]>([]);
   const [tags, setTags] = useState<CanvasTag[]>([]);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [canvasModalOpen, setCanvasModalOpen] = useState<{ mode: "create" } | { mode: "rename"; canvas: VisualCanvas } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Shockwave effect: track newly created node IDs
-  const [newlyCreatedNodeIds, setNewlyCreatedNodeIds] = useState<Set<string>>(new Set());
-  const prevNodeIdsRef = useRef<Set<string>>(new Set());
 
   // Tag enter animation: track newly added tag IDs
   const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
@@ -83,7 +82,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     selectedCanvasId,
     nodesRef,
     setNodes,
-    setNewlyCreatedNodeIds,
     showToast,
   });
 
@@ -288,29 +286,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const fetchNodes = useCallback(() => {
     if (!selectedCanvasId) {
       setNodes([]);
-      prevNodeIdsRef.current = new Set();
       return;
     }
     safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId })
       .then((data) => {
-        // Detect newly created nodes (IDs not in previous set)
-        const newIds = data.filter((n) => !prevNodeIdsRef.current.has(n.id)).map((n) => n.id);
-        if (newIds.length > 0) {
-          setNewlyCreatedNodeIds((prev) => {
-            const next = new Set(prev);
-            for (const id of newIds) next.add(id);
-            return next;
-          });
-          // Remove from shockwave set after animation completes
-          setTimeout(() => {
-            setNewlyCreatedNodeIds((prev) => {
-              const next = new Set(prev);
-              for (const id of newIds) next.delete(id);
-              return next;
-            });
-          }, 1400);
-        }
-        prevNodeIdsRef.current = new Set(data.map((n) => n.id));
         setNodes(data);
       })
       .catch((err) => {
@@ -406,15 +385,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       setNodes((prev) => [...prev, newNode]);
       // Push undo command
       pushUndo({ type: "create_node", node: newNode });
-      // Trigger shockwave
-      setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
-      setTimeout(() => {
-        setNewlyCreatedNodeIds((prev) => {
-          const next = new Set(prev);
-          next.delete(newNode.id);
-          return next;
-        });
-      }, 1400);
       // Enter edit mode on the new node
       setEditingNodeId(newNode.id);
       setEditingValue(newNode.content);
@@ -843,25 +813,74 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   if (!selectedCanvasId) {
     if (canvases.length === 0) {
       return (
-        <div style={{
-          padding: 16,
-          color: "var(--text-muted)",
-          fontSize: 13,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          gap: 8,
-        }}>
-          <div style={{ fontSize: 24, opacity: 0.5 }}>&#9633;</div>
-          <div>No canvases yet. Ask the AI to create one.</div>
+        <div
+          tabIndex={0}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            gap: 16,
+            padding: 16,
+            color: "var(--text-muted)",
+            fontSize: 13,
+            outline: "none",
+            textAlign: "center",
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "n" || e.key === "N") {
+              e.preventDefault();
+              setCanvasModalOpen({ mode: "create" });
+            }
+          }}
+        >
+          <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>&#9633;</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>No canvases yet</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 220, lineHeight: 1.4 }}>
+              Create one to organize your ideas visually
+            </div>
+          </div>
+          <Button variant="primary" size="md" onClick={() => setCanvasModalOpen({ mode: "create" })}>
+            <Plus size={14} /> New canvas <kbd style={{ display: "inline-flex", alignItems: "center", fontFamily: "inherit", fontSize: 10, padding: "1px 4px", background: "rgba(0,0,0,0.2)", borderRadius: 3, marginLeft: 4, lineHeight: 1.2 }}>n</kbd>
+          </Button>
+          {sessionId && (
+            <CanvasModal
+              open={canvasModalOpen !== null}
+              onClose={() => setCanvasModalOpen(null)}
+              sessionId={sessionId}
+              canvas={canvasModalOpen?.mode === "rename" ? canvasModalOpen.canvas : undefined}
+            />
+          )}
         </div>
       );
     }
 
     return (
-      <div style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }}>
+      <div
+        tabIndex={0}
+        style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box", outline: "none" }}
+        onKeyDown={(e) => {
+          if (e.key === "n" || e.key === "N") {
+            e.preventDefault();
+            setCanvasModalOpen({ mode: "create" });
+          }
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "0 4px" }}>
+          <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", flex: 1 }}>
+            Canvases
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setCanvasModalOpen({ mode: "create" })}
+            title="New canvas (n)"
+          >
+            <Plus size={14} />
+          </Button>
+        </div>
         <AnimatePresence mode="popLayout">
           {canvases.map((canvas, idx) => (
             <motion.div
@@ -894,6 +913,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {sessionId && (
+          <CanvasModal
+            open={canvasModalOpen !== null}
+            onClose={() => setCanvasModalOpen(null)}
+            sessionId={sessionId}
+            canvas={canvasModalOpen?.mode === "rename" ? canvasModalOpen.canvas : undefined}
+          />
+        )}
       </div>
     );
   }
@@ -1032,7 +1060,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         onCanvasMouseUp={handleMouseUp}
         onCanvasContextMenu={(canvasX, canvasY, screenX, screenY) => setContextMenu({ x: screenX, y: screenY, canvasX, canvasY })}
         selectedNodeIds={selectedNodeIds}
-        newNodeIds={newlyCreatedNodeIds}
         deletingNodeIds={deletingNodeIds}
         tags={tags}
         renderTags={(nodeId) => {
@@ -1083,21 +1110,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               </div>
             </foreignObject>
           );
-        }}
-        renderNodeOverlay={(node) => {
-          if (!newlyCreatedNodeIds.has(node.id)) return null;
-          return (
-            <foreignObject
-              x={node.x}
-              y={node.y}
-              width={node.width}
-              height={node.height}
-              style={{ overflow: "visible", pointerEvents: "none" }}
-            >
-              <div className="node-shockwave" />
-            </foreignObject>
-          );
-        }}
+          }}
         hoveredNodeId={hoveredNodeId}
         draggedNodeId={draggedNodeId}
         editingNodeId={editingNodeId}

@@ -41,14 +41,14 @@ export const darkTheme: ThemeDefinition = {
   [T.STATUS_PAUSED]: 'oklch(0.770 0.174 64.054)',
   [T.STATUS_MISSING]: 'oklch(0.643 0.215 28.806)',
 
-  // Canvas
+  // Canvas — aligned to app's blue accent (hue 251°)
   [T.CANVAS_BG]: 'oklch(0.182 0.000 89.876)',
-  [T.CANVAS_NODE_BG]: 'oklch(0.225 0.032 304.002)',
-  [T.CANVAS_NODE_BORDER]: 'oklch(0.541 0.247 293.009 / 0.33)',
-  [T.CANVAS_NODE_SELECTED]: 'oklch(0.541 0.247 293.009)',
-  [T.CANVAS_EDGE]: 'oklch(0.541 0.247 293.009)',
-  [T.CANVAS_ACCENT]: 'oklch(0.610 0.123 311.242)',
-  [T.CANVAS_ACCENT_BRIGHT]: 'oklch(0.772 0.076 312.969)',
+  [T.CANVAS_NODE_BG]: 'oklch(0.235 0.015 251.000)',
+  [T.CANVAS_NODE_BORDER]: 'oklch(0.500 0.160 251.000 / 0.30)',
+  [T.CANVAS_NODE_SELECTED]: 'oklch(0.550 0.180 251.000)',
+  [T.CANVAS_EDGE]: 'oklch(0.450 0.140 251.000)',
+  [T.CANVAS_ACCENT]: 'oklch(0.580 0.167 251.313)',
+  [T.CANVAS_ACCENT_BRIGHT]: 'oklch(0.750 0.100 251.000)',
 
   // Syntax (dark defaults)
   [T.SYNTAX_FG]: 'oklch(0.845 0.000 89.876)',

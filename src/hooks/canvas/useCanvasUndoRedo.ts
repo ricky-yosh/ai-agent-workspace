@@ -8,7 +8,6 @@ export function useCanvasUndoRedo(params: {
   selectedCanvasId: string | null;
   nodesRef: React.RefObject<CanvasNode[]>;
   setNodes: React.Dispatch<React.SetStateAction<CanvasNode[]>>;
-  setNewlyCreatedNodeIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   showToast: (message: string) => void;
 }): {
   undoStack: CanvasCommand[];
@@ -17,7 +16,7 @@ export function useCanvasUndoRedo(params: {
   handleUndo: () => void;
   handleRedo: () => void;
 } {
-  const { selectedCanvasId, nodesRef, setNodes, setNewlyCreatedNodeIds, showToast } = params;
+  const { selectedCanvasId, nodesRef, setNodes, showToast } = params;
 
   const [undoStack, setUndoStack] = useState<CanvasCommand[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasCommand[]>([]);
@@ -104,15 +103,6 @@ export function useCanvasUndoRedo(params: {
             metadataJson: command.node.metadata_json,
           });
           setNodes((prev) => [...prev, newNode]);
-          // Trigger shockwave for recreated node
-          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
-          setTimeout(() => {
-            setNewlyCreatedNodeIds((prev) => {
-              const next = new Set(prev);
-              next.delete(newNode.id);
-              return next;
-            });
-          }, 1400);
           return true;
         }
       }
@@ -122,7 +112,7 @@ export function useCanvasUndoRedo(params: {
       return false;
     }
     return false;
-  }, [nodesRef, setNodes, setNewlyCreatedNodeIds, showToast]);
+  }, [nodesRef, setNodes, showToast]);
 
   // Execute a redo command (reapply)
   const executeRedo = useCallback(async (command: CanvasCommand): Promise<boolean> => {
@@ -140,15 +130,6 @@ export function useCanvasUndoRedo(params: {
             metadataJson: command.node.metadata_json,
           });
           setNodes((prev) => [...prev, newNode]);
-          // Trigger shockwave for recreated node
-          setNewlyCreatedNodeIds((prev) => new Set(prev).add(newNode.id));
-          setTimeout(() => {
-            setNewlyCreatedNodeIds((prev) => {
-              const next = new Set(prev);
-              next.delete(newNode.id);
-              return next;
-            });
-          }, 1400);
           return true;
         }
         case "update_node":
@@ -203,7 +184,7 @@ export function useCanvasUndoRedo(params: {
       return false;
     }
     return false;
-  }, [nodesRef, setNodes, setNewlyCreatedNodeIds, showToast]);
+  }, [nodesRef, setNodes, showToast]);
 
   // Undo handler
   const handleUndo = useCallback(async () => {
