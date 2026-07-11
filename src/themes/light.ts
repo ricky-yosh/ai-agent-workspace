@@ -67,6 +67,43 @@ export const lightTheme: ThemeDefinition = {
   [T.TERM_CURSOR]: 'oklch(0.220 0.002 286.000)',
   [T.TERM_SELECTION]: 'oklch(0.880 0.035 251.313)',
 
+  // Spacing
+  [T.SPACE_1]: '4px',
+  [T.SPACE_2]: '8px',
+  [T.SPACE_3]: '12px',
+  [T.SPACE_4]: '16px',
+  [T.SPACE_5]: '20px',
+  [T.SPACE_6]: '24px',
+  [T.SPACE_7]: '32px',
+  [T.SPACE_8]: '48px',
+
+  // Typography
+  [T.FONT_SIZE_XS]: '11px',
+  [T.FONT_SIZE_SM]: '12px',
+  [T.FONT_SIZE_BASE]: '13px',
+  [T.FONT_SIZE_LG]: '15px',
+  [T.FONT_SIZE_XL]: '18px',
+  [T.FONT_WEIGHT_NORMAL]: '400',
+  [T.FONT_WEIGHT_MEDIUM]: '500',
+  [T.FONT_WEIGHT_SEMIBOLD]: '600',
+  [T.FONT_WEIGHT_BOLD]: '700',
+
+  // Radius
+  [T.RADIUS_SM]: '4px',
+  [T.RADIUS_MD]: '6px',
+  [T.RADIUS_LG]: '8px',
+  [T.RADIUS_FULL]: '9999px',
+
+  // Shadow
+  [T.SHADOW_SM]: '0 1px 2px rgba(0,0,0,0.1)',
+  [T.SHADOW_MD]: '0 2px 8px rgba(0,0,0,0.12)',
+  [T.SHADOW_LG]: '0 4px 16px rgba(0,0,0,0.16)',
+
+  // Duration
+  [T.DURATION_FAST]: '100ms',
+  [T.DURATION_NORMAL]: '200ms',
+  [T.DURATION_SLOW]: '350ms',
+
   // Layout
   [T.GUTTER]: '8px',
   [T.RADIUS_ISLAND]: '8px',

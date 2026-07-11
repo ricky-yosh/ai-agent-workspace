@@ -64,6 +64,45 @@ export const TOKENS = {
   TERM_CURSOR: '--term-cursor',
   TERM_SELECTION: '--term-selection',
 
+  // Spacing
+  SPACE_1: '--space-1',
+  SPACE_2: '--space-2',
+  SPACE_3: '--space-3',
+  SPACE_4: '--space-4',
+  SPACE_5: '--space-5',
+  SPACE_6: '--space-6',
+  SPACE_7: '--space-7',
+  SPACE_8: '--space-8',
+
+  // Typography — font size
+  FONT_SIZE_XS: '--font-size-xs',
+  FONT_SIZE_SM: '--font-size-sm',
+  FONT_SIZE_BASE: '--font-size-base',
+  FONT_SIZE_LG: '--font-size-lg',
+  FONT_SIZE_XL: '--font-size-xl',
+
+  // Typography — font weight
+  FONT_WEIGHT_NORMAL: '--font-weight-normal',
+  FONT_WEIGHT_MEDIUM: '--font-weight-medium',
+  FONT_WEIGHT_SEMIBOLD: '--font-weight-semibold',
+  FONT_WEIGHT_BOLD: '--font-weight-bold',
+
+  // Radius
+  RADIUS_SM: '--radius-sm',
+  RADIUS_MD: '--radius-md',
+  RADIUS_LG: '--radius-lg',
+  RADIUS_FULL: '--radius-full',
+
+  // Shadow
+  SHADOW_SM: '--shadow-sm',
+  SHADOW_MD: '--shadow-md',
+  SHADOW_LG: '--shadow-lg',
+
+  // Duration
+  DURATION_FAST: '--duration-fast',
+  DURATION_NORMAL: '--duration-normal',
+  DURATION_SLOW: '--duration-slow',
+
   // Layout (non-color, keep as-is)
   GUTTER: '--gutter',
   RADIUS_ISLAND: '--radius-island',
