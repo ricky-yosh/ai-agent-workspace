@@ -15,6 +15,7 @@ import { useWorkspaceManager } from "./hooks/useWorkspaceManager";
 import { useMcpEventRouting } from "./hooks/useMcpEventRouting";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import type { WorkspaceInstance } from "./hooks/useWorkspaceManager";
+import { Button, Input } from "./components/ui";
 import { Dialog } from "./components/Dialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./GettingStartedPanel";
@@ -28,7 +29,6 @@ import "./panels/C4DiagramPanel";
 import "./panels/GitTreePanel";
 import "./App.css";
 import "./Toast.css";
-import "./Dialog.css";
 import { getAdjacency } from "./screenLayout";
 import type { Adjacency } from "./screenLayout";
 import { isMac } from "./utils/platform";
@@ -57,20 +57,20 @@ function SaveAsTemplateDialog({
 }) {
   return (
     <Dialog open={open} onClose={onClose} title="Save as Template">
-      <input
-        className="dialog-input"
-        autoFocus
+      <Input
+        label="Template name"
+        placeholder="Template name..."
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(v) => setName(v)}
+        autoFocus
         onKeyDown={(e) => {
           if (e.key === "Enter") onConfirm();
         }}
-        placeholder="Template name..."
-        style={{ boxSizing: "border-box", width: "100%", marginBottom: 16 }}
+        style={{ width: "100%", marginBottom: 16 }}
       />
       <div className="dialog-actions">
-        <button className="dialog-btn" onClick={onClose}>Cancel</button>
-        <button className="dialog-btn dialog-btn-primary" onClick={onConfirm}>Save</button>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={onConfirm}>Save</Button>
       </div>
     </Dialog>
   );

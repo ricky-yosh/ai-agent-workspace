@@ -18,6 +18,7 @@ import {
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelIdentity, usePanelFocus } from "../PanelContext";
+import { Button } from "../components/ui";
 import { safeInvoke } from "../safeInvoke";
 import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
 import "./FileTreePanel.css";
@@ -381,14 +382,15 @@ function FileTreePanel({ panelType: _panelType }: PanelProps) {
     <div className="file-tree-panel">
       {/* Toolbar */}
       <div className="ft-toolbar">
-        <button
-          className="ft-toggle-btn"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setShowHidden((prev) => !prev)}
           title={showHidden ? "Hide hidden files" : "Show hidden files"}
         >
           {showHidden ? <EyeOff size={14} /> : <Eye size={14} />}
           <span>{showHidden ? "Hidden" : "Hidden"}</span>
-        </button>
+        </Button>
       </div>
 
       {/* Tree content */}

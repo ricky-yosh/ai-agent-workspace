@@ -4,6 +4,7 @@ import type { Layout } from "./types/screen";
 import { Dialog } from "./components/Dialog";
 import SearchBar from "./components/SearchBar";
 import TemplateMiniature from "./components/TemplateMiniature";
+import { Button, Input, Badge } from "./components/ui";
 import "./NewWorkspaceModal.css";
 
 interface NewWorkspaceModalProps {
@@ -219,14 +220,15 @@ export default function NewWorkspaceModal({
             {editing ? <Settings2 size={13} /> : <LayoutTemplate size={13} />}
             {editing ? "Edit Templates" : "New Workspace"}
           </div>
-          <button
-            className={`nwm-edit-toggle${editing ? " nwm-edit-toggle--on" : ""}`}
+          <Button
+            variant={editing ? "primary" : "ghost"}
+            size="sm"
             onClick={toggleEditing}
             title="Toggle edit mode (⌘E)"
           >
             {editing ? <Check size={12} /> : <Pencil size={12} />}
-            {editing ? "Done" : "Edit"}
-          </button>
+            {editing ? " Done" : " Edit"}
+          </Button>
         </div>
       }
     >
@@ -239,14 +241,15 @@ export default function NewWorkspaceModal({
             placeholder={editing ? "Search templates…" : "Filter templates…"}
             trailing={
               editing ? (
-                <button
-                  className="nwm-sort-btn"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
                   title={sortOrder === "asc" ? "Sort Z–A" : "Sort A–Z"}
                   tabIndex={-1}
                 >
                   <ArrowUpDown size={12} />
-                </button>
+                </Button>
               ) : null
             }
           />
@@ -292,11 +295,10 @@ export default function NewWorkspaceModal({
                     onMouseEnter={() => { if (!confirmedId) setActiveIndex(idx); }}
                   >
                     {isRenaming ? (
-                      <input
-                        ref={editingInputRef}
-                        className="nwm-manager-rename-input"
+                      <Input
+                        autoFocus
                         value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
+                        onChange={(v) => setEditValue(v)}
                         onKeyDown={(e) => {
                           e.stopPropagation();
                           if (e.key === "Enter") commitRename();
@@ -312,8 +314,10 @@ export default function NewWorkspaceModal({
                     {!isRenaming && (
                       editing ? (
                         <div className="nwm-manager-actions">
-                          <button
-                            className={`nwm-manager-btn${t.built_in ? " nwm-manager-btn--disabled" : ""}`}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={t.built_in}
                             onClick={(e) => {
                               e.stopPropagation();
                               startRename(t);
@@ -322,9 +326,11 @@ export default function NewWorkspaceModal({
                             tabIndex={-1}
                           >
                             <Pencil size={12} />
-                          </button>
-                          <button
-                            className={`nwm-manager-btn nwm-manager-btn--delete${isConfirmingDelete ? " nwm-manager-btn--confirm" : ""}${t.built_in ? " nwm-manager-btn--disabled" : ""}`}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            disabled={t.built_in}
                             onClick={(e) => {
                               e.stopPropagation();
                               if (t.built_in) return;
@@ -346,7 +352,7 @@ export default function NewWorkspaceModal({
                             tabIndex={-1}
                           >
                             {isConfirmingDelete ? <Check size={12} strokeWidth={3} /> : <Trash2 size={12} />}
-                          </button>
+                          </Button>
                         </div>
                       ) : isConfirmed ? (
                         <Check size={13} className="new-workspace-item-check" />
@@ -365,7 +371,7 @@ export default function NewWorkspaceModal({
               <div className="nwm-preview-header">
                 <span className="nwm-preview-name">{selectedTemplate.name}</span>
                 {selectedTemplate.built_in && (
-                  <span className="nwm-preview-badge">Built-in</span>
+                  <Badge size="sm" variant="default">Built-in</Badge>
                 )}
               </div>
               <div className="nwm-preview-mini">

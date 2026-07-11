@@ -41,6 +41,7 @@ const SearchBar = forwardRef<HTMLInputElement, SearchBarProps>(function SearchBa
   return (
     <div className={`search-bar${className ? ` ${className}` : ""}`}>
       <Search size={iconSize} className="search-bar-icon" aria-hidden="true" />
+      {/* NOTE: SearchBar input not migrated to <Input> — Input primitive doesn't support forwardRef, needed for parent-controlled focus */}
       <input
         ref={ref}
         type="text"

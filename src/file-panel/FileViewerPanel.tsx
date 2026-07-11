@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Button } from "../components/ui";
 import { FileText, X } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { PanelProps } from "../panelRegistry";
@@ -224,8 +225,9 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
           >
             <FileText size={12} className="file-viewer-tab-icon" />
             <span className="file-viewer-tab-title">{tab.title}</span>
-            <button
-              className="file-viewer-tab-close"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 closeTab(tab.id);
@@ -233,16 +235,17 @@ function FileViewerPanel({ panelType: _panelType }: PanelProps) {
               aria-label={`Close ${tab.title}`}
             >
               <X size={12} />
-            </button>
+            </Button>
           </div>
         ))}
-        <button
-          className="file-viewer-tab-add"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={openFilePicker}
           title="Open file (Cmd+Shift+P)"
         >
           +
-        </button>
+        </Button>
       </div>
 
       {/* Content area */}

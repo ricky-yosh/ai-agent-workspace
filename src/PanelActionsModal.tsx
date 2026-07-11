@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Check, Layout } from "lucide-react";
 import { Dialog } from "./components/Dialog";
+import { MenuItem, Badge } from "./components/ui";
 import { listPanelTypes, getPanelLabel } from "./panelRegistry";
 import type { PanelListItem, PanelTypeEntry } from "./panelRegistry";
 import "./PanelActionsModal.css";
@@ -169,33 +170,23 @@ export default function PanelActionsModal({
           const isActive = actionIdx === activeIndex;
           const isConfirmed = confirmedKey === action.type;
           return (
-            <button
+            <MenuItem
               key={action.type}
               ref={getItemRef(actionIdx)}
-              className={
-                "panel-actions-item" +
-                (isActive ? " panel-actions-item--active" : "") +
-                (isConfirmed ? " panel-actions-item--confirmed" : "")
+              active={isActive}
+              confirmed={isConfirmed}
+              leading={
+                action.isCurrent
+                  ? <Check size={15} />
+                  : isConfirmed
+                    ? <Check size={15} />
+                    : null
               }
-              role="listitem"
-              disabled={confirmedKey !== null}
+              label={action.label}
+              trailing={action.isCurrent ? <Badge size="sm" variant="info">active</Badge> : undefined}
               onClick={() => triggerAction(action)}
               onMouseEnter={() => { if (!confirmedKey) setActiveIndex(actionIdx); }}
-            >
-              <span className="panel-actions-row-left">
-                {action.isCurrent
-                  ? <Check size={15} className="panel-actions-icon panel-actions-icon--current" />
-                  : (isConfirmed
-                    ? <Check size={15} className="panel-actions-icon panel-actions-icon--confirmed" />
-                    : <div className="panel-actions-icon-spacer" />
-                  )
-                }
-                <span className="panel-actions-label">{action.label}</span>
-              </span>
-              {action.isCurrent && (
-                <span className="panel-actions-current-badge">active</span>
-              )}
-            </button>
+            />
           );
         })}
       </div>

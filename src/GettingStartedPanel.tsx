@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelIdentity, usePanelFocus } from "./PanelContext";
+import { Button } from "./components/ui";
 
 const styles = {
   container: {
@@ -141,32 +142,24 @@ function GettingStartedPanel(_props: PanelProps) {
       <div style={styles.divider} />
 
       <div style={styles.actionsRow}>
-        <button
-          style={styles.actionBtn}
-          onClick={() => {
-            // Dispatch ⌘T to trigger new workspace
-            document.dispatchEvent(new KeyboardEvent("keydown", {
-              key: "t",
-              metaKey: true,
-              bubbles: true,
-            }));
-          }}
-        >
+        <Button variant="secondary" size="md" onClick={() => {
+          document.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "t",
+            metaKey: true,
+            bubbles: true,
+          }));
+        }}>
           New Workspace
-        </button>
-        <button
-          style={styles.actionBtn}
-          onClick={() => {
-            // Dispatch ⇧? to show shortcuts
-            document.dispatchEvent(new KeyboardEvent("keydown", {
-              key: "?",
-              shiftKey: true,
-              bubbles: true,
-            }));
-          }}
-        >
+        </Button>
+        <Button variant="secondary" size="md" onClick={() => {
+          document.dispatchEvent(new KeyboardEvent("keydown", {
+            key: "?",
+            shiftKey: true,
+            bubbles: true,
+          }));
+        }}>
           Show Shortcuts
-        </button>
+        </Button>
       </div>
     </div>
   );

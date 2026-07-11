@@ -49,6 +49,11 @@
 | **Range Diff** | A unified diff spanning a contiguous commit selection (`git diff oldest^..newest`) shown in the Diff Viewer Panel as a single collapsed view, analogous to a PR's "files changed" tab. | |
 | **Two-Phase Loading** | The data loading pattern where `get_graph_topology` returns SHA + parents + refs first (fast), then `get_commit_details` lazily fetches author/date/message via `git cat-file --batch` for visible viewport rows only. Matches Zed's architecture. | |
 | **Greedy Column (Lane) Assignment** | The algorithm (ported from tig/CommitGraph) that assigns each commit to a vertical lane in the graph canvas by traversing the topology in topological order, handling branch-out, merge, and branch-collapse cases. Runs in TypeScript. | |
+| **Design Token** | A named CSS custom property in the theme system. Color tokens (`--accent`, `--bg-primary`) scope the palette; non-color tokens (`--space-4`, `--font-size-base`, `--radius-md`, `--duration-fast`) scope spacing, typography, shape, shadow, and motion. Every Primitive references only tokens, never raw values. | Variable, CSS variable |
+| **Token Foundation** | The complete vocabulary of spacing (8-step scale), typography (5 sizes + 4 weights), radius (4 sizes), shadow (3 levels), and duration (3 speeds) tokens layered on the existing 40-token color palette across all themes. Defined once in `src/themes/tokens.ts`. | |
+| **Primitive** | A reusable, token-backed UI component (Button, Input, Badge, Dialog, etc.) exported from `src/components/ui/`. Every Primitive gets built-in hover/press/focus animations gated by `data-motion="full"`. Presentational primitives (Badge) omit animation. | Component, widget |
+| **Component Library** | The organized set of Primitives under `src/components/ui/`, each with a co-located `.css` file and test. Imported as a group via a barrel `index.ts`. Panels compose Primitives rather than writing ad-hoc inline styles. | Design system, UI kit |
+| **data-motion** | The `:root` attribute (`"full"` or absent) that gates all CSS animations, transitions, and `motion/react` usage across the app. Set programmatically by user preference. When absent, Primitives render statically. | prefers-reduced-motion, animation toggle |
 
 ## Relationships
 
@@ -109,6 +114,12 @@
 - Branch colors are keyed by logical branch identity (the branch-point commit SHA), not by lane column. This keeps a branch's color consistent even when its lane changes across the graph.
 - Lanes are recycled after a branch segment terminates (its end row is passed). The column becomes available for a new branch in subsequent rows.
 - Commit Quick-Open (`Cmd+Shift+O`) is a command-palette modal that accepts a pasted SHA, branch name, or tag name. Live-matches against known refs and partial SHAs from the loaded topology. Enter jumps to and selects the match in the graph.
+- Component Library: build reusable Primitives with token-backed styling under `src/components/ui/`. Core set (Button, Input, Badge) first; polish existing Dialog and ContextMenu to use new tokens. Panels are migrated to Primitives after the library foundation is built.
+- Component Library: Primitives use co-located `.css` files (matching existing pattern), with a barrel `index.ts` for grouped imports.
+- Component Library: interactive (Button, Input) and container (Dialog, ContextMenu) Primitives ship with built-in hover/press/enter/exit animations. Presentational Primitives (Badge) omit animations. All animations respect the `data-motion` contract.
+- Token Foundation: expand beyond color to a full spacing scale (8 steps), typography scale (5 sizes, 4 weights), radius scale (4 sizes), shadow scale (3 levels), and duration scale (3 speeds). Tokens are defined once in `src/themes/tokens.ts` and given values per theme. No just-in-time token growth.
+- Component Library: all Primitive CSS class names use a `.ui-` prefix (`.ui-button`, `.ui-input`, `.ui-badge`) to avoid collisions with existing global class names (`.dialog-btn`, `.tag-pill`, `.context-menu-item`).
+- Component Library: every Primitive imports its own co-located `.css` file. Do not follow the Dialog pattern where consumers import the CSS file separately.
 
 ## Open Questions
 

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useClickOutside } from "../hooks/useClickOutside";
+import "../Dialog.css";
 
 interface DialogProps {
   open: boolean;

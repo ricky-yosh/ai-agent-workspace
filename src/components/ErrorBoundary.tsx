@@ -1,3 +1,4 @@
+import { Button } from "./ui";
 import { Component, type ReactNode } from "react";
 
 interface Props {
@@ -53,21 +54,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 400, textAlign: "center" }}>
             {this.state.error?.message ?? "An unexpected error occurred"}
           </div>
-          <button
-            onClick={this.handleReset}
-            style={{
-              marginTop: 8,
-              padding: "6px 16px",
-              background: "var(--accent)",
-              color: "var(--text-on-accent)",
-              border: "none",
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
+          <Button variant="primary" size="sm" onClick={this.handleReset} style={{ marginTop: 8 }}>
             Try again
-          </button>
+          </Button>
         </div>
       );
     }

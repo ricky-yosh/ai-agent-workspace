@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Pencil, Bookmark, RotateCcw, X, LayoutTemplate, Check } from "lucide-react";
+import { Pencil, Bookmark, RotateCcw, X, LayoutTemplate } from "lucide-react";
+import { MenuItem } from "./components/ui";
 import { Dialog } from "./components/Dialog";
 import "./TabActionsModal.css";
 
@@ -151,24 +152,17 @@ export default function TabActionsModal({
           const isActive = idx === activeIndex;
           const isConfirmed = confirmedKey === action.key;
           return (
-            <button
+            <MenuItem
               key={action.key}
               ref={getItemRef(idx)}
-              className={`tab-actions-item${isActive ? " tab-actions-item--active" : ""}${isConfirmed ? " tab-actions-item--confirmed" : ""}`}
-              role="listitem"
-              disabled={confirmedKey !== null}
+              active={isActive}
+              confirmed={isConfirmed}
+              leading={<Icon size={15} />}
+              label={action.label}
+              trailing={<kbd className="tab-actions-kbd">{action.key}</kbd>}
               onClick={() => triggerAction(action)}
               onMouseEnter={() => { if (!confirmedKey) setActiveIndex(idx); }}
-            >
-              <span className="tab-actions-row-left">
-                {isConfirmed
-                  ? <Check size={15} className="tab-actions-icon tab-actions-icon--confirmed" />
-                  : <Icon size={15} className="tab-actions-icon" />
-                }
-                <span className="tab-actions-label">{action.label}</span>
-              </span>
-              <kbd className="tab-actions-kbd">{action.key}</kbd>
-            </button>
+            />
           );
         })}
       </div>

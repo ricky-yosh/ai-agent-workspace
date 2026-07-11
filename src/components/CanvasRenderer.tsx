@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, type ReactNode, type RefObject } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { Badge } from "./ui";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1091,6 +1092,7 @@ export function CanvasRenderer({
                       node.height - 24 - (nodeTags.length > 0 ? 20 : 0)
                     }
                   >
+                    {/* NOTE: inline edit input not migrated to <Input> — renders inside SVG <foreignObject>; Input's wrapper <div> would break sizing */}
                     {isEditing ? (
                       <input
                         ref={editInputRef}
@@ -1152,9 +1154,7 @@ export function CanvasRenderer({
                             }}
                           >
                             {nodeTags.slice(0, 3).map((t) => (
-                              <span key={t.id} className="tag-pill">
-                                {t.tag}
-                              </span>
+                              <Badge key={t.id} size="sm" variant="info">{t.tag}</Badge>
                             ))}
                             {nodeTags.length > 3 && (
                               <span

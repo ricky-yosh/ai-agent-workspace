@@ -8,7 +8,7 @@ import { initMotion, type MotionPreference, resolveMotion, applyMotion, osPrefer
 import { applyTheme, type ThemeName } from "./themes";
 import { setShikiTheme } from "./file-panel/shikiSingleton";
 import "./Preferences.css";
-import "./Dialog.css";
+import { Button, Input } from "./components/ui";
 
 interface Preset {
   label: string;
@@ -148,6 +148,7 @@ function ToolRow({ label, presets, value, onChange, placeholder = "App name or b
   return (
     <div className="tool-row">
       <span className="tool-label">{label}</span>
+      {/* NOTE: <select> not migrated — no Select primitive exists */}
       <select className="tool-select" value={selectValue} onChange={handleSelectChange}>
         <option value="">Not configured</option>
         {presets.map((preset) => (
@@ -158,12 +159,10 @@ function ToolRow({ label, presets, value, onChange, placeholder = "App name or b
         <option value={CUSTOM_SENTINEL}>Custom...</option>
       </select>
       {isCustom && (
-        <input
-          className="tool-input"
-          type="text"
+        <Input
           placeholder={placeholder}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(v) => onChange(v)}
         />
       )}
     </div>
@@ -236,23 +235,28 @@ function AppearanceSection({ motionPref, setMotionPref, themePref, setThemePref 
         <div className="tool-label" style={{ marginBottom: 12 }}>Theme</div>
         <div className="theme-grid">
           {themes.map((t) => (
-            <button
+            <Button
               key={t.value}
-              className={`theme-card ${themePref === t.value ? "theme-card--active" : ""}`}
+              variant={themePref === t.value ? "primary" : "ghost"}
+              size="md"
               onClick={() => handleThemeChange(t.value)}
+              style={{ height: "auto", padding: "8px 12px" }}
             >
-              <div className="theme-swatch">
-                {t.colors.map((c, i) => (
-                  <div key={i} className="theme-swatch-color" style={{ background: c }} />
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <div className="theme-swatch">
+                  {t.colors.map((c, i) => (
+                    <div key={i} className="theme-swatch-color" style={{ background: c }} />
+                  ))}
+                </div>
+                <span className="theme-label">{t.label}</span>
               </div>
-              <span className="theme-label">{t.label}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
       <div className="tool-row" style={{ marginTop: 20 }}>
         <span className="tool-label">Animations</span>
+        {/* NOTE: <select> not migrated — no Select primitive exists */}
         <select className="tool-select" value={motionPref} onChange={handleMotionChange}>
           <option value="system">Follow system</option>
           <option value="full">Always on</option>
@@ -317,26 +321,26 @@ function DangerZoneSection() {
               <div className="danger-label">Delete All Sessions</div>
               <div className="danger-desc">Removes every session from the sidebar.</div>
             </div>
-            <button
-              className="danger-btn"
+            <Button
+              variant="danger"
+              loading={deletingSessions}
               onClick={() => setConfirmAction("sessions")}
-              disabled={deletingSessions}
             >
-              {deletingSessions ? "Deleting..." : "Delete All Sessions"}
-            </button>
+              Delete All Sessions
+            </Button>
           </div>
           <div className="danger-row">
             <div>
               <div className="danger-label">Delete All Templates</div>
               <div className="danger-desc">Removes all custom templates. Built-in templates are preserved.</div>
             </div>
-            <button
-              className="danger-btn"
+            <Button
+              variant="danger"
+              loading={deletingTemplates}
               onClick={() => setConfirmAction("templates")}
-              disabled={deletingTemplates}
             >
-              {deletingTemplates ? "Deleting..." : "Delete All Templates"}
-            </button>
+              Delete All Templates
+            </Button>
           </div>
         </div>
       </div>
@@ -373,24 +377,27 @@ function PreferencesForm() {
   return (
     <>
       <div className="tabs">
-        <button
-          className={`tab ${activeTab === "external-tools" ? "tab-active" : ""}`}
+        <Button
+          variant={activeTab === "external-tools" ? "primary" : "ghost"}
+          size="sm"
           onClick={() => setActiveTab("external-tools")}
         >
           External Tools
-        </button>
-        <button
-          className={`tab ${activeTab === "appearance" ? "tab-active" : ""}`}
+        </Button>
+        <Button
+          variant={activeTab === "appearance" ? "primary" : "ghost"}
+          size="sm"
           onClick={() => setActiveTab("appearance")}
         >
           Appearance
-        </button>
-        <button
-          className={`tab ${activeTab === "danger-zone" ? "tab-active" : ""}`}
+        </Button>
+        <Button
+          variant={activeTab === "danger-zone" ? "primary" : "ghost"}
+          size="sm"
           onClick={() => setActiveTab("danger-zone")}
         >
           Danger Zone
-        </button>
+        </Button>
       </div>
 
       {activeTab === "external-tools" && (

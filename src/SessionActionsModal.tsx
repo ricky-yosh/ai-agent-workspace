@@ -6,11 +6,11 @@ import {
   Terminal,
   Hash,
   Clipboard,
-  Check,
   Pencil,
   Trash2,
 } from "lucide-react";
 import type { SessionSummary } from "./SessionContext";
+import { MenuItem } from "./components/ui";
 import { Dialog } from "./components/Dialog";
 import "./SessionActionsModal.css";
 
@@ -188,6 +188,7 @@ export default function SessionActionsModal({
             <Terminal size={11} className="session-actions-context-icon" />
             Session
           </span>
+          {/* NOTE: rename input not migrated — Input component doesn't forwardRef which is needed for inline auto-focus */}
           {renaming ? (
             <input
               ref={renameInputRef}
@@ -216,24 +217,18 @@ export default function SessionActionsModal({
             const isActive = idx === activeIndex;
             const isConfirmed = confirmedKey === action.key;
             return (
-              <button
+              <MenuItem
                 key={action.key}
                 ref={getItemRef(idx)}
-                className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}`}
-                role="listitem"
+                active={isActive}
+                confirmed={isConfirmed}
+                leading={<Icon size={15} />}
+                label={action.label}
+                trailing={<kbd className="session-actions-kbd">{action.key}</kbd>}
                 disabled={confirmedKey !== null || renaming}
                 onClick={() => triggerAction(action)}
                 onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
-              >
-                <span className="session-actions-row-left">
-                  {isConfirmed
-                    ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
-                    : <Icon size={15} className="session-actions-icon" />
-                  }
-                  <span className="session-actions-label">{action.label}</span>
-                </span>
-                <kbd className="session-actions-kbd">{action.key}</kbd>
-              </button>
+              />
             );
           })}
         </div>
@@ -245,24 +240,19 @@ export default function SessionActionsModal({
             const isActive = idx === activeIndex;
             const isConfirmed = confirmedKey === action.key;
             return (
-              <button
+              <MenuItem
                 key={action.key}
                 ref={getItemRef(idx)}
-                className={`session-actions-item${isActive ? " session-actions-item--active" : ""}${isConfirmed ? " session-actions-item--confirmed" : ""}${action.destructive ? " session-actions-item--destructive" : ""}`}
-                role="listitem"
+                active={isActive}
+                confirmed={isConfirmed}
+                destructive={action.destructive}
+                leading={<Icon size={15} />}
+                label={action.label}
+                trailing={<kbd className="session-actions-kbd">{action.key}</kbd>}
                 disabled={confirmedKey !== null || renaming}
                 onClick={() => triggerAction(action)}
                 onMouseEnter={() => { if (!confirmedKey && !renaming) setActiveIndex(idx); }}
-              >
-                <span className="session-actions-row-left">
-                  {isConfirmed
-                    ? <Check size={15} className="session-actions-icon session-actions-icon--confirmed" />
-                    : <Icon size={15} className="session-actions-icon" />
-                  }
-                  <span className="session-actions-label">{action.label}</span>
-                </span>
-                <kbd className="session-actions-kbd">{action.key}</kbd>
-              </button>
+              />
             );
           })}
         </div>

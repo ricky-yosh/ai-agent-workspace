@@ -13,6 +13,7 @@ import { parseNumstatToTree } from "./git/fileTreeParser";
 import type { FileTreeEntry } from "./git/fileTreeParser";
 import { CommitQuickOpenModal, type CommitQuickMatch } from "./git/CommitQuickOpenModal";
 import { LANE_WIDTH, ROW_HEIGHT, Lane, Connector, Dot, HeadRing } from "./git/gitGraphSvg";
+import { Button, Input } from "../components/ui";
 
 interface CommitInfo {
   hash: string;
@@ -744,21 +745,9 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
         }}
       >
         <span style={{ fontWeight: 600, fontSize: 13 }}>Git History</span>
-        <button
-          onClick={fetchTopology}
-          title="Refresh"
-          style={{
-            background: "none",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            padding: "2px 8px",
-            cursor: "pointer",
-            color: "var(--text-primary)",
-            fontSize: 11,
-          }}
-        >
+        <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh">
           ↻
-        </button>
+        </Button>
       </div>
 
       {/* Search bar */}
@@ -772,22 +761,13 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
           flexShrink: 0,
         }}
       >
-        <input
-          type="text"
+        <Input
           placeholder="Filter commits..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            flex: 1,
-            background: "var(--input-bg, transparent)",
-            color: "var(--text-primary)",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            padding: "3px 8px",
-            fontSize: 12,
-            fontFamily: "var(--font-family, sans-serif)",
-          }}
+          onChange={(v) => setSearchQuery(v)}
+          style={{ flex: 1 }}
         />
+        {/* NOTE: <select> not migrated — no Select primitive exists */}
         <select
           value={searchField}
           onChange={(e) =>
@@ -1090,25 +1070,18 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
             }}
           >
             <span style={{ fontWeight: 600, fontSize: 12 }}>Commit Details</span>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setDetailPaneOpen(false);
                 setSelectionAnchor(null);
                 setSelectionStart(null);
                 setSelectionEnd(null);
               }}
-              style={{
-                background: "none",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                padding: "2px 8px",
-                cursor: "pointer",
-                color: "var(--text-primary)",
-                fontSize: 11,
-              }}
             >
               Close
-            </button>
+            </Button>
           </div>
 
           {/* Content */}
@@ -1149,23 +1122,16 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               >
                 {selectedSha}
               </code>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   if (selectedSha) navigator.clipboard.writeText(selectedSha);
-                }}
-                style={{
-                  background: "none",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  padding: "2px 6px",
-                  cursor: "pointer",
-                  color: "var(--text-muted)",
-                  fontSize: 10,
                 }}
                 title="Copy hash"
               >
                 Copy
-              </button>
+              </Button>
             </div>
 
             {/* Author */}
@@ -1213,21 +1179,14 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   Files changed ({detailFiles.length > 0 ? countFiles(detailFiles) : 0})
                 </span>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setFileTreeView((prev) => prev === "tree" ? "flat" : "tree")}
                   title="Ctrl+T"
-                  style={{
-                    background: "none",
-                    border: "1px solid var(--border)",
-                    borderRadius: 4,
-                    padding: "1px 6px",
-                    cursor: "pointer",
-                    color: "var(--text-muted)",
-                    fontSize: 10,
-                  }}
                 >
                   {fileTreeView === "tree" ? "Show flat view" : "Show tree view"}
-                </button>
+                </Button>
               </div>
               {detailLoading ? (
                 <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 0" }}>Loading...</div>

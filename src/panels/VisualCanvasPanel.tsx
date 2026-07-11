@@ -5,6 +5,7 @@ import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
+import { Badge, Button } from "../components/ui";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import {
   CanvasRenderer,
@@ -926,26 +927,22 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         alignItems: "center",
         gap: 8,
       }}>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setSelectedCanvasId(null)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            padding: 4,
-            fontSize: 14,
-          }}
         >
           &larr;
-        </button>
+        </Button>
         <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
           {selectedCanvas?.name || "Canvas"}
         </div>
         {/* Zoom indicator and reset */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
           <span>{Math.round(zoom * 100)}%</span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               setOffsetX(0);
               setOffsetY(0);
@@ -961,18 +958,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                 });
               }
             }}
-            style={{
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "2px 6px",
-              fontSize: 11,
-            }}
           >
             Reset
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -989,44 +977,22 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>
             Filter:
           </span>
-          <button
+          <Button
+            variant={!activeTagFilter ? "primary" : "ghost"}
+            size="sm"
             onClick={() => setActiveTagFilter(null)}
-            style={{
-              padding: "2px 8px",
-              borderRadius: 10,
-              border: "1px solid var(--border)",
-              background: !activeTagFilter ? "var(--canvas-accent)" : "transparent",
-              color: !activeTagFilter ? "#fff" : "var(--text-muted)",
-              fontSize: 11,
-              cursor: "pointer",
-            }}
           >
             All
-          </button>
+          </Button>
           {uniqueTags.map(tag => (
-            <motion.button
+            <Button
               key={tag}
-              initial={false}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{
-                type: "spring",
-                stiffness: 300,
-                damping: 20,
-                duration: 0.26,
-              }}
+              variant={activeTagFilter === tag ? "primary" : "ghost"}
+              size="sm"
               onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
-              style={{
-                padding: "2px 8px",
-                borderRadius: 10,
-                border: "1px solid var(--border)",
-                background: activeTagFilter === tag ? "var(--canvas-accent)" : "transparent",
-                color: activeTagFilter === tag ? "#fff" : "var(--text-muted)",
-                fontSize: 11,
-                cursor: "pointer",
-              }}
             >
               {tag}
-            </motion.button>
+            </Button>
           ))}
         </div>
       )}
@@ -1089,14 +1055,22 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                   overflow: "hidden",
                 }}
               >
-                {nodeTags.slice(0, 3).map((t) => (
-                  <span
-                    key={t.id}
-                    className={`tag-pill${newlyAddedTagIds.has(t.id) ? " tag-pill-enter" : ""}`}
-                  >
-                    {t.tag}
-                  </span>
-                ))}
+                {nodeTags.slice(0, 3).map((t) => {
+                  const isNew = newlyAddedTagIds.has(t.id);
+                  if (isNew) {
+                    return (
+                      <motion.span
+                        key={t.id}
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+                      >
+                        <Badge size="sm" variant="default">{t.tag}</Badge>
+                      </motion.span>
+                    );
+                  }
+                  return <Badge key={t.id} size="sm" variant="default">{t.tag}</Badge>;
+                })}
                 {nodeTags.length > 3 && (
                   <span style={{
                     fontSize: 9,

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import type { RefObject } from "react";
+import { Button, Input } from "./components/ui";
 import { Plus } from "lucide-react";
 import type { Screen } from "./types/screen";
 import TabActionsModal from "./TabActionsModal";
@@ -178,12 +179,9 @@ export default function LayoutTabs({
             onContextMenu={(e) => handleTabContextMenu(e, ws.id)}
           >
             {renamingId === ws.id ? (
-              <input
-                ref={renameInputRef}
-                className="layout-tab-rename-input"
+              <Input
                 value={renameValue}
-                size={Math.max(renameValue.length, 8)}
-                onChange={(e) => setRenameValue(e.target.value)}
+                onChange={(v) => setRenameValue(v)}
                 onBlur={commitRename}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") commitRename();
@@ -196,12 +194,9 @@ export default function LayoutTabs({
           </div>
         ))}
         <div className="layout-tabs-add-wrapper">
-          <button
-            className="layout-tabs-add"
-            onClick={onOpenNewWorkspace}
-          >
+          <Button variant="ghost" size="sm" onClick={onOpenNewWorkspace}>
             <Plus size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 

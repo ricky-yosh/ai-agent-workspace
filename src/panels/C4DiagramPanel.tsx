@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Copy, Check } from "lucide-react";
+// lucide icons now provided by CopyButton
+import { Button, Input, CopyButton } from "../components/ui";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
@@ -135,7 +136,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const [zoom, setZoom] = useState(1);
 
   const [containerWidth, setContainerWidth] = useState(800);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   // ── Copy prompt ───────────────────────────────────────────────────────
 
@@ -179,26 +179,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     }
     return lines.join("\n");
   }, [diagramData, selectedDiagram?.name]);
-
-  const handleCopyZeroState = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(zeroStatePrompt);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-    setTimeout(() => setCopyState("idle"), 1500);
-  }, [zeroStatePrompt]);
-
-  const handleCopyDiagram = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(buildDiagramPrompt());
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-    setTimeout(() => setCopyState("idle"), 1500);
-  }, [buildDiagramPrompt]);
 
   // ── Fetch diagrams ────────────────────────────────────────────────────
 
@@ -589,28 +569,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             Use the aiaw <code style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</code>{" "}
             tool to create a C4 diagram of the codebase
           </div>
-          <button
-            onClick={handleCopyZeroState}
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 6,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 26,
-              height: 26,
-              padding: 0,
-              border: "none",
-              borderRadius: 4,
-              background: "var(--bg-panel)",
-              color: copyState === "copied" ? "oklch(0.65 0.14 160)" : "var(--text-muted)",
-              cursor: "pointer",
-            }}
-            title={copyState === "copied" ? "Copied" : "Copy prompt"}
-          >
-            {copyState === "copied" ? <Check size={14} /> : <Copy size={14} />}
-          </button>
+          <div style={{ position: "absolute", top: 6, right: 6 }}>
+            <CopyButton text={zeroStatePrompt} size="sm" />
+          </div>
         </div>
       </div>
     );
@@ -663,10 +624,10 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {renamingId === diagram.id ? (
-                  <input
+                  <Input
                     autoFocus
                     value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
+                    onChange={(v) => setRenameValue(v)}
                     onBlur={() => handleRenameDiagram(diagram.id)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") handleRenameDiagram(diagram.id);
@@ -676,16 +637,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    style={{
-                      flex: 1,
-                      background: "var(--bg-primary)",
-                      border: "1px solid var(--canvas-accent)",
-                      borderRadius: 4,
-                      color: "var(--text-primary)",
-                      fontSize: 13,
-                      padding: "2px 6px",
-                      outline: "none",
-                    }}
+                    style={{ flex: 1 }}
                   />
                 ) : (
                   <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
@@ -701,79 +653,53 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                 >
                   {new Date(diagram.created_at).toLocaleDateString()}
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
                     setRenamingId(diagram.id);
                     setRenameValue(diagram.name);
                   }}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    padding: "2px 4px",
-                    fontSize: 12,
-                  }}
                   title="Rename"
                 >
                   &#9998;
-                </button>
+                </Button>
                 {confirmDeleteId === diagram.id ? (
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button
+                    <Button
+                      variant="danger"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteDiagram(diagram.id);
                       }}
-                      style={{
-                        background: "var(--danger)",
-                        border: "none",
-                        color: "var(--text-on-danger)",
-                        cursor: "pointer",
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        fontSize: 11,
-                      }}
                     >
                       Delete
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
                         setConfirmDeleteId(null);
                       }}
-                      style={{
-                        background: "none",
-                        border: "1px solid var(--border)",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        fontSize: 11,
-                      }}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 ) : (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
                       setConfirmDeleteId(diagram.id);
                     }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--text-muted)",
-                      cursor: "pointer",
-                      padding: "2px 4px",
-                      fontSize: 12,
-                    }}
                     title="Delete"
                   >
                     &#10005;
-                  </button>
+                  </Button>
                 )}
               </div>
             </motion.div>
@@ -813,20 +739,14 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           gap: 8,
         }}
       >
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setSelectedDiagram(null)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            padding: 4,
-            fontSize: 14,
-          }}
           title="Back to list"
         >
           &larr;
-        </button>
+        </Button>
         <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
           {selectedDiagram.name}
         </div>
@@ -840,39 +760,14 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           }}
         >
           <span>{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={handleCopyDiagram}
-            style={{
-              background: "none",
-              border: copyState === "copied" ? "1px solid oklch(0.65 0.14 160)" : "1px solid var(--border)",
-              borderRadius: 4,
-              color: copyState === "copied" ? "oklch(0.65 0.14 160)" : "var(--text-muted)",
-              cursor: "pointer",
-              padding: "2px 6px",
-              fontSize: 11,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            title={copyState === "copied" ? "Copied" : "Copy diagram as text"}
-          >
-            {copyState === "copied" ? <Check size={12} /> : <Copy size={12} />}
-            {copyState === "copied" ? "Copied" : "Copy"}
-          </button>
-          <button
-            onClick={resetView}
-            style={{
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "2px 6px",
-              fontSize: 11,
-            }}
-          >
+          <CopyButton
+            text={buildDiagramPrompt()}
+            label="Copy"
+            size="sm"
+          />
+          <Button variant="ghost" size="sm" onClick={resetView}>
             Reset
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -888,21 +783,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             fontSize: 12,
           }}
         >
-          <button
-            onClick={handleBack}
-            style={{
-              background: "none",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "2px 8px",
-              fontSize: 11,
-              marginRight: 4,
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={handleBack} style={{ marginRight: 4 }}>
             &larr; Back
-          </button>
+          </Button>
           <span
             onClick={navigateToRoot}
             style={{

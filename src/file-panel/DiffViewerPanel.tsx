@@ -6,6 +6,7 @@ import { safeInvoke } from "../safeInvoke";
 import { useViewerRegistry } from "../providers/ViewerRegistryProvider";
 import { parseUnifiedDiff } from "./renderers/DiffRenderer";
 import { useVirtualRows } from "./virtualizer";
+import { Button } from "../components/ui";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,28 +76,9 @@ function TabButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "4px 12px",
-        fontSize: 12,
-        fontFamily: "inherit",
-        background: active ? "var(--accent)" : "transparent",
-        color: active ? "var(--text-on-accent)" : "var(--text-primary)",
-        border: "none",
-        borderRadius: 4,
-        cursor: "pointer",
-        transition: "background 150ms",
-      }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = "transparent";
-      }}
-    >
+    <Button variant={active ? "primary" : "ghost"} size="sm" onClick={onClick}>
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -226,37 +208,15 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
             >
               {externalDiff.title}
             </span>
-            <button
-              onClick={() => setExternalDiff(null)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "2px 4px",
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={() => setExternalDiff(null)}>
               ✕
-            </button>
+            </Button>
           </>
         )}
         <div style={{ flex: 1 }} />
-        <button
-          onClick={refetch}
-          title="Refresh"
-          style={{
-            padding: "2px 8px",
-            fontSize: 11,
-            background: "transparent",
-            color: "var(--text-muted)",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            cursor: "pointer",
-          }}
-        >
+        <Button variant="ghost" size="sm" onClick={refetch} title="Refresh">
           ↻
-        </button>
+        </Button>
       </div>
 
       {/* Content */}

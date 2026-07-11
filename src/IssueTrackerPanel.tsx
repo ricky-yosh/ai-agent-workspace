@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import { Button } from "./components/ui";
 import { X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { PanelProps } from "./panelRegistry";
@@ -472,18 +473,18 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
               <span className="issue-filter-count">
                 {displayedIssues.length}/{issues.length}
               </span>
-              <button
-                className="issue-filter-clear"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setFilterQuery("");
                   setFocusedIndex(null);
                   filterInputRef.current?.focus();
                 }}
                 aria-label="Clear filter"
-                type="button"
               >
                 <X size={12} />
-              </button>
+              </Button>
             </>
           ) : null
         }

@@ -12,8 +12,8 @@ import { useEventListener } from "./hooks/useEventListener";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Dialog } from "./components/Dialog";
 import SessionActionsModal from "./SessionActionsModal";
+import { Button, Input } from "./components/ui";
 import "./SessionSidebar.css";
-import "./Dialog.css";
 
 function folderNameOf(path: string): string {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -163,6 +163,7 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
       <div className="dialog-fields">
         <label className="dialog-label">
           Working Directory
+          {/* NOTE: dropzone not migrated to <Button> — complex drag-drop states (.drag-over, .has-value) and rich inner layout incompatible with Button primitive styling */}
           <button
             type="button"
             className={`dialog-dropzone${workingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
@@ -190,6 +191,7 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
         </label>
         {uniqueDirs.length > 0 && (
           <label className="dialog-label">
+            {/* NOTE: <select> not migrated — no Select primitive exists */}
             Recent directories
             <select
               className="dialog-input"
@@ -207,31 +209,25 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
         )}
         <label className="dialog-label">
           Name
-          <input
-            className="dialog-input"
+          <Input
             value={name}
-            onChange={(e) => {
+            onChange={(v) => {
               nameEditedRef.current = true;
-              setName(e.target.value);
+              setName(v);
             }}
             placeholder="Session name"
           />
         </label>
       </div>
       <div className="dialog-actions">
-        <button
-          className="dialog-btn dialog-btn-cancel"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-        <button
-          className="dialog-btn dialog-btn-create"
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button
+          variant="primary"
           onClick={() => onCreate(name.trim(), workingDir.trim())}
           disabled={!name.trim() || !workingDir.trim()}
         >
           Create
-        </button>
+        </Button>
       </div>
     </Dialog>
   );
@@ -437,17 +433,19 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
     <>
       <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}${isResizing ? " sidebar-resizing" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
         <div className="sidebar-header">
-          <button
-            className="sidebar-toggle-btn"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
-          </button>
+          </Button>
           <div className="sidebar-header-content">
             {activeSessionId ? (
-              <button
-                className="sidebar-title sidebar-title-back"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   const sid = activeSessionId;
                   setActiveSessionId(null);
@@ -460,21 +458,20 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
                 title="Back to all sessions"
                 aria-label="Close session and return to all sessions"
               >
-                <ArrowLeft size={14} className="sidebar-title-back-icon" />
-                <span className="sidebar-title-back-label">
-                  {sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}
-                </span>
-              </button>
+                <ArrowLeft size={14} />
+                <span>{sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}</span>
+              </Button>
             ) : (
               <h2 className="sidebar-title">Sessions</h2>
             )}
-            <button
-              className="new-session-btn"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowNewSessionDialog(true)}
               title="New Session"
             >
               <Plus size={16} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -530,6 +527,7 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
            )}
           </div>
           <div className="sidebar-view sidebar-view-collapsed">
+            {/* NOTE: sidebar-collapsed-session buttons not migrated — tight vertical list layout coupled to .sidebar-collapsed-session CSS incompatible with Button primitive */}
             <div className="sidebar-collapsed-sessions">
               {sessions.map((s) => (
                 <button

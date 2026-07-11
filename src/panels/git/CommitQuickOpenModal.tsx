@@ -85,6 +85,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
           overflow: "hidden",
         }}
       >
+        {/* NOTE: commit search input not migrated to <Input> — Input primitive doesn't support forwardRef, needed for auto-focus on mount */}
         <input
           ref={inputRef}
           type="text"

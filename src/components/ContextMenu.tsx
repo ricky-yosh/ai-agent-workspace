@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { useClickOutside } from "../hooks/useClickOutside";
-import "../ContextMenu.css";
+import "./ContextMenu.css";
 
 export interface ContextMenuItem {
   label: string;
