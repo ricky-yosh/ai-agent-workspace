@@ -69,6 +69,13 @@ interface DrillEntry {
   level: string;
 }
 
+interface IndexProgress {
+  phase: string;
+  current: number;
+  total: number;
+  file_path: string;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function assignGridPositions(
@@ -129,6 +136,11 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Indexing state
+  const [indexing, setIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState<IndexProgress | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
 
   // Viewport
   const [offsetX, setOffsetX] = useState(0);
@@ -220,6 +232,50 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       fetchDiagrams();
     }, [fetchDiagrams]),
   );
+
+  useTauriEvent<IndexProgress & { repo_path: string }>(
+    "code-index-progress",
+    useCallback(
+      (payload) => {
+        if (payload.repo_path === repoPath) {
+          setIndexProgress({
+            phase: payload.phase,
+            current: payload.current,
+            total: payload.total,
+            file_path: payload.file_path,
+          });
+          if (payload.phase === "complete") {
+            setIndexing(false);
+          }
+        }
+      },
+      [repoPath],
+    ),
+  );
+
+  // ── Index handler ──────────────────────────────────────────────────────
+
+  const handleIndex = useCallback(async () => {
+    if (!repoPath) return;
+    setIndexing(true);
+    setIndexProgress(null);
+    setIndexError(null);
+    try {
+      await safeInvoke("index_code", { repoPath });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Indexing failed:", message);
+      setIndexError(message);
+      setIndexing(false);
+    }
+  }, [repoPath]);
+
+  const handleCancelIndex = useCallback(async () => {
+    setIndexing(false);
+    setIndexProgress(null);
+    setIndexError(null);
+    await safeInvoke("cancel_index").catch(() => {});
+  }, []);
 
   // ── Parse diagram data when selected ───────────────────────────────────
 
@@ -535,26 +591,157 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       <div
         id="c4-diagram-panel-container"
         style={{
-          padding: 16,
-          color: "var(--text-muted)",
-          fontSize: 13,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
-          minHeight: 0,
-          gap: 12,
+          gap: 16,
+          padding: 16,
+          color: "var(--text-muted)",
+          fontSize: 13,
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 32, opacity: 0.4 }}>&#9670;</div>
-        <div style={{ fontWeight: 500, fontSize: 14 }}>No C4 diagrams yet.</div>
-        <div style={{ flexShrink: 1, minHeight: 0, overflow: "auto", width: "100%", maxWidth: 400 }}>
-          <SnippetCard hint="To generate one, ask the AI:" copyText={zeroStatePrompt}>
-            Use the aiaw <span style={{ color: "var(--canvas-accent)" }}>generate_c4_diagram</span> tool to create a C4 diagram of the codebase
-          </SnippetCard>
-        </div>
+        <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>{"\u25C8"}</div>
+
+        {indexError && (
+          <div
+            style={{
+              background: "var(--bg-danger, rgba(239,68,68,0.1))",
+              border: "1px solid var(--border-danger, rgba(239,68,68,0.3))",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontSize: 12,
+              color: "var(--text-danger, #ef4444)",
+              maxWidth: 320,
+              lineHeight: 1.5,
+              wordBreak: "break-word",
+            }}
+          >
+            {indexError}
+          </div>
+        )}
+
+        {indexing ? (
+          <>
+            <div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--text-secondary)",
+                  marginBottom: 4,
+                }}
+              >
+                Indexing codebase
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  maxWidth: 220,
+                  lineHeight: 1.4,
+                }}
+              >
+                {indexProgress && indexProgress.total > 0
+                  ? `${indexProgress.current} of ${indexProgress.total} files`
+                  : "Scanning files..."}
+              </div>
+            </div>
+
+            <div
+              style={{
+                width: 240,
+                height: 6,
+                borderRadius: 3,
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width:
+                    indexProgress && indexProgress.total > 0
+                      ? `${(indexProgress.current / indexProgress.total) * 100}%`
+                      : "0%",
+                  height: "100%",
+                  background: "var(--canvas-accent)",
+                  borderRadius: 3,
+                  transition: "width 150ms ease",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                fontSize: 11,
+                opacity: 0.6,
+                maxWidth: 280,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {indexProgress?.file_path || ""}
+            </div>
+
+            <Button variant="secondary" size="sm" onClick={handleCancelIndex}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <>
+            <div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--text-secondary)",
+                  marginBottom: 4,
+                }}
+              >
+                No C4 diagrams yet
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  maxWidth: 260,
+                  lineHeight: 1.4,
+                }}
+              >
+                Index your codebase to enable generating C4 architecture diagrams with the AI
+              </div>
+            </div>
+
+            <Button variant="primary" size="md" onClick={handleIndex}>
+              Index Codebase
+            </Button>
+
+            <div
+              style={{
+                flexShrink: 1,
+                minHeight: 0,
+                overflow: "auto",
+                width: "100%",
+                maxWidth: 400,
+              }}
+            >
+              <SnippetCard
+                hint="After indexing, ask the AI:"
+                copyText={zeroStatePrompt}
+              >
+                Use the aiaw{" "}
+                <span style={{ color: "var(--canvas-accent)" }}>
+                  generate_c4_diagram
+                </span>{" "}
+                tool to create a C4 diagram of the codebase
+              </SnippetCard>
+            </div>
+          </>
+        )}
       </div>
     );
   }

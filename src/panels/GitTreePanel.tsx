@@ -13,7 +13,7 @@ import { parseNumstatToTree } from "./git/fileTreeParser";
 import type { FileTreeEntry } from "./git/fileTreeParser";
 import { CommitQuickOpenModal, type CommitQuickMatch } from "./git/CommitQuickOpenModal";
 import { LANE_WIDTH, ROW_HEIGHT, Lane, Connector, Dot, HeadRing } from "./git/gitGraphSvg";
-import { Button } from "../components/ui";
+import { Button, CopyButton } from "../components/ui";
 import { X } from "lucide-react";
 import SearchBar from "../components/SearchBar";
 
@@ -1139,16 +1139,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               >
                 {selectedSha}
               </code>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  if (selectedSha) navigator.clipboard.writeText(selectedSha);
-                }}
-                title="Copy hash"
-              >
-                Copy
-              </Button>
+              <CopyButton text={selectedSha || ""} label="Copy" />
             </div>
 
             {/* Author */}
