@@ -14,3 +14,7 @@ export { Textarea } from "./Textarea";
 export type { TextareaProps } from "./Textarea";
 export { SnippetCard } from "./SnippetCard";
 export type { SnippetCardProps } from "./SnippetCard";
+export { Text } from "./Text";
+export type { TextProps } from "./Text";
+export { Heading } from "./Heading";
+export type { HeadingProps } from "./Heading";
