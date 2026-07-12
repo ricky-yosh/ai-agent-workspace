@@ -38,8 +38,8 @@
 }
 
 .ui-copy-button--copied {
-  color: oklch(0.65 0.14 160);
-  border-color: oklch(0.65 0.14 160);
+  color: var(--confirmed-color, rgb(134, 239, 172));
+  border-color: var(--confirmed-color, rgb(134, 239, 172));
 }
 
 .ui-copy-button--failed {

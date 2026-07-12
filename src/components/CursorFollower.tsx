@@ -220,7 +220,7 @@ export function CursorFollower({
         {/* Left-click column */}
         <div className="col">
           <svg className="mouse-icon" viewBox="0 0 24 30" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 1.5c5 0 9 4 9 9v9.5a9 9 0 0 1-18 0v-9.5c0-5 4-9 9-9Z" fill="var(--surface-2, #1e1826)" />
+            <path d="M12 1.5c5 0 9 4 9 9v9.5a9 9 0 0 1-18 0v-9.5c0-5 4-9 9-9Z" fill="var(--bg-secondary)" />
             <g ref={iconLeftRef} style={{ opacity: 0.18, transition: "opacity .1s" }}>
               <path d="M6.2 7.1C7.5 5.3 9.4 4.4 12 4.4V11H3.2a8.8 8.8 0 0 1 3-3.9Z" fill="currentColor" stroke="none" />
             </g>
@@ -234,7 +234,7 @@ export function CursorFollower({
         {/* Right-click column */}
         <div className="col">
           <svg className="mouse-icon" viewBox="0 0 24 30" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 1.5c5 0 9 4 9 9v9.5a9 9 0 0 1-18 0v-9.5c0-5 4-9 9-9Z" fill="var(--surface-2, #1e1826)" />
+            <path d="M12 1.5c5 0 9 4 9 9v9.5a9 9 0 0 1-18 0v-9.5c0-5 4-9 9-9Z" fill="var(--bg-secondary)" />
             <g ref={iconRightRef} style={{ opacity: 0.18, transition: "opacity .1s" }}>
               <path d="M17.8 7.1C16.5 5.3 14.6 4.4 12 4.4V11h8.8a8.8 8.8 0 0 0-3-3.9Z" fill="currentColor" stroke="none" />
             </g>

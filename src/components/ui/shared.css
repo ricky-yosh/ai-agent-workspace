@@ -18,14 +18,9 @@
 }
 
 /* ── Confirmed state ──────────────────────────────────── */
-:root {
-  --confirmed-bg: rgba(34, 197, 94, 0.12);
-  --confirmed-color: rgb(134, 239, 172);
-}
-
 .ui-confirmed {
-  background: var(--confirmed-bg) !important;
-  color: var(--confirmed-color);
+  background: var(--confirmed-bg, rgba(34, 197, 94, 0.12)) !important;
+  color: var(--confirmed-color, rgb(134, 239, 172));
 }
 
 /* ── Keyboard shortcut pill ────────────────────────────── */

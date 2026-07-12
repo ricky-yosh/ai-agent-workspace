@@ -353,12 +353,12 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         {error && (
           <div
             style={{
-              background: "var(--bg-danger, rgba(239,68,68,0.1))",
-              border: "1px solid var(--border-danger, rgba(239,68,68,0.3))",
+              background: "var(--danger-subtle)",
+              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
               borderRadius: 6,
               padding: "8px 12px",
               fontSize: 12,
-              color: "var(--text-danger, #ef4444)",
+              color: "var(--danger)",
               maxWidth: 320,
               lineHeight: 1.5,
               wordBreak: "break-word",

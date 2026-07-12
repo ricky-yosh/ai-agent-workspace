@@ -318,12 +318,12 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
 
                 if (isAddition) {
                   typeClass = "addition";
-                  bg = "rgba(46, 160, 67, 0.15)";
-                  signColor = "#3fb950";
+                  bg = "var(--diff-add-bg)";
+                  signColor = "var(--diff-add-text)";
                 } else if (isDeletion) {
                   typeClass = "deletion";
-                  bg = "rgba(248, 81, 73, 0.15)";
-                  signColor = "#f85149";
+                  bg = "var(--diff-del-bg)";
+                  signColor = "var(--diff-del-text)";
                 } else if (isHunkHeader) {
                   typeClass = "hunk-header";
                   bg = "rgba(56, 132, 255, 0.08)";

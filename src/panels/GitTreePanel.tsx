@@ -98,7 +98,7 @@ function renderTreeEntries(
           color: entry.kind === "directory" ? "var(--text-muted)" : "var(--text-primary)",
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = "var(--panel-hover-bg, rgba(128,128,128,0.08))";
+          (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
         }}
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLElement).style.background = "transparent";
@@ -146,7 +146,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
     <>
       {parts.map((part, i) =>
         regex.test(part) ? (
-          <span key={i} style={{ background: "var(--search-highlight, rgba(251, 191, 36, 0.3))" }}>
+          <span key={i} style={{ background: "color-mix(in oklch, var(--status-paused), transparent 70%)" }}>
             {part}
           </span>
         ) : (
@@ -185,11 +185,11 @@ function saveColumnWidths(widths: typeof DEFAULT_WIDTHS): void {
 }
 
 function getRefLabelColor(ref: string): string {
-  if (ref.startsWith("tag: ")) return "var(--ref-tag, #f59e0b)";
-  if (ref.startsWith("HEAD -> ")) return "var(--ref-head, #22c55e)";
-  if (ref.startsWith("refs/heads/")) return "var(--ref-branch, #22c55e)";
-  if (ref.startsWith("refs/tags/")) return "var(--ref-tag, #f59e0b)";
-  if (ref.startsWith("refs/remotes/")) return "var(--ref-remote, #3b82f6)";
+  if (ref.startsWith("tag: ")) return "var(--status-paused)";
+  if (ref.startsWith("HEAD -> ")) return "var(--status-running)";
+  if (ref.startsWith("refs/heads/")) return "var(--status-running)";
+  if (ref.startsWith("refs/tags/")) return "var(--status-paused)";
+  if (ref.startsWith("refs/remotes/")) return "var(--accent)";
   return "var(--text-muted)";
 }
 
@@ -729,7 +729,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        background: "var(--panel-bg)",
+        background: "var(--bg-primary)",
         color: "var(--text-primary)",
         fontFamily: "var(--font-family-sans)",
         fontSize: 13,
@@ -914,7 +914,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                     onMouseEnter={(e) => {
                       if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
                         (e.currentTarget as HTMLElement).style.background =
-                          "var(--panel-hover-bg, rgba(128,128,128,0.08))";
+                          "var(--bg-hover)";
                       }
                     }}
                     onMouseLeave={(e) => {
@@ -1083,7 +1083,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               alignItems: "center",
               justifyContent: "space-between",
               borderBottom: "1px solid var(--border)",
-              background: "var(--panel-header-bg, rgba(128,128,128,0.04))",
+              background: "var(--bg-panel)",
             }}
           >
             <span style={{ fontWeight: 600, fontSize: 12 }}>Commit Details</span>
@@ -1132,7 +1132,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                   fontFamily: "var(--font-family-mono)",
                   fontSize: 12,
                   color: "var(--text-primary)",
-                  background: "var(--input-bg, rgba(128,128,128,0.1))",
+                  background: "var(--bg-input)",
                   padding: "2px 6px",
                   borderRadius: 3,
                 }}
@@ -1217,7 +1217,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                               borderRadius: 3,
                             }}
                             onMouseEnter={(e) => {
-                              (e.currentTarget as HTMLElement).style.background = "var(--panel-hover-bg, rgba(128,128,128,0.08))";
+                              (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
                             }}
                             onMouseLeave={(e) => {
                               (e.currentTarget as HTMLElement).style.background = "transparent";

@@ -41,6 +41,16 @@ export const lightTheme: ThemeDefinition = {
   [T.STATUS_PAUSED]: 'oklch(0.680 0.160 64.054)',
   [T.STATUS_MISSING]: 'oklch(0.560 0.195 28.806)',
 
+  // Diff (git)
+  [T.DIFF_ADD_BG]: 'rgba(46, 160, 67, 0.15)',
+  [T.DIFF_ADD_TEXT]: '#3fb950',
+  [T.DIFF_DEL_BG]: 'rgba(248, 81, 73, 0.15)',
+  [T.DIFF_DEL_TEXT]: '#f85149',
+
+  // Confirmed / Success
+  [T.CONFIRMED_BG]: 'rgba(34, 197, 94, 0.12)',
+  [T.CONFIRMED_COLOR]: 'rgb(134, 239, 172)',
+
   // Canvas — aligned to app's blue accent (hue 251°)
   [T.CANVAS_BG]: 'oklch(0.965 0.002 286.000)',
   [T.CANVAS_NODE_BG]: 'oklch(1.000 0.000 0.000)',

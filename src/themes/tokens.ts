@@ -38,6 +38,16 @@ export const TOKENS = {
   STATUS_PAUSED: '--status-paused',
   STATUS_MISSING: '--status-missing',
 
+  // Diff (git)
+  DIFF_ADD_BG: '--diff-add-bg',
+  DIFF_ADD_TEXT: '--diff-add-text',
+  DIFF_DEL_BG: '--diff-del-bg',
+  DIFF_DEL_TEXT: '--diff-del-text',
+
+  // Confirmed / Success
+  CONFIRMED_BG: '--confirmed-bg',
+  CONFIRMED_COLOR: '--confirmed-color',
+
   // Canvas (visual canvas panel)
   CANVAS_BG: '--canvas-bg',
   CANVAS_NODE_BG: '--canvas-node-bg',

@@ -76,7 +76,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
         style={{
           width: 480,
           maxHeight: "60vh",
-          background: "var(--panel-bg, #1e1e2e)",
+          background: "var(--bg-primary)",
           border: "1px solid var(--border)",
           borderRadius: 8,
           boxShadow: "0 8px 40px rgba(0,0,0,0.4)",
@@ -156,7 +156,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
                 style={{
                   fontSize: 10,
                   color: "var(--text-muted)",
-                  background: "var(--input-bg, rgba(128,128,128,0.1))",
+                  background: "var(--bg-input)",
                   padding: "1px 5px",
                   borderRadius: 3,
                 }}

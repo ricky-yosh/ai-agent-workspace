@@ -42,6 +42,16 @@ export const catppuccinTheme: ThemeDefinition = {
   [T.STATUS_PAUSED]: 'oklch(0.824 0.101 52.629)',     // #fab387 (peach)
   [T.STATUS_MISSING]: 'oklch(0.756 0.130 2.764)',     // #f38ba8 (red)
 
+  // Diff (git)
+  [T.DIFF_ADD_BG]: 'rgba(46, 160, 67, 0.15)',
+  [T.DIFF_ADD_TEXT]: '#3fb950',
+  [T.DIFF_DEL_BG]: 'rgba(248, 81, 73, 0.15)',
+  [T.DIFF_DEL_TEXT]: '#f85149',
+
+  // Confirmed / Success
+  [T.CONFIRMED_BG]: 'rgba(34, 197, 94, 0.12)',
+  [T.CONFIRMED_COLOR]: 'rgb(134, 239, 172)',
+
   // Canvas
   [T.CANVAS_BG]: 'oklch(0.183 0.020 284.204)',        // #11111b
   [T.CANVAS_NODE_BG]: 'oklch(0.243 0.030 283.911)',   // #1e1e2e

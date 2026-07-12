@@ -20,7 +20,7 @@
   width: 48px;
   font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 10px;
-  color: var(--text-faint, #6f6379);
+  color: var(--text-dim);
 }
 
 .cursor-hud .key {
@@ -31,7 +31,7 @@
   padding: 0 4px;
   border: 1px solid var(--border, #2c2333);
   border-radius: 7px;
-  background: var(--surface-2, #1e1826);
+  background: var(--bg-secondary);
   font-size: 11px;
   color: var(--text-muted, #a99bb5);
 }
@@ -89,7 +89,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text, #f1ecf5);
+  background: var(--text-primary);
   transform: translate(-50%, -50%);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
   z-index: 99;

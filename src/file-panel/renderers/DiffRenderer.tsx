@@ -157,8 +157,8 @@ const STYLES: Record<DiffLineType, React.CSSProperties> = {
 };
 
 const SIGN_STYLES: Record<"addition" | "deletion", React.CSSProperties> = {
-  addition: { color: "#3fb950", fontWeight: 600, userSelect: "none" },
-  deletion: { color: "#f85149", fontWeight: 600, userSelect: "none" },
+  addition: { color: "var(--diff-add-text)", fontWeight: 600, userSelect: "none" },
+  deletion: { color: "var(--diff-del-text)", fontWeight: 600, userSelect: "none" },
 };
 
 // ---------------------------------------------------------------------------
