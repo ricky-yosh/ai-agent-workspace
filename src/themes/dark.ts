@@ -87,6 +87,13 @@ export const darkTheme: ThemeDefinition = {
   [T.FONT_WEIGHT_MEDIUM]: '500',
   [T.FONT_WEIGHT_SEMIBOLD]: '600',
   [T.FONT_WEIGHT_BOLD]: '700',
+  [T.FONT_SIZE_2XL]: '20px',
+  [T.FONT_FAMILY_SANS]: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+  [T.FONT_FAMILY_MONO]: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`,
+  [T.FONT_FAMILY_UI]: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`,
+  [T.LINE_HEIGHT_TIGHT]: '1.2',
+  [T.LINE_HEIGHT_NORMAL]: '1.5',
+  [T.LINE_HEIGHT_RELAXED]: '1.6',
 
   // Radius
   [T.RADIUS_SM]: '4px',

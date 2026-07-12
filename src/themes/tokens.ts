@@ -80,12 +80,23 @@ export const TOKENS = {
   FONT_SIZE_BASE: '--font-size-base',
   FONT_SIZE_LG: '--font-size-lg',
   FONT_SIZE_XL: '--font-size-xl',
+  FONT_SIZE_2XL: '--font-size-2xl',
 
   // Typography — font weight
   FONT_WEIGHT_NORMAL: '--font-weight-normal',
   FONT_WEIGHT_MEDIUM: '--font-weight-medium',
   FONT_WEIGHT_SEMIBOLD: '--font-weight-semibold',
   FONT_WEIGHT_BOLD: '--font-weight-bold',
+
+  // Typography — font family
+  FONT_FAMILY_SANS: '--font-family-sans',
+  FONT_FAMILY_MONO: '--font-family-mono',
+  FONT_FAMILY_UI: '--font-family-ui',
+
+  // Typography — line height
+  LINE_HEIGHT_TIGHT: '--line-height-tight',
+  LINE_HEIGHT_NORMAL: '--line-height-normal',
+  LINE_HEIGHT_RELAXED: '--line-height-relaxed',
 
   // Radius
   RADIUS_SM: '--radius-sm',
