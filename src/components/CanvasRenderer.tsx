@@ -1,6 +1,19 @@
 import { useState, useCallback, useRef, type ReactNode, type RefObject } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Badge } from "./ui";
+import { CursorFollower } from "./CursorFollower";
+import {
+  type Side,
+  SIDE_NORMAL,
+  nodeCenter as geometryNodeCenter,
+  sideHandleCenter as geometrySideHandleCenter,
+  facingSide,
+  parseSides,
+  HANDLE_LONG,
+  HANDLE_SHORT,
+  halfPillPath,
+  findNearestEdge as geometryFindNearestEdge,
+} from "../canvas/geometry";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -42,13 +55,11 @@ export interface CanvasGroup {
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5.0;
 
-// Handle geometry constants
-const HANDLE_LONG = 20;
-const HANDLE_SHORT = 10;
+
+
+// Handle hit-test constants
 const HIT_OUTWARD = 10;
 const HIT_INWARD = 2;
-
-type Side = 'top' | 'right' | 'bottom' | 'left';
 
 function getConnectedNodeSides(node: CanvasNode, edges: CanvasEdge[]): Set<Side> {
   const allConnected = edges.some(
@@ -58,23 +69,6 @@ function getConnectedNodeSides(node: CanvasNode, edges: CanvasEdge[]): Set<Side>
     return new Set<Side>(['top', 'right', 'bottom', 'left']);
   }
   return new Set<Side>();
-}
-
-function halfPillPath(side: Side): string {
-  const w = HANDLE_LONG / 2;
-  const d = HANDLE_SHORT;
-  switch (side) {
-    case 'top':
-      return `M ${-w} ${d} Q ${-w} 0 0 0 Q ${w} 0 ${w} ${d} Z`;
-    case 'bottom':
-      return `M ${-w} ${-d} Q ${-w} 0 0 0 Q ${w} 0 ${w} ${-d} Z`;
-    case 'left':
-      return `M ${d} ${-w} Q 0 ${-w} 0 0 Q 0 ${w} ${d} ${w} Z`;
-    case 'right':
-      return `M ${-d} ${-w} Q 0 ${-w} 0 0 Q 0 ${w} ${-d} ${w} Z`;
-    default:
-      return '';
-  }
 }
 
 function handleCenter(side: Side, node: CanvasNode): { x: number; y: number } {
@@ -374,71 +368,9 @@ export function CanvasRenderer({
   // ── Context menu dispatch ─────────────────────────────────────────────
 
   const findNearestEdge = useCallback(
-    (cx: number, cy: number, threshold: number = 10): string | null => {
-      let nearestId: string | null = null;
-      let nearestDist = Infinity;
-
-      for (const edge of edges) {
-        const sourceNode = nodes.find((n) => n.id === edge.source_node_id);
-        const targetNode = nodes.find((n) => n.id === edge.target_node_id);
-        if (!sourceNode || !targetNode) continue;
-
-        const srcCx = sourceNode.x + sourceNode.width / 2;
-        const srcCy = sourceNode.y + sourceNode.height / 2;
-        const tgtCx = targetNode.x + targetNode.width / 2;
-        const tgtCy = targetNode.y + targetNode.height / 2;
-
-        const ddx = tgtCx - srcCx;
-        const ddy = tgtCy - srcCy;
-        const dist = Math.sqrt(ddx * ddx + ddy * ddy);
-        if (dist === 0) continue;
-        const curvature = Math.min(dist * 0.2, 50);
-        const nx = -ddy / dist;
-        const ny = ddx / dist;
-        const cpX = (srcCx + tgtCx) / 2 + nx * curvature;
-        const cpY = (srcCy + tgtCy) / 2 + ny * curvature;
-
-        const getEdgePoint = (node: CanvasNode, tx: number, ty: number) => {
-          const ccx = node.x + node.width / 2;
-          const ccy = node.y + node.height / 2;
-          const edx = tx - ccx;
-          const edy = ty - ccy;
-          const angle = Math.atan2(edy, edx);
-          const hw = node.width / 2;
-          const hh = node.height / 2;
-          const tanAngle = Math.abs(Math.tan(angle));
-          let ix: number, iy: number;
-          if (tanAngle * hw <= hh) {
-            ix = edx > 0 ? hw : -hw;
-            iy = ix * Math.tan(angle);
-          } else {
-            iy = edy > 0 ? hh : -hh;
-            ix = iy / Math.tan(angle);
-          }
-          return { x: ccx + ix, y: ccy + iy };
-        };
-
-        const p0 = getEdgePoint(sourceNode, cpX, cpY);
-        const p2 = getEdgePoint(targetNode, cpX, cpY);
-        const p1 = { x: cpX, y: cpY };
-
-        const SAMPLES = 40;
-        for (let i = 0; i <= SAMPLES; i++) {
-          const t = i / SAMPLES;
-          const mt = 1 - t;
-          const bx = mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x;
-          const by = mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y;
-          const d = Math.sqrt((cx - bx) ** 2 + (cy - by) ** 2);
-          if (d < nearestDist) {
-            nearestDist = d;
-            nearestId = edge.id;
-          }
-        }
-      }
-
-      return nearestDist <= threshold ? nearestId : null;
-    },
-    [edges, nodes],
+    (cx: number, cy: number, threshold: number = 10): string | null =>
+      geometryFindNearestEdge(cx, cy, nodes, edges, threshold),
+    [nodes, edges],
   );
 
   const handleContextMenu = useCallback(
@@ -560,6 +492,16 @@ export function CanvasRenderer({
     cursor = "grabbing";
   }
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  const LAUNCH = 30;
+
+  function sideLaunch(n: CanvasNode, side: Side): { x: number; y: number } {
+    const hc = geometrySideHandleCenter(n, side);
+    const norm = SIDE_NORMAL[side];
+    return { x: hc.x + norm.x * LAUNCH, y: hc.y + norm.y * LAUNCH };
+  }
+
   // ── Edge path renderer ────────────────────────────────────────────────
 
   const renderEdgePath = (edge: CanvasEdge) => {
@@ -567,57 +509,26 @@ export function CanvasRenderer({
     const targetNode = nodes.find((n) => n.id === edge.target_node_id);
     if (!sourceNode || !targetNode) return null;
 
-    const sourceX = sourceNode.x + sourceNode.width / 2;
-    const sourceY = sourceNode.y + sourceNode.height / 2;
-    const targetX = targetNode.x + targetNode.width / 2;
-    const targetY = targetNode.y + targetNode.height / 2;
+    // Resolve source/target sides
+    const { sourceSide: metaSrcSide, targetSide: metaTgtSide } = parseSides(edge.metadata_json);
+    const srcSide: Side = metaSrcSide ?? facingSide(sourceNode, geometryNodeCenter(targetNode));
+    const tgtSide: Side = metaTgtSide ?? facingSide(targetNode, geometryNodeCenter(sourceNode));
 
-    const dx = targetX - sourceX;
-    const dy = targetY - sourceY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const curvature = Math.min(dist * 0.2, 50);
+    const start = geometrySideHandleCenter(sourceNode, srcSide);
+    const end = geometrySideHandleCenter(targetNode, tgtSide);
+    const srcL = sideLaunch(sourceNode, srcSide);
+    const tgtL = sideLaunch(targetNode, tgtSide);
 
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const cpX = (sourceX + targetX) / 2 + nx * curvature;
-    const cpY = (sourceY + targetY) / 2 + ny * curvature;
+    // Compute control point for the quadratic bezier: midpoint of the two launch anchors
+    const cpX = (srcL.x + tgtL.x) / 2;
+    const cpY = (srcL.y + tgtL.y) / 2;
 
-    const getEdgePoint = (
-      node: CanvasNode,
-      tx: number,
-      ty: number,
-    ) => {
-      const cx = node.x + node.width / 2;
-      const cy = node.y + node.height / 2;
-      const dxx = tx - cx;
-      const dyy = ty - cy;
-      const angle = Math.atan2(dyy, dxx);
-      const hw = node.width / 2;
-      const hh = node.height / 2;
-      const tanAngle = Math.abs(Math.tan(angle));
-      let ix: number, iy: number;
-      if (tanAngle * hw <= hh) {
-        ix = dxx > 0 ? hw : -hw;
-        iy = ix * Math.tan(angle);
-      } else {
-        iy = dyy > 0 ? hh : -hh;
-        ix = iy / Math.tan(angle);
-      }
-      return { x: cx + ix, y: cy + iy };
-    };
-
-    const start = getEdgePoint(sourceNode, cpX, cpY);
-    const end = getEdgePoint(targetNode, cpX, cpY);
-
-    const path = `M ${start.x} ${start.y} Q ${cpX} ${cpY} ${end.x} ${end.y}`;
+    // Launch tangents: short segments from endpoint to launch point
+    const path = `M ${start.x} ${start.y} L ${srcL.x} ${srcL.y} Q ${cpX} ${cpY} ${tgtL.x} ${tgtL.y} L ${end.x} ${end.y}`;
 
     const arrowSize = 10;
-    const t = 0.98;
-    const arrowX =
-      (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * cpX + t * t * end.x;
-    const arrowY =
-      (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * cpY + t * t * end.y;
-    const arrowAngle = Math.atan2(end.y - arrowY, end.x - arrowX);
+    // Arrow angle derived from launch anchor direction
+    const arrowAngle = Math.atan2(end.y - tgtL.y, end.x - tgtL.x);
 
     return (
       <motion.g
@@ -629,39 +540,32 @@ export function CanvasRenderer({
         onClick={() => onEdgeClick?.(edge.id)}
         style={{ cursor: "pointer" }}
       >
+        {/* Base path (solid resting stroke) */}
         <motion.path
           d={path}
           fill="none"
           stroke="var(--canvas-edge)"
           strokeWidth={2}
           strokeLinecap="round"
+          strokeLinejoin="round"
           initial={false}
           animate={{ pathLength: 1 }}
           transition={{ duration: 0.42, ease: "easeOut" }}
         />
+        {/* Flow path (dashed, marching ants) — revealed via data attribute */}
         <path
           d={path}
           fill="none"
           stroke="var(--canvas-amber, #EC9F05)"
-          strokeWidth={2}
+          strokeWidth={4.2}
           strokeLinecap="round"
-          strokeDasharray="6 6"
-          className="rope-dragging"
+          strokeLinejoin="round"
+          strokeDasharray="12 10"
+          className="ef-flow"
+          data-diagram-edge-dragging={connectionDragActive || rewireActive ? "true" : undefined}
           pointerEvents="none"
-          opacity={connectionDragActive || rewireActive ? 0.8 : 0}
-          style={{ transition: 'opacity 0.15s ease' }}
         />
-        <motion.polygon
-          points={`
-            ${end.x},${end.y}
-            ${end.x - arrowSize * Math.cos(arrowAngle - Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle - Math.PI / 6)}
-            ${end.x - arrowSize * Math.cos(arrowAngle + Math.PI / 6)},${end.y - arrowSize * Math.sin(arrowAngle + Math.PI / 6)}
-          `}
-          fill="var(--canvas-edge)"
-          initial={false}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
-        />
+        {/* Source dot */}
         <circle
           cx={start.x}
           cy={start.y}
@@ -669,6 +573,7 @@ export function CanvasRenderer({
           fill="var(--canvas-edge)"
           className="edge-handle"
         />
+        {/* Arrowhead + rewire grab target */}
         <g style={{ cursor: "grab" }}>
           <circle
             cx={end.x}
@@ -768,24 +673,35 @@ export function CanvasRenderer({
             {edges.map((edge) => renderEdgePath(edge))}
           </AnimatePresence>
 
-          {/* Physics rope during connection drag */}
+          {/* Physics rope during connection drag — smooth Q+T path + pincer arrowhead */}
           {ropePointsProp && ropePointsProp.length > 1 && (
             <>
-              <polyline
-                points={ropePointsProp.map((p) => `${p.x},${p.y}`).join(" ")}
+              <path
+                d={(() => {
+                  const ps = ropePointsProp;
+                  if (ps.length === 0) return '';
+                  let d = `M ${ps[0].x} ${ps[0].y}`;
+                  for (let i = 1; i < ps.length - 1; i++) {
+                    const cur = ps[i];
+                    const next = ps[i + 1];
+                    d += ` Q ${cur.x} ${cur.y} ${(cur.x + next.x) / 2} ${(cur.y + next.y) / 2}`;
+                  }
+                  d += ` T ${ps[ps.length - 1].x} ${ps[ps.length - 1].y}`;
+                  return d;
+                })()}
                 fill="none"
                 stroke="var(--canvas-amber, #EC9F05)"
-                strokeWidth={2}
+                strokeWidth={2.6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeDasharray="6 6"
+                strokeDasharray="9 7"
                 className="rope-dragging"
                 pointerEvents="none"
               />
               {(() => {
-                const points = ropePointsProp;
-                const tip = points[points.length - 1];
-                const prev = points[points.length - 2] || points[0];
+                const ps = ropePointsProp;
+                const tip = ps[ps.length - 1];
+                const prev = ps[ps.length - 2] || ps[0];
                 const angle =
                   (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
                   Math.PI;
@@ -796,22 +712,23 @@ export function CanvasRenderer({
                     pointerEvents="none"
                   >
                     {isValid ? (
-                      <>
+                      <g>
+                        {/* Pincer jaws: two chevrons that rotate apart/back */}
                         <path
-                          d="M 0,0 L -12,-6"
+                          d="M 0,0 L -12,-7"
                           stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2}
+                          strokeWidth={2.4}
                           strokeLinecap="round"
-                          transform="rotate(-10)"
+                          className="pincer-upper"
                         />
                         <path
-                          d="M 0,0 L -12,6"
+                          d="M 0,0 L -12,7"
                           stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2}
+                          strokeWidth={2.4}
                           strokeLinecap="round"
-                          transform="rotate(10)"
+                          className="pincer-lower"
                         />
-                      </>
+                      </g>
                     ) : (
                       <polygon
                         points="-10,-5 0,0 -10,5"
@@ -824,24 +741,35 @@ export function CanvasRenderer({
             </>
           )}
 
-          {/* Physics rope during rewire */}
+          {/* Physics rope during rewire — same smooth path + pincer */}
           {rewireRopePointsProp && rewireRopePointsProp.length > 1 && (
             <>
-              <polyline
-                points={rewireRopePointsProp.map((p) => `${p.x},${p.y}`).join(" ")}
+              <path
+                d={(() => {
+                  const ps = rewireRopePointsProp;
+                  if (ps.length === 0) return '';
+                  let d = `M ${ps[0].x} ${ps[0].y}`;
+                  for (let i = 1; i < ps.length - 1; i++) {
+                    const cur = ps[i];
+                    const next = ps[i + 1];
+                    d += ` Q ${cur.x} ${cur.y} ${(cur.x + next.x) / 2} ${(cur.y + next.y) / 2}`;
+                  }
+                  d += ` T ${ps[ps.length - 1].x} ${ps[ps.length - 1].y}`;
+                  return d;
+                })()}
                 fill="none"
                 stroke="var(--canvas-amber, #EC9F05)"
-                strokeWidth={2}
+                strokeWidth={2.6}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeDasharray="6 6"
+                strokeDasharray="9 7"
                 className="rope-dragging"
                 pointerEvents="none"
               />
               {(() => {
-                const points = rewireRopePointsProp;
-                const tip = points[points.length - 1];
-                const prev = points[points.length - 2] || points[0];
+                const ps = rewireRopePointsProp;
+                const tip = ps[ps.length - 1];
+                const prev = ps[ps.length - 2] || ps[0];
                 const angle =
                   (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
                   Math.PI;
@@ -852,22 +780,22 @@ export function CanvasRenderer({
                     pointerEvents="none"
                   >
                     {isValid ? (
-                      <>
+                      <g>
                         <path
-                          d="M 0,0 L -12,-6"
+                          d="M 0,0 L -12,-7"
                           stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2}
+                          strokeWidth={2.4}
                           strokeLinecap="round"
-                          transform="rotate(-10)"
+                          className="pincer-upper"
                         />
                         <path
-                          d="M 0,0 L -12,6"
+                          d="M 0,0 L -12,7"
                           stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2}
+                          strokeWidth={2.4}
                           strokeLinecap="round"
-                          transform="rotate(10)"
+                          className="pincer-lower"
                         />
-                      </>
+                      </g>
                     ) : (
                       <polygon
                         points="-10,-5 0,0 -10,5"
@@ -1067,12 +995,12 @@ export function CanvasRenderer({
                         <path
                           d={halfPillPath(side)}
                           className={`side-handle${isConnected ? ' connected' : ''}${isSnapped ? ' snapped' : ''}`}
-                          fill={isSnapped ? "var(--canvas-success, #22c55e)" : "var(--text-muted)"}
                           style={{
                             pointerEvents: 'none',
+                            fill: "var(--text-muted)",
+                            stroke: "var(--text-muted)",
+                            strokeWidth: 1,
                             animationName: (isConnected || connectionDragActive || rewireActive) ? undefined : bobKeyframe,
-                            transform: isSnapped ? 'scale(1.3)' : undefined,
-                            transformOrigin: isSnapped ? `${cx}px ${cy}px` : undefined,
                           }}
                         />
                       </g>
@@ -1206,6 +1134,17 @@ export function CanvasRenderer({
           />
         )}
       </svg>
+
+      {/* Cursor follower HUD */}
+      <CursorFollower
+        containerRef={viewportRef}
+        connectionDragActive={connectionDragActive}
+        rewireActive={rewireActive}
+        placementActive={false}
+        offsetX={offsetX}
+        offsetY={offsetY}
+        zoom={zoom}
+      />
     </div>
   );
 }

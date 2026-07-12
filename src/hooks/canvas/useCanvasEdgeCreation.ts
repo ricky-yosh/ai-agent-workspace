@@ -1,10 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { CanvasNode, CanvasEdge } from "../../components/CanvasRenderer";
 import { safeInvoke } from "../../safeInvoke";
-import { createRope, stepRope, type RopePoint } from "../../canvas/ropePhysics";
+import { createRope, stepRope, DEFAULT_ROPE_CONFIG, type RopePoint } from "../../canvas/ropePhysics";
 import { findNearestHandle } from "../../canvas/snapping";
-
-type Side = "top" | "right" | "bottom" | "left";
+import {
+  type Side,
+  SIDE_NORMAL,
+  nodeCenter,
+  facingSide,
+  sideHandleCenter,
+} from "../../canvas/geometry";
 
 export interface ConnectionDragState {
   sourceNodeId: string;
@@ -12,6 +17,11 @@ export interface ConnectionDragState {
   handleCanvasX: number;
   handleCanvasY: number;
   sourceNode: CanvasNode;
+}
+
+export interface SideInfo {
+  side: Side;
+  normal: { x: number; y: number };
 }
 
 export function useCanvasEdgeCreation(params: {
@@ -26,6 +36,8 @@ export function useCanvasEdgeCreation(params: {
   ropePoints: RopePoint[] | null;
   dragOverNodeId: string | null;
   snappedMidpoint: { x: number; y: number } | null;
+  sourceDir: { x: number; y: number } | null;
+  targetDir: { x: number; y: number } | null;
   startConnectionDrag: (nodeId: string, side: Side) => void;
   updateConnectionDrag: (canvasX: number, canvasY: number) => void;
   endConnectionDrag: (canvasX: number, canvasY: number) => void;
@@ -37,10 +49,15 @@ export function useCanvasEdgeCreation(params: {
   const [ropePoints, setRopePoints] = useState<RopePoint[] | null>(null);
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [snappedMidpoint, setSnappedMidpoint] = useState<{ x: number; y: number } | null>(null);
+  const [sourceDir, setSourceDir] = useState<{ x: number; y: number } | null>(null);
+  const [targetDir, setTargetDir] = useState<{ x: number; y: number } | null>(null);
 
   const ropeRef = useRef<RopePoint[] | null>(null);
   const ropeTargetRef = useRef<{ x: number; y: number } | null>(null);
   const sourceRef = useRef<{ x: number; y: number } | null>(null);
+  const sourceDirRef = useRef<{ x: number; y: number } | null>(null);
+  const targetDirRef = useRef<{ x: number; y: number } | null>(null);
+  const restLengthRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
 
@@ -56,7 +73,12 @@ export function useCanvasEdgeCreation(params: {
       const source = sourceRef.current;
       const target = ropeTargetRef.current;
       if (rope && source && target) {
-        stepRope(rope, source, target, dt);
+        stepRope(rope, source, target, dt, {
+          sourceDir: sourceDirRef.current,
+          targetDir: targetDirRef.current,
+          sagScale: 1.32,
+          restLengthRef,
+        });
         setRopePoints([...rope]);
       }
 
@@ -80,34 +102,29 @@ export function useCanvasEdgeCreation(params: {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node) return;
 
-      const cx =
-        side === "left"
-          ? node.x
-          : side === "right"
-            ? node.x + node.width
-            : node.x + node.width / 2;
-      const cy =
-        side === "top"
-          ? node.y
-          : side === "bottom"
-            ? node.y + node.height
-            : node.y + node.height / 2;
-
-      const source = { x: cx, y: cy };
+      const hc = sideHandleCenter(node, side);
+      const normal = SIDE_NORMAL[side];
+      const source = { x: hc.x, y: hc.y };
       const rope = createRope(source, source);
+      const segCount = DEFAULT_ROPE_CONFIG.points - 1;
+      restLengthRef.current = DEFAULT_ROPE_CONFIG.slackOffset / segCount;
 
       sourceRef.current = source;
+      sourceDirRef.current = normal;
+      targetDirRef.current = null;
       ropeRef.current = rope;
-      ropeTargetRef.current = { x: cx, y: cy };
+      ropeTargetRef.current = { x: hc.x, y: hc.y };
 
       setConnectionDrag({
         sourceNodeId: node.id,
         sourceSide: side,
-        handleCanvasX: cx,
-        handleCanvasY: cy,
+        handleCanvasX: hc.x,
+        handleCanvasY: hc.y,
         sourceNode: node,
       });
-      setRopeTarget({ x: cx, y: cy });
+      setSourceDir(normal);
+      setTargetDir(null);
+      setRopeTarget({ x: hc.x, y: hc.y });
       setRopePoints([...rope]);
       setDragOverNodeId(null);
       setSnappedMidpoint(null);
@@ -120,6 +137,7 @@ export function useCanvasEdgeCreation(params: {
   const updateConnectionDrag = useCallback(
     (canvasX: number, canvasY: number) => {
       let snapped: { x: number; y: number } | null = null;
+      let tgtDir: { x: number; y: number } | null = null;
 
       if (hoveredNodeId) {
         const hoveredNode = nodes.find((n) => n.id === hoveredNodeId);
@@ -129,6 +147,7 @@ export function useCanvasEdgeCreation(params: {
             { x: hoveredNode.x, y: hoveredNode.y, width: hoveredNode.width, height: hoveredNode.height },
           );
           snapped = result.midpoint;
+          tgtDir = SIDE_NORMAL[result.side];
           ropeTargetRef.current = { x: snapped.x, y: snapped.y };
           setRopeTarget({ x: snapped.x, y: snapped.y });
         }
@@ -137,6 +156,8 @@ export function useCanvasEdgeCreation(params: {
         setRopeTarget({ x: canvasX, y: canvasY });
       }
 
+      targetDirRef.current = tgtDir;
+      setTargetDir(tgtDir);
       setSnappedMidpoint(snapped);
       setDragOverNodeId(hoveredNodeId);
     },
@@ -147,7 +168,8 @@ export function useCanvasEdgeCreation(params: {
     (_canvasX: number, _canvasY: number) => {
       stopAnimationLoop();
 
-      const sourceNodeId = connectionDrag?.sourceNodeId;
+      const drag = connectionDrag;
+      const sourceNodeId = drag?.sourceNodeId;
       const targetNodeId = dragOverNodeId;
 
       const reset = () => {
@@ -156,21 +178,43 @@ export function useCanvasEdgeCreation(params: {
         setRopePoints(null);
         setDragOverNodeId(null);
         setSnappedMidpoint(null);
+        setSourceDir(null);
+        setTargetDir(null);
         ropeRef.current = null;
         ropeTargetRef.current = null;
         sourceRef.current = null;
+        sourceDirRef.current = null;
+        targetDirRef.current = null;
       };
 
       if (targetNodeId && targetNodeId !== sourceNodeId && selectedCanvasId) {
+        // Resolve both sides facing each other
+        const sourceNode = nodes.find((n) => n.id === sourceNodeId);
+        const targetNode = nodes.find((n) => n.id === targetNodeId);
+        let sourceSide = drag?.sourceSide ?? null;
+        let targetSide: Side | null = null;
+        if (sourceNode && targetNode) {
+          sourceSide = facingSide(sourceNode, nodeCenter(targetNode));
+          targetSide = facingSide(targetNode, nodeCenter(sourceNode));
+        }
+
+        const metadataJson = targetSide
+          ? JSON.stringify({ sourceSide, targetSide })
+          : null;
+
         safeInvoke<CanvasEdge>("create_canvas_edge", {
           canvasId: selectedCanvasId,
           sourceNodeId,
           targetNodeId,
           label: null,
-          metadataJson: null,
+          metadataJson,
         })
           .then((edge) => {
-            setEdges((prev) => [...prev, edge]);
+            // Patch the edge with the side metadata we computed client-side
+            const patched = metadataJson
+              ? { ...edge, metadata_json: metadataJson }
+              : edge;
+            setEdges((prev) => [...prev, patched]);
             showToast("Edge created");
             reset();
           })
@@ -185,6 +229,7 @@ export function useCanvasEdgeCreation(params: {
     [
       connectionDrag,
       dragOverNodeId,
+      nodes,
       selectedCanvasId,
       showToast,
       setEdges,
@@ -204,6 +249,8 @@ export function useCanvasEdgeCreation(params: {
     ropePoints,
     dragOverNodeId,
     snappedMidpoint,
+    sourceDir,
+    targetDir,
     startConnectionDrag,
     updateConnectionDrag,
     endConnectionDrag,
