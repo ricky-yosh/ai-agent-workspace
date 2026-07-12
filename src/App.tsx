@@ -352,7 +352,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
       <div className="tab-content" style={{ position: 'relative' }}>
         {loading && (
           <div style={{
-            position: 'absolute', inset: 0, zIndex: 100,
+            position: 'absolute', inset: 0, zIndex: "var(--z-overlay)",
             background: 'rgba(18, 18, 18, 0.8)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--text-muted)', fontSize: 14,

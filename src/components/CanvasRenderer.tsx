@@ -760,7 +760,7 @@ export function CanvasRenderer({
                   animate={{
                     scale: isDragging ? 1.05 : 1,
                     opacity: isDeleting ? 0 : 1,
-                    zIndex: isDragging ? 1000 : 1,
+                    zIndex: isDragging ? "var(--z-context)" : "var(--z-surface)",
                   }}
                   exit={{ opacity: 0 }}
                   transition={

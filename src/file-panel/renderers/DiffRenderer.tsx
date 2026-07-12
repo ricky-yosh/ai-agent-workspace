@@ -259,7 +259,7 @@ function DiffFileSection({ file, language }: { file: DiffFile; language: ShikiLa
           borderBottom: "1px solid var(--border)",
           position: "sticky",
           top: 0,
-          zIndex: 1,
+          zIndex: "var(--z-surface)",
           fontFamily: "var(--font-family-mono)",
           fontSize: 12,
         }}

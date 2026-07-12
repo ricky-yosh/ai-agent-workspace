@@ -41,7 +41,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: var(--z-base);
   opacity: var(--noise-opacity, 0.07);
   mix-blend-mode: var(--noise-blend, screen);
   background-image: var(--noise-img);
@@ -67,7 +67,7 @@ body {
   height: auto;
   aspect-ratio: 144 / 96;
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-surface);
   background-color: var(--text-primary);
   -webkit-mask-size: contain;
   mask-size: contain;

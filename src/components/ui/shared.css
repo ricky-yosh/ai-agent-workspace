@@ -1,3 +1,12 @@
+/* ── Z-index scale ─────────────────────────────────────── */
+:root {
+  --z-base: 0;
+  --z-surface: 1;
+  --z-overlay: 100;
+  --z-context: 1000;
+  --z-toast: 2000;
+}
+
 /* ── Accent hover gradient ────────────────────────────── */
 .ui-bg-accent-hover {
   background: linear-gradient(

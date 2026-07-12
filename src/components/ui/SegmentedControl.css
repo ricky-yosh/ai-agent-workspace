@@ -15,7 +15,7 @@
   border-radius: calc(var(--radius-control) - 2px);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   pointer-events: none;
-  z-index: 0;
+  z-index: var(--z-base);
 }
 
 :root[data-motion="full"] .ui-segmented-control__pill[data-ready="true"] {
@@ -36,7 +36,7 @@
   user-select: none;
   text-align: center;
   position: relative;
-  z-index: 1;
+  z-index: var(--z-surface);
   white-space: nowrap;
 }
 

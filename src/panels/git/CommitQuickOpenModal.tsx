@@ -64,7 +64,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 1000,
+        zIndex: "var(--z-context)",
         display: "flex",
         justifyContent: "center",
         paddingTop: "15vh",
