@@ -2,6 +2,7 @@ pub mod error;
 pub mod session_resolution;
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use rmcp::{ServerHandler, tool};
 #[cfg(feature = "tauri-integration")]
 use rmcp::serve_server;
@@ -25,7 +26,7 @@ fn invoke_callbacks(
 
 macro_rules! run_mcp_command {
     ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json) => {{
-        let app_state = AppState { db: $state.db.clone() };
+        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
         match execute($cmd, &app_state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
                 invoke_callbacks(&$state.on_events, &events);
@@ -36,7 +37,7 @@ macro_rules! run_mcp_command {
         }
     }};
     ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty) => {{
-        let app_state = AppState { db: $state.db.clone() };
+        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
         match execute($cmd, &app_state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
                 invoke_callbacks(&$state.on_events, &events);
@@ -47,7 +48,7 @@ macro_rules! run_mcp_command {
         }
     }};
     ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json_or_null) => {{
-        let app_state = AppState { db: $state.db.clone() };
+        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
         match execute($cmd, &app_state) {
             Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
                 invoke_callbacks(&$state.on_events, &events);

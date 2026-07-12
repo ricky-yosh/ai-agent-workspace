@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::menu::*;
 use ai_agent_workspace_commands::{
     AppState, Command, CommandResult, execute,
@@ -265,6 +266,50 @@ command_handler!(list_c4_diagrams, C4DiagramList { repo_path }, C4Diagrams, Vec<
 command_handler!(get_c4_diagram, C4DiagramGet { id }, C4Diagram, C4Diagram, id: String);
 unit_return!(delete_c4_diagram, C4DiagramDelete { id }, id: String);
 command_handler!(rename_c4_diagram, C4DiagramRename { id, name }, C4Diagram, C4Diagram, id: String, name: String);
+
+// ── Code indexing ────────────────────────────────────────────────
+
+#[tauri::command]
+async fn index_code(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+    repo_path: String,
+) -> Result<serde_json::Value, String> {
+    state.index_cancel_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+
+    let conn = state.db.connection().map_err(|e| e.to_string())?;
+    let cancel = state.index_cancel_flag.clone();
+
+    let repo = repo_path.clone();
+    let result = ai_agent_workspace_code_intelligence::ensure_indexed_with_progress(
+        &conn,
+        &repo_path,
+        move |event| {
+            let _ = app.emit("code-index-progress", serde_json::json!({
+                "repo_path": &repo,
+                "phase": event.phase,
+                "current": event.current,
+                "total": event.total,
+                "file_path": event.file_path,
+            }));
+        },
+        Some(&cancel),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "indexed": result.indexed,
+        "skipped": result.skipped,
+        "total": result.total,
+    }))
+}
+
+#[tauri::command]
+async fn cancel_index(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state.index_cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
 
 // ── Non-macro commands ──────────────────────────────────────────────
 
@@ -931,6 +976,8 @@ pub fn run() {
             get_c4_diagram,
             delete_c4_diagram,
             rename_c4_diagram,
+            index_code,
+            cancel_index,
             open_preferences,
             open_in_app,
             is_git_repo,
