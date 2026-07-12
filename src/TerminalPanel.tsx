@@ -89,7 +89,7 @@ function useXtermTerminal(
         allowProposedApi: true,
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: "var(--font-family-mono)",
+        fontFamily: getComputedStyle(document.documentElement).getPropertyValue(TOKENS.FONT_FAMILY_MONO).trim() || "Menlo, Monaco, Consolas, monospace",
         scrollback: 10000,
         smoothScrollDuration: 125,
         minimumContrastRatio: 4.5,
