@@ -1,4 +1,5 @@
 use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent};
+use serde::Serialize;
 
 #[derive(Debug)]
 pub enum CommandResult {
@@ -26,6 +27,37 @@ pub enum CommandResult {
     C4Diagram(C4Diagram),
     C4Diagrams(Vec<C4Diagram>),
     Unit(()),
+}
+
+impl Serialize for CommandResult {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            CommandResult::Session(v) => v.serialize(serializer),
+            CommandResult::Sessions(v) => v.serialize(serializer),
+            CommandResult::Layout(v) => v.serialize(serializer),
+            CommandResult::Layouts(v) => v.serialize(serializer),
+            CommandResult::Workspace(v) => v.serialize(serializer),
+            CommandResult::Workspaces(v) => v.serialize(serializer),
+            CommandResult::Issue(v) => v.serialize(serializer),
+            CommandResult::Issues(v) => v.serialize(serializer),
+            CommandResult::IssueBacklogSummary(v) => v.serialize(serializer),
+            CommandResult::ChangeEvents(v) => v.serialize(serializer),
+            CommandResult::VisualCanvas(v) => v.serialize(serializer),
+            CommandResult::VisualCanvases(v) => v.serialize(serializer),
+            CommandResult::CanvasNode(v) => v.serialize(serializer),
+            CommandResult::CanvasNodes(v) => v.serialize(serializer),
+            CommandResult::CanvasEdge(v) => v.serialize(serializer),
+            CommandResult::CanvasEdges(v) => v.serialize(serializer),
+            CommandResult::CanvasGroup(v) => v.serialize(serializer),
+            CommandResult::CanvasGroups(v) => v.serialize(serializer),
+            CommandResult::CanvasTag(v) => v.serialize(serializer),
+            CommandResult::CanvasTags(v) => v.serialize(serializer),
+            CommandResult::CanvasViewState(v) => v.serialize(serializer),
+            CommandResult::C4Diagram(v) => v.serialize(serializer),
+            CommandResult::C4Diagrams(v) => v.serialize(serializer),
+            CommandResult::Unit(()) => serializer.serialize_none(),
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -24,44 +24,42 @@ fn invoke_callbacks(
     }
 }
 
-macro_rules! run_mcp_command {
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json) => {{
-        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
-        match execute($cmd, &app_state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&$state.on_events, &events);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
+enum ResponseFormat {
+    Json,
+    Empty,
+    JsonOrNull,
+}
+
+fn mcp_app_state(state: &McpState) -> AppState {
+    AppState {
+        db: state.db.clone(),
+        index_cancel_flag: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+fn respond(
+    state: &McpState,
+    outcome: ExecutionOutcome,
+    format: ResponseFormat,
+) -> Result<CallToolResult, rmcp::Error> {
+    invoke_callbacks(&state.on_events, &outcome.events);
+    match format {
+        ResponseFormat::Empty => Ok(CallToolResult::success(vec![])),
+        ResponseFormat::Json => Ok(CallToolResult::success(vec![
+            Content::json(&outcome.result)?,
+        ])),
+        ResponseFormat::JsonOrNull => {
+            if matches!(outcome.result, CommandResult::Unit(())) {
+                Ok(CallToolResult::success(vec![
+                    Content::json(&serde_json::Value::Null)?,
+                ]))
+            } else {
+                Ok(CallToolResult::success(vec![
+                    Content::json(&outcome.result)?,
+                ]))
             }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
         }
-    }};
-    ($cmd:expr, $state:expr, $variant:ident, $bind:pat, empty) => {{
-        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
-        match execute($cmd, &app_state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&$state.on_events, &events);
-                Ok(CallToolResult::success(vec![]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    }};
-    ($cmd:expr, $state:expr, $variant:ident, $bind:ident, json_or_null) => {{
-        let app_state = AppState { db: $state.db.clone(), index_cancel_flag: Arc::new(AtomicBool::new(false)) };
-        match execute($cmd, &app_state) {
-            Ok(ExecutionOutcome { result: CommandResult::$variant($bind), events }) => {
-                invoke_callbacks(&$state.on_events, &events);
-                Ok(CallToolResult::success(vec![Content::json(&$bind)?]))
-            }
-            Ok(ExecutionOutcome { result: CommandResult::Unit(_), events }) => {
-                invoke_callbacks(&$state.on_events, &events);
-                Ok(CallToolResult::success(vec![Content::json(&serde_json::Value::Null)?]))
-            }
-            Ok(_) => Err(rmcp::Error::internal_error("unexpected result", None)),
-            Err(e) => Err(crate::error::to_mcp_error(e)),
-        }
-    }};
+    }
 }
 
 /// A thin wrapper that pairs the Database with an optional event-sink callback,
@@ -176,61 +174,61 @@ impl McpHandler {
     #[tool(description = "List all sessions")]
     async fn session_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionList, &state, Sessions, sessions, json)
+        respond(&state, execute(Command::SessionList, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Create a new session")]
     async fn session_create(&self, #[tool(param)] working_dir: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionCreate { working_dir, name }, &state, Session, session, json)
+        respond(&state, execute(Command::SessionCreate { working_dir, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Rename a session")]
     async fn session_rename(&self, #[tool(param)] session_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionRename { session_id, new_name }, &state, Session, session, json)
+        respond(&state, execute(Command::SessionRename { session_id, new_name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a session")]
     async fn session_delete(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionDelete { session_id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::SessionDelete { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Open a session (set as active)")]
     async fn session_open(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionOpen { session_id }, &state, Session, session, json)
+        respond(&state, execute(Command::SessionOpen { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Close the active session")]
     async fn session_close(&self, #[tool(param)] session_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SessionClose { session_id }, &state, Session, session, json)
+        respond(&state, execute(Command::SessionClose { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all layout templates")]
     async fn template_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::TemplateList, &state, Layouts, layouts, json)
+        respond(&state, execute(Command::TemplateList, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Save a layout template")]
     async fn template_save(&self, #[tool(param)] name: String, #[tool(param)] screen: Screen) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::TemplateSave { name, screen }, &state, Layout, layout, json)
+        respond(&state, execute(Command::TemplateSave { name, screen }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a layout template")]
     async fn template_delete(&self, #[tool(param)] layout_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::TemplateDelete { layout_id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::TemplateDelete { layout_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Rename a layout template")]
     async fn template_rename(&self, #[tool(param)] layout_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::TemplateRename { layout_id, new_name }, &state, Unit, _, empty)
+        respond(&state, execute(Command::TemplateRename { layout_id, new_name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     fn require_session_id(&self) -> Result<String, rmcp::Error> {
@@ -277,186 +275,186 @@ impl McpHandler {
     async fn workspace_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceList { session_id }, &state, Workspaces, workspaces, json)
+        respond(&state, execute(Command::WorkspaceList { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get the active workspace instance, or null when none is active")]
     async fn workspace_get_active(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceGetActive { session_id }, &state, Workspace, ws, json_or_null)
+        respond(&state, execute(Command::WorkspaceGetActive { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::JsonOrNull)
     }
 
     #[tool(description = "Add a workspace instance from a template")]
     async fn workspace_add(&self, #[tool(param)] template_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceAdd { session_id, template_id }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::WorkspaceAdd { session_id, template_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Remove a workspace instance")]
     async fn workspace_remove(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceRemove { session_id, workspace_id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::WorkspaceRemove { session_id, workspace_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Rename a workspace instance")]
     async fn workspace_rename(&self, #[tool(param)] workspace_id: String, #[tool(param)] new_name: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceRename { session_id, workspace_id, new_name }, &state, Unit, _, empty)
+        respond(&state, execute(Command::WorkspaceRename { session_id, workspace_id, new_name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Set a workspace as the active workspace")]
     async fn workspace_set_active(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceSetActive { session_id, workspace_id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::WorkspaceSetActive { session_id, workspace_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Update the screen of a workspace instance")]
     async fn workspace_update_screen(&self, #[tool(param)] workspace_id: String, #[tool(param)] screen: Screen) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceUpdateScreen { session_id, workspace_id, screen }, &state, Unit, _, empty)
+        respond(&state, execute(Command::WorkspaceUpdateScreen { session_id, workspace_id, screen }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Reset a workspace instance to the template layout")]
     async fn workspace_reset(&self, #[tool(param)] workspace_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::WorkspaceReset { session_id, workspace_id }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::WorkspaceReset { session_id, workspace_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Split an area in the workspace screen")]
     async fn split_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] axis: Axis, #[tool(param)] factor: f64, #[tool(param)] new_panel_type: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::SplitArea { session_id, workspace_id, area_id, axis, factor, new_panel_type }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::SplitArea { session_id, workspace_id, area_id, axis, factor, new_panel_type }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Join two adjacent areas. source_area_id is absorbed (removed) and target_area_id survives (grows to fill the space).")]
     async fn join_areas(&self, #[tool(param)] workspace_id: String, #[tool(param)] source_area_id: String, #[tool(param)] target_area_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::JoinAreas { session_id, workspace_id, source_area_id, target_area_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Close an area in the workspace screen")]
     async fn close_area(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CloseArea { session_id, workspace_id, area_id }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::CloseArea { session_id, workspace_id, area_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Resize an edge in the workspace screen")]
     async fn resize_edge(&self, #[tool(param)] workspace_id: String, #[tool(param)] edge_id: String, #[tool(param)] position: f64) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::ResizeEdge { session_id, workspace_id, edge_id, position }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::ResizeEdge { session_id, workspace_id, edge_id, position }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Change the panel type of an area in the workspace screen")]
     async fn change_panel_type(&self, #[tool(param)] workspace_id: String, #[tool(param)] area_id: String, #[tool(param)] panel_type: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::ChangePanelType { session_id, workspace_id, area_id, panel_type }, &state, Workspace, ws, json)
+        respond(&state, execute(Command::ChangePanelType { session_id, workspace_id, area_id, panel_type }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Create an issue in the current session")]
     async fn issue_create(&self, #[tool(param)] title: String, #[tool(param)] body: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueCreate { session_id, title, body, labels: None }, &state, Issue, issue, json)
+        respond(&state, execute(Command::IssueCreate { session_id, title, body, labels: None }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all issues in the current session")]
     async fn issue_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueList { session_id }, &state, Issues, issues, json)
+        respond(&state, execute(Command::IssueList { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get an issue by ID or number")]
     async fn issue_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueGet { id, session_id: Some(session_id) }, &state, Issue, issue, json)
+        respond(&state, execute(Command::IssueGet { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update an issue's title, body, labels, or state. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] body: Option<String>, #[tool(param)] labels: Option<Vec<String>>, #[tool(param)] state: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state_arg = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueUpdate { id, session_id: Some(session_id), title, body, labels, state }, &state_arg, Issue, issue, json)
+        respond(&state_arg, execute(Command::IssueUpdate { id, session_id: Some(session_id), title, body, labels, state }, &mcp_app_state(&state_arg)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Close an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_close(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueClose { id, session_id: Some(session_id) }, &state, Issue, issue, json)
+        respond(&state, execute(Command::IssueClose { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueDelete { id, session_id: Some(session_id) }, &state, Unit, _, empty)
+        respond(&state, execute(Command::IssueDelete { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Search issues in the current session by state, label, and/or keyword")]
     async fn issue_search(&self, #[tool(param)] state: Option<String>, #[tool(param)] label: Option<String>, #[tool(param)] keyword: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state_arg = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueSearch { session_id, state, label, keyword }, &state_arg, Issues, issues, json)
+        respond(&state_arg, execute(Command::IssueSearch { session_id, state, label, keyword }, &mcp_app_state(&state_arg)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get the next open issue to work on, prioritized by triage label, or null if none")]
     async fn issue_get_next(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueGetNext { session_id }, &state, Issue, issue, json_or_null)
+        respond(&state, execute(Command::IssueGetNext { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::JsonOrNull)
     }
 
     #[tool(description = "Summarize the issue backlog: total, open, closed, and counts by label")]
     async fn issue_summarize_backlog(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::IssueSummarizeBacklog { session_id }, &state, IssueBacklogSummary, summary, json)
+        respond(&state, execute(Command::IssueSummarizeBacklog { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Create a visual canvas in the current session")]
     async fn canvas_create(&self, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::VisualCanvasCreate { session_id, name }, &state, VisualCanvas, canvas, json)
+        respond(&state, execute(Command::VisualCanvasCreate { session_id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all visual canvases in the current session")]
     async fn canvas_list(&self) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::VisualCanvasList { session_id }, &state, VisualCanvases, canvases, json)
+        respond(&state, execute(Command::VisualCanvasList { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get a visual canvas by ID")]
     async fn canvas_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::VisualCanvasGet { id }, &state, VisualCanvas, canvas, json)
+        respond(&state, execute(Command::VisualCanvasGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a visual canvas")]
     async fn canvas_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::VisualCanvasDelete { id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::VisualCanvasDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Rename a visual canvas")]
     async fn canvas_rename(&self, #[tool(param)] id: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::VisualCanvasRename { id, name }, &state, VisualCanvas, canvas, json)
+        respond(&state, execute(Command::VisualCanvasRename { id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Create a node on a visual canvas with content, position, and optional metadata")]
@@ -464,114 +462,114 @@ impl McpHandler {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         let w = width.unwrap_or(200.0);
         let h = height.unwrap_or(100.0);
-        run_mcp_command!(Command::CanvasNodeCreate { canvas_id, content, x, y, width: w, height: h, metadata_json }, &state, CanvasNode, node, json)
+        respond(&state, execute(Command::CanvasNodeCreate { canvas_id, content, x, y, width: w, height: h, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all nodes on a visual canvas")]
     async fn node_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasNodeList { canvas_id }, &state, CanvasNodes, nodes, json)
+        respond(&state, execute(Command::CanvasNodeList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get a canvas node by ID")]
     async fn node_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasNodeGet { id }, &state, CanvasNode, node, json)
+        respond(&state, execute(Command::CanvasNodeGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update a canvas node's content, position, size, or metadata")]
     async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] content: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json }, &state, CanvasNode, node, json)
+        respond(&state, execute(Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a canvas node. Cascades to remove connected edges and remove the node from any groups.")]
     async fn node_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasNodeDelete { id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::CanvasNodeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Create a directional edge between two canvas nodes with optional label and metadata")]
     async fn edge_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] source_node_id: String, #[tool(param)] target_node_id: String, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json }, &state, CanvasEdge, edge, json)
+        respond(&state, execute(Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all edges on a visual canvas")]
     async fn edge_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeList { canvas_id }, &state, CanvasEdges, edges, json)
+        respond(&state, execute(Command::CanvasEdgeList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get a canvas edge by ID")]
     async fn edge_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeGet { id }, &state, CanvasEdge, edge, json)
+        respond(&state, execute(Command::CanvasEdgeGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update a canvas edge's label, metadata, source, or target")]
     async fn edge_update(&self, #[tool(param)] id: String, #[tool(param)] source_node_id: Option<String>, #[tool(param)] target_node_id: Option<String>, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeUpdate { id, source_node_id, target_node_id, label, metadata_json }, &state, CanvasEdge, edge, json)
+        respond(&state, execute(Command::CanvasEdgeUpdate { id, source_node_id, target_node_id, label, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a canvas edge")]
     async fn edge_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasEdgeDelete { id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::CanvasEdgeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Create a group to visually cluster related nodes with a label and list of node IDs")]
     async fn group_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] label: String, #[tool(param)] node_ids: Vec<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         let node_ids_json = serde_json::to_string(&node_ids).unwrap_or_else(|_| "[]".to_string());
-        run_mcp_command!(Command::CanvasGroupCreate { canvas_id, label, node_ids_json, metadata_json }, &state, CanvasGroup, group, json)
+        respond(&state, execute(Command::CanvasGroupCreate { canvas_id, label, node_ids_json, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all groups on a visual canvas")]
     async fn group_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasGroupList { canvas_id }, &state, CanvasGroups, groups, json)
+        respond(&state, execute(Command::CanvasGroupList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get a canvas group by ID")]
     async fn group_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasGroupGet { id }, &state, CanvasGroup, group, json)
+        respond(&state, execute(Command::CanvasGroupGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update a canvas group's label, node IDs, or metadata")]
     async fn group_update(&self, #[tool(param)] id: String, #[tool(param)] label: Option<String>, #[tool(param)] node_ids: Option<Vec<String>>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         let node_ids_json = node_ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string()));
-        run_mcp_command!(Command::CanvasGroupUpdate { id, label, node_ids_json, metadata_json }, &state, CanvasGroup, group, json)
+        respond(&state, execute(Command::CanvasGroupUpdate { id, label, node_ids_json, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a canvas group")]
     async fn group_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasGroupDelete { id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::CanvasGroupDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Add a tag to a canvas node for categorization")]
     async fn tag_add(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasTagAdd { node_id, tag }, &state, CanvasTag, canvas_tag, json)
+        respond(&state, execute(Command::CanvasTagAdd { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Remove a tag from a canvas node")]
     async fn tag_remove(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::CanvasTagRemove { node_id, tag }, &state, Unit, _, empty)
+        respond(&state, execute(Command::CanvasTagRemove { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "List tags for a canvas node or all tags on a canvas. Provide node_id to list tags for a specific node, or canvas_id to list all tags on a canvas.")]
     async fn tag_list(&self, #[tool(param)] node_id: Option<String>, #[tool(param)] canvas_id: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         if let Some(node_id) = node_id {
-            run_mcp_command!(Command::CanvasTagListByNode { node_id }, &state, CanvasTags, tags, json)
+            respond(&state, execute(Command::CanvasTagListByNode { node_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
         } else if let Some(canvas_id) = canvas_id {
-            run_mcp_command!(Command::CanvasTagListByCanvas { canvas_id }, &state, CanvasTags, tags, json)
+            respond(&state, execute(Command::CanvasTagListByCanvas { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
         } else {
             Err(rmcp::Error::invalid_params("Either node_id or canvas_id must be provided", None))
         }
@@ -580,31 +578,31 @@ impl McpHandler {
     #[tool(description = "Create a C4 diagram for a repository")]
     async fn c4_diagram_create(&self, #[tool(param)] repo_path: String, #[tool(param)] name: String, #[tool(param)] diagram_json: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::C4DiagramCreate { repo_path, name, diagram_json }, &state, C4Diagram, diagram, json)
+        respond(&state, execute(Command::C4DiagramCreate { repo_path, name, diagram_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all C4 diagrams for a repository")]
     async fn c4_diagram_list(&self, #[tool(param)] repo_path: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::C4DiagramList { repo_path }, &state, C4Diagrams, diagrams, json)
+        respond(&state, execute(Command::C4DiagramList { repo_path }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Get a C4 diagram by ID")]
     async fn c4_diagram_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::C4DiagramGet { id }, &state, C4Diagram, diagram, json)
+        respond(&state, execute(Command::C4DiagramGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a C4 diagram")]
     async fn c4_diagram_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::C4DiagramDelete { id }, &state, Unit, _, empty)
+        respond(&state, execute(Command::C4DiagramDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Rename a C4 diagram")]
     async fn c4_diagram_rename(&self, #[tool(param)] id: String, #[tool(param)] name: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        run_mcp_command!(Command::C4DiagramRename { id, name }, &state, C4Diagram, diagram, json)
+        respond(&state, execute(Command::C4DiagramRename { id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Open a file in the File Viewer Panel. Emits an event that the frontend handles by opening the file in the last-focused viewer (or creating one if none exists).")]
