@@ -329,6 +329,43 @@ fn node_text<'a>(node: Node<'a>, content: &'a str) -> String {
         .to_string()
 }
 
+/// Trait abstraction over symbol storage, allowing
+/// [`ensure_indexed_with_progress`] to be decoupled from
+/// [`IndexStore`] / SQLite.
+pub trait SymbolStorage {
+    fn get_fingerprint(&self, repo_path: &str, file_path: &str) -> Option<String>;
+    fn clear_file(&self, repo_path: &str, file_path: &str) -> Result<(), Box<dyn std::error::Error>>;
+    fn insert_symbols(
+        &self,
+        repo_path: &str,
+        file_path: &str,
+        fingerprint: &str,
+        symbols: &[ExtractedSymbol],
+    ) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+impl SymbolStorage for IndexStore<'_> {
+    fn get_fingerprint(&self, repo_path: &str, file_path: &str) -> Option<String> {
+        IndexStore::get_fingerprint(self, repo_path, file_path)
+    }
+
+    fn clear_file(&self, repo_path: &str, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        IndexStore::clear_file(self, repo_path, file_path)?;
+        Ok(())
+    }
+
+    fn insert_symbols(
+        &self,
+        repo_path: &str,
+        file_path: &str,
+        fingerprint: &str,
+        symbols: &[ExtractedSymbol],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        IndexStore::insert_symbols(self, repo_path, file_path, fingerprint, symbols)?;
+        Ok(())
+    }
+}
+
 pub struct IndexStore<'a> {
     conn: &'a rusqlite::Connection,
 }
@@ -567,6 +604,25 @@ pub fn is_supported(file_path: &str) -> bool {
     )
 }
 
+/// Walk `repo_path` and return absolute [`PathBuf`] values for every
+/// supported file (see [`is_supported`]).
+pub fn collect_supported_files(repo_path: &str) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in WalkDir::new(repo_path) {
+        let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path().to_path_buf();
+        let relative = path.strip_prefix(repo_path).unwrap_or(&path);
+        let file_path = relative.to_string_lossy().to_string();
+        if is_supported(&file_path) {
+            file_paths.push(path);
+        }
+    }
+    Ok(file_paths)
+}
+
 /// Progress event emitted during indexing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexProgressEvent {
@@ -588,45 +644,26 @@ pub fn ensure_indexed(
     conn: &rusqlite::Connection,
     repo_path: &str,
 ) -> Result<IndexProgressResult, Box<dyn std::error::Error>> {
-    ensure_indexed_with_progress(conn, repo_path, |_| {}, None)
+    let store = IndexStore::new(conn);
+    let files = collect_supported_files(repo_path)?;
+    ensure_indexed_with_progress(&store, repo_path, &files, |_| {}, None)
 }
 
-pub fn ensure_indexed_with_progress<F>(
-    conn: &rusqlite::Connection,
+pub fn ensure_indexed_with_progress<S, F>(
+    storage: &S,
     repo_path: &str,
+    file_paths: &[std::path::PathBuf],
     on_progress: F,
     cancel_flag: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<IndexProgressResult, Box<dyn std::error::Error>>
 where
+    S: SymbolStorage,
     F: Fn(IndexProgressEvent),
 {
-    let store = IndexStore::new(conn);
     let indexer = CodeIndexer::new();
-
-    // Phase 1: scan — collect all supported file paths
-    let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
-    for entry in WalkDir::new(repo_path) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path().to_path_buf();
-        let relative = path.strip_prefix(repo_path).unwrap_or(&path);
-        let file_path = relative.to_string_lossy().to_string();
-        if is_supported(&file_path) {
-            file_paths.push(path);
-        }
-    }
     let total = file_paths.len();
 
-    on_progress(IndexProgressEvent {
-        phase: "scanning".into(),
-        current: 0,
-        total,
-        file_path: String::new(),
-    });
-
-    // Phase 2: index each file
+    // Index each file
     let mut indexed = 0usize;
     let mut skipped = 0usize;
     for (i, path) in file_paths.iter().enumerate() {
@@ -645,7 +682,7 @@ where
         let content = std::fs::read_to_string(path)?;
         let fingerprint = CodeIndexer::fingerprint(&content);
 
-        if let Some(stored) = store.get_fingerprint(repo_path, &file_path_str) {
+        if let Some(stored) = storage.get_fingerprint(repo_path, &file_path_str) {
             if stored == fingerprint {
                 skipped += 1;
                 on_progress(IndexProgressEvent {
@@ -658,9 +695,9 @@ where
             }
         }
 
-        store.clear_file(repo_path, &file_path_str)?;
+        storage.clear_file(repo_path, &file_path_str)?;
         let symbols = indexer.parse_file(&file_path_str, &content);
-        store.insert_symbols(repo_path, &file_path_str, &fingerprint, &symbols)?;
+        storage.insert_symbols(repo_path, &file_path_str, &fingerprint, &symbols)?;
         indexed += 1;
 
         on_progress(IndexProgressEvent {

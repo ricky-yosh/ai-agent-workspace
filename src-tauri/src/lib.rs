@@ -281,9 +281,13 @@ async fn index_code(
     let cancel = state.index_cancel_flag.clone();
 
     let repo = repo_path.clone();
+    let store = ai_agent_workspace_code_intelligence::IndexStore::new(&conn);
+    let files = ai_agent_workspace_code_intelligence::collect_supported_files(&repo_path)
+        .map_err(|e| e.to_string())?;
     let result = ai_agent_workspace_code_intelligence::ensure_indexed_with_progress(
-        &conn,
+        &store,
         &repo_path,
+        &files,
         move |event| {
             let _ = app.emit("code-index-progress", serde_json::json!({
                 "repo_path": &repo,
