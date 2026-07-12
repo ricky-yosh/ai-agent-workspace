@@ -850,7 +850,7 @@ export function CanvasRenderer({
                         key={side}
                         transform={`translate(${cx}, ${cy}) scale(${1 / zoom})`}
                         style={{
-                          opacity: isConnected ? 1 : 'var(--handle-opacity, 0)',
+                          opacity: isConnected || hoveredNodeId === node.id ? 1 : 0,
                           transition: 'opacity var(--canvas-duration-fast, .15s) var(--canvas-ease-state, cubic-bezier(.2,.8,.2,1))',
                         }}
                       >
@@ -870,11 +870,11 @@ export function CanvasRenderer({
                         <path
                           d={halfPillPath(side)}
                           className={`side-handle${isConnected ? ' connected' : ''}${isSnapped ? ' snapped' : ''}`}
+                          fill="#888"
+                          stroke="#888"
+                          strokeWidth={1}
                           style={{
                             pointerEvents: 'none',
-                            fill: "var(--text-muted)",
-                            stroke: "var(--text-muted)",
-                            strokeWidth: 1,
                             animationName: (isConnected || connectionDragActive || rewireActive) ? undefined : bobKeyframe,
                           }}
                         />
