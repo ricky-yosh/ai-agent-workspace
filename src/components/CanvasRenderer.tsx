@@ -14,6 +14,7 @@ import {
   halfPillPath,
   findNearestEdge as geometryFindNearestEdge,
 } from "../canvas/geometry";
+import { DragRope } from "../canvas/DragRope";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -673,140 +674,14 @@ export function CanvasRenderer({
             {edges.map((edge) => renderEdgePath(edge))}
           </AnimatePresence>
 
-          {/* Physics rope during connection drag — smooth Q+T path + pincer arrowhead */}
-          {ropePointsProp && ropePointsProp.length > 1 && (
-            <>
-              <path
-                d={(() => {
-                  const ps = ropePointsProp;
-                  if (ps.length === 0) return '';
-                  let d = `M ${ps[0].x} ${ps[0].y}`;
-                  for (let i = 1; i < ps.length - 1; i++) {
-                    const cur = ps[i];
-                    const next = ps[i + 1];
-                    d += ` Q ${cur.x} ${cur.y} ${(cur.x + next.x) / 2} ${(cur.y + next.y) / 2}`;
-                  }
-                  d += ` T ${ps[ps.length - 1].x} ${ps[ps.length - 1].y}`;
-                  return d;
-                })()}
-                fill="none"
-                stroke="var(--canvas-amber, #EC9F05)"
-                strokeWidth={2.6}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray="9 7"
-                className="rope-dragging"
-                pointerEvents="none"
-              />
-              {(() => {
-                const ps = ropePointsProp;
-                const tip = ps[ps.length - 1];
-                const prev = ps[ps.length - 2] || ps[0];
-                const angle =
-                  (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
-                  Math.PI;
-                const isValid = dragOverNodeId !== null;
-                return (
-                  <g
-                    transform={`translate(${tip.x}, ${tip.y}) rotate(${angle})`}
-                    pointerEvents="none"
-                  >
-                    {isValid ? (
-                      <g>
-                        {/* Pincer jaws: two chevrons that rotate apart/back */}
-                        <path
-                          d="M 0,0 L -12,-7"
-                          stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2.4}
-                          strokeLinecap="round"
-                          className="pincer-upper"
-                        />
-                        <path
-                          d="M 0,0 L -12,7"
-                          stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2.4}
-                          strokeLinecap="round"
-                          className="pincer-lower"
-                        />
-                      </g>
-                    ) : (
-                      <polygon
-                        points="-10,-5 0,0 -10,5"
-                        fill="var(--canvas-amber, #EC9F05)"
-                      />
-                    )}
-                  </g>
-                );
-              })()}
-            </>
-          )}
-
-          {/* Physics rope during rewire — same smooth path + pincer */}
-          {rewireRopePointsProp && rewireRopePointsProp.length > 1 && (
-            <>
-              <path
-                d={(() => {
-                  const ps = rewireRopePointsProp;
-                  if (ps.length === 0) return '';
-                  let d = `M ${ps[0].x} ${ps[0].y}`;
-                  for (let i = 1; i < ps.length - 1; i++) {
-                    const cur = ps[i];
-                    const next = ps[i + 1];
-                    d += ` Q ${cur.x} ${cur.y} ${(cur.x + next.x) / 2} ${(cur.y + next.y) / 2}`;
-                  }
-                  d += ` T ${ps[ps.length - 1].x} ${ps[ps.length - 1].y}`;
-                  return d;
-                })()}
-                fill="none"
-                stroke="var(--canvas-amber, #EC9F05)"
-                strokeWidth={2.6}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray="9 7"
-                className="rope-dragging"
-                pointerEvents="none"
-              />
-              {(() => {
-                const ps = rewireRopePointsProp;
-                const tip = ps[ps.length - 1];
-                const prev = ps[ps.length - 2] || ps[0];
-                const angle =
-                  (Math.atan2(tip.y - prev.y, tip.x - prev.x) * 180) /
-                  Math.PI;
-                const isValid = rewireDragOverNodeIdProp !== null;
-                return (
-                  <g
-                    transform={`translate(${tip.x}, ${tip.y}) rotate(${angle})`}
-                    pointerEvents="none"
-                  >
-                    {isValid ? (
-                      <g>
-                        <path
-                          d="M 0,0 L -12,-7"
-                          stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2.4}
-                          strokeLinecap="round"
-                          className="pincer-upper"
-                        />
-                        <path
-                          d="M 0,0 L -12,7"
-                          stroke="var(--canvas-amber, #EC9F05)"
-                          strokeWidth={2.4}
-                          strokeLinecap="round"
-                          className="pincer-lower"
-                        />
-                      </g>
-                    ) : (
-                      <polygon
-                        points="-10,-5 0,0 -10,5"
-                        fill="var(--canvas-amber, #EC9F05)"
-                      />
-                    )}
-                  </g>
-                );
-              })()}
-            </>
-          )}
+          <DragRope
+            points={ropePointsProp}
+            isValid={dragOverNodeId !== null}
+          />
+          <DragRope
+            points={rewireRopePointsProp}
+            isValid={rewireDragOverNodeIdProp !== null}
+          />
 
           {/* Custom children (e.g. placement ghosts) */}
           {children}
