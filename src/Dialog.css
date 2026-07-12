@@ -103,7 +103,7 @@
   font-family: inherit;
 }
 
-.dialog-input:focus {
+.dialog-input:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-subtle, rgba(0, 120, 212, 0.18));
 }

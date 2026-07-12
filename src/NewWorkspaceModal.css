@@ -487,6 +487,6 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.new-workspace-item:active {
-  transform: scale(0.98);
+:root[data-motion="full"] .new-workspace-item:active:not(:disabled) {
+  transform: scale(0.97);
 }

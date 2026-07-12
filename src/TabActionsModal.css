@@ -210,6 +210,6 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.tab-actions-item:active:not(:disabled) {
+:root[data-motion="full"] .tab-actions-item:active:not(:disabled) {
   transform: scale(0.97);
 }

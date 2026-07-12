@@ -267,6 +267,6 @@
   transition: background 0.1s, color 0.1s;
 }
 
-.session-actions-item:active:not(:disabled) {
+:root[data-motion="full"] .session-actions-item:active:not(:disabled) {
   transform: scale(0.97);
 }

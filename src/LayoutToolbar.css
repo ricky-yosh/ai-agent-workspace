@@ -25,7 +25,7 @@
   border-color: var(--text-muted);
 }
 
-.layout-toolbar select:focus {
+.layout-toolbar select:focus-visible {
   border-color: var(--accent);
 }
 
