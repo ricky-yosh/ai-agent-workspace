@@ -121,7 +121,7 @@
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-dim);
-  font-family: monospace;
+  font-family: var(--font-family-mono);
   user-select: text;
   word-break: break-all;
 }

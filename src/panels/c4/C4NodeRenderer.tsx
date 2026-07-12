@@ -38,7 +38,7 @@ export function C4NodeRenderer({ node, diagramData }: C4NodeRendererProps) {
         <pre
           style={{
             fontSize: 9,
-            fontFamily: "var(--font-mono, monospace)",
+            fontFamily: "var(--font-family-mono)",
             color: "var(--text-muted)",
             margin: 0,
             overflow: "hidden",

@@ -661,10 +661,10 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                           code: ({ children, className }) => {
                             const isBlock = Boolean(className);
                             if (isBlock) {
-                              return <code style={{ fontFamily: "monospace", fontSize: 11 }}>{children}</code>;
+                              return <code style={{ fontFamily: "var(--font-family-mono)", fontSize: 11 }}>{children}</code>;
                             }
                             return (
-                              <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "monospace", fontSize: 11 }}>
+                              <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "var(--font-family-mono)", fontSize: 11 }}>
                                 {children}
                               </code>
                             );

@@ -89,7 +89,7 @@ function useXtermTerminal(
         allowProposedApi: true,
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+        fontFamily: "var(--font-family-mono)",
         scrollback: 10000,
         smoothScrollDuration: 125,
         minimumContrastRatio: 4.5,

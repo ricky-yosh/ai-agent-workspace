@@ -43,7 +43,7 @@ export default function IssueModalPrototype() {
   const Comp = comps[variant] ?? VariantA;
 
   return (
-    <div style={{ padding: 32, fontFamily: "system-ui, sans-serif", maxWidth: 600, margin: "0 auto" }}>
+    <div style={{ padding: 32, fontFamily: "var(--font-family-sans)", maxWidth: 600, margin: "0 auto" }}>
       <h1 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Issue Modal Prototype</h1>
       <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
         Exploring keyboard-first interactions for creating/editing issues.

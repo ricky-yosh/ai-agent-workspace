@@ -607,7 +607,7 @@ export function CanvasRenderer({
             textAnchor="middle"
             fill="var(--text-muted)"
             fontSize={12}
-            fontFamily="var(--font-family, sans-serif)"
+            fontFamily="var(--font-family-sans)"
           >
             {edge.label}
           </text>
@@ -732,7 +732,7 @@ export function CanvasRenderer({
                     y={minY - 8}
                     fill="var(--canvas-accent)"
                     fontSize={12}
-                    fontFamily="var(--font-family, sans-serif)"
+                    fontFamily="var(--font-family-sans)"
                     fontWeight={500}
                     opacity={0.8}
                   >
@@ -910,7 +910,7 @@ export function CanvasRenderer({
                           color: "var(--text-primary)",
                           fontSize: 13,
                           lineHeight: 1.4,
-                          fontFamily: "var(--font-family, sans-serif)",
+                          fontFamily: "var(--font-family-sans)",
                           padding: 0,
                           margin: 0,
                           boxSizing: "border-box",

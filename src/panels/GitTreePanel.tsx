@@ -731,7 +731,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
         flexDirection: "column",
         background: "var(--panel-bg)",
         color: "var(--text-primary)",
-        fontFamily: "var(--font-family, sans-serif)",
+        fontFamily: "var(--font-family-sans)",
         fontSize: 13,
         overflow: "hidden",
       }}
@@ -1019,7 +1019,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                       flex: 1,
                       padding: "0 8px",
                       flexShrink: 0,
-                      fontFamily: "var(--font-mono, monospace)",
+                      fontFamily: "var(--font-family-mono)",
                       fontSize: 12,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -1129,7 +1129,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Hash:</span>
               <code
                 style={{
-                  fontFamily: "var(--font-mono, monospace)",
+                  fontFamily: "var(--font-family-mono)",
                   fontSize: 12,
                   color: "var(--text-primary)",
                   background: "var(--input-bg, rgba(128,128,128,0.1))",
@@ -1199,7 +1199,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               {detailLoading ? (
                 <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 0" }}>Loading...</div>
               ) : detailFiles.length > 0 ? (
-                <div style={{ fontSize: 12, fontFamily: "var(--font-mono, monospace)" }}>
+                <div style={{ fontSize: 12, fontFamily: "var(--font-family-mono)" }}>
                   {fileTreeView === "tree"
                     ? renderTreeEntries(detailFiles, 0, handleDetailFileClick)
                     : (

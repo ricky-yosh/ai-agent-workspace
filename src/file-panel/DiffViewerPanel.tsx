@@ -273,7 +273,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
               style={{
                 height: totalHeight,
                 position: "relative",
-                fontFamily: "var(--font-mono, monospace)",
+                fontFamily: "var(--font-family-mono)",
                 fontSize: 12,
                 lineHeight: "20px",
               }}

@@ -240,7 +240,7 @@ export function DiffRenderer({ diffText, language }: DiffRendererProps) {
   }
 
   return (
-    <div className="diff-renderer" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 12, lineHeight: `${LINE_HEIGHT}px` }}>
+    <div className="diff-renderer" style={{ fontFamily: "var(--font-family-mono)", fontSize: 12, lineHeight: `${LINE_HEIGHT}px` }}>
       {files.map((file) => (
         <DiffFileSection key={file.filePath} file={file} language={language ?? null} />
       ))}
@@ -260,7 +260,7 @@ function DiffFileSection({ file, language }: { file: DiffFile; language: ShikiLa
           position: "sticky",
           top: 0,
           zIndex: 1,
-          fontFamily: "var(--font-mono, monospace)",
+          fontFamily: "var(--font-family-mono)",
           fontSize: 12,
         }}
       >

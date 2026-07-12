@@ -96,7 +96,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
             overflowX: "auto",
             fontSize: 12,
             lineHeight: 1.5,
-            fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+            fontFamily: "var(--font-family-mono)",
             tabSize: 4,
           }}
           {...rest}
@@ -111,7 +111,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
           background: "rgba(255, 255, 255, 0.08)",
           borderRadius: 3,
           padding: "1px 5px",
-          fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+          fontFamily: "var(--font-family-mono)",
           fontSize: "0.9em",
         }}
         {...rest}

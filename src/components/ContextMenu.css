@@ -75,7 +75,7 @@
   box-shadow:
     0 8px 24px rgba(0, 0, 0, 0.55),
     0 0 0 1px rgba(124, 58, 237, 0.12);
-  font-family: var(--font-family, ui-monospace, "SF Mono", "Menlo", "Monaco", monospace);
+  font-family: var(--font-family-mono);
 }
 
 .context-menu--canvas .context-menu-item {

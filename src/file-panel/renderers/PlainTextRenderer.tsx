@@ -31,7 +31,7 @@ export function PlainTextRenderer({ content }: PlainTextRendererProps) {
               height: vItem.size,
               width: "100%",
               display: "flex",
-              fontFamily: "'Menlo', 'Monaco', 'Courier New', monospace",
+              fontFamily: "var(--font-family-mono)",
               fontSize: 12,
               lineHeight: "20px",
             }}

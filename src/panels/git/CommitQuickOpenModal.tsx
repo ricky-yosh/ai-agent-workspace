@@ -100,7 +100,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
             background: "transparent",
             color: "var(--text-primary)",
             fontSize: 14,
-            fontFamily: "var(--font-family, sans-serif)",
+            fontFamily: "var(--font-family-sans)",
             outline: "none",
           }}
         />
@@ -133,7 +133,7 @@ export function CommitQuickOpenModal({ matches, onSelect, onClose }: CommitQuick
               />
               <code
                 style={{
-                  fontFamily: "var(--font-mono, monospace)",
+                  fontFamily: "var(--font-family-mono)",
                   fontSize: 12,
                   color: "var(--text-muted)",
                 }}
