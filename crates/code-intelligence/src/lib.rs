@@ -378,7 +378,27 @@ impl<'a> IndexStore<'a> {
         symbols: &[ExtractedSymbol],
     ) -> Result<(), rusqlite::Error> {
         let now = chrono::Utc::now().timestamp();
+
+        let mut seen = std::collections::HashSet::new();
+        let mut deduped: Vec<&ExtractedSymbol> = Vec::with_capacity(symbols.len());
+        let mut duplicate_count = 0usize;
         for symbol in symbols {
+            let key = (symbol.symbol_name.clone(), symbol.line_number);
+            if seen.insert(key) {
+                deduped.push(symbol);
+            } else {
+                duplicate_count += 1;
+            }
+        }
+        if duplicate_count > 0 {
+            eprintln!(
+                "WARN code_intelligence: skipped {duplicate_count} duplicate(s) in {file_path} \
+                 (repo_path={repo_path}) — symbols with same (name, line_number) found in parser output"
+            );
+        }
+
+        self.conn.execute_batch("BEGIN")?;
+        for symbol in &deduped {
             let id = uuid::Uuid::new_v4().to_string();
             let symbol_type_str = match symbol.symbol_type {
                 SymbolType::Definition => "definition",
@@ -392,7 +412,7 @@ impl<'a> IndexStore<'a> {
                 .map(|v| serde_json::to_string(v).unwrap_or_default());
 
             self.conn.execute(
-                "INSERT INTO code_index (id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, content_fingerprint, data_json, containing_symbol, created_at, updated_at)
+                "INSERT OR REPLACE INTO code_index (id, repo_path, file_path, symbol_name, symbol_type, line_number, end_line_number, content_fingerprint, data_json, containing_symbol, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     id,
@@ -410,6 +430,7 @@ impl<'a> IndexStore<'a> {
                 ],
             )?;
         }
+        self.conn.execute_batch("COMMIT")?;
         Ok(())
     }
 
@@ -546,41 +567,122 @@ pub fn is_supported(file_path: &str) -> bool {
     )
 }
 
+/// Progress event emitted during indexing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexProgressEvent {
+    pub phase: String,
+    pub current: usize,
+    pub total: usize,
+    pub file_path: String,
+}
+
+/// Result returned when indexing completes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexProgressResult {
+    pub indexed: usize,
+    pub skipped: usize,
+    pub total: usize,
+}
+
 pub fn ensure_indexed(
     conn: &rusqlite::Connection,
     repo_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<IndexProgressResult, Box<dyn std::error::Error>> {
+    ensure_indexed_with_progress(conn, repo_path, |_| {}, None)
+}
+
+pub fn ensure_indexed_with_progress<F>(
+    conn: &rusqlite::Connection,
+    repo_path: &str,
+    on_progress: F,
+    cancel_flag: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<IndexProgressResult, Box<dyn std::error::Error>>
+where
+    F: Fn(IndexProgressEvent),
+{
     let store = IndexStore::new(conn);
     let indexer = CodeIndexer::new();
 
+    // Phase 1: scan — collect all supported file paths
+    let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
     for entry in WalkDir::new(repo_path) {
         let entry = entry?;
         if !entry.file_type().is_file() {
             continue;
         }
-        let path = entry.path();
-        let relative = path.strip_prefix(repo_path).unwrap_or(path);
+        let path = entry.path().to_path_buf();
+        let relative = path.strip_prefix(repo_path).unwrap_or(&path);
         let file_path = relative.to_string_lossy().to_string();
-
-        if !is_supported(&file_path) {
-            continue;
+        if is_supported(&file_path) {
+            file_paths.push(path);
         }
+    }
+    let total = file_paths.len();
+
+    on_progress(IndexProgressEvent {
+        phase: "scanning".into(),
+        current: 0,
+        total,
+        file_path: String::new(),
+    });
+
+    // Phase 2: index each file
+    let mut indexed = 0usize;
+    let mut skipped = 0usize;
+    for (i, path) in file_paths.iter().enumerate() {
+        if cancel_flag.map_or(false, |f| f.load(std::sync::atomic::Ordering::Relaxed)) {
+            on_progress(IndexProgressEvent {
+                phase: "cancelled".into(),
+                current: i,
+                total,
+                file_path: String::new(),
+            });
+            return Ok(IndexProgressResult { indexed, skipped, total });
+        }
+        let relative = path.strip_prefix(repo_path).unwrap_or(path);
+        let file_path_str = relative.to_string_lossy().to_string();
 
         let content = std::fs::read_to_string(path)?;
         let fingerprint = CodeIndexer::fingerprint(&content);
 
-        if let Some(stored) = store.get_fingerprint(repo_path, &file_path) {
+        if let Some(stored) = store.get_fingerprint(repo_path, &file_path_str) {
             if stored == fingerprint {
+                skipped += 1;
+                on_progress(IndexProgressEvent {
+                    phase: "indexing".into(),
+                    current: i + 1,
+                    total,
+                    file_path: file_path_str,
+                });
                 continue;
             }
         }
 
-        store.clear_file(repo_path, &file_path)?;
-        let symbols = indexer.parse_file(&file_path, &content);
-        store.insert_symbols(repo_path, &file_path, &fingerprint, &symbols)?;
+        store.clear_file(repo_path, &file_path_str)?;
+        let symbols = indexer.parse_file(&file_path_str, &content);
+        store.insert_symbols(repo_path, &file_path_str, &fingerprint, &symbols)?;
+        indexed += 1;
+
+        on_progress(IndexProgressEvent {
+            phase: "indexing".into(),
+            current: i + 1,
+            total,
+            file_path: file_path_str,
+        });
     }
 
-    Ok(())
+    on_progress(IndexProgressEvent {
+        phase: "complete".into(),
+        current: total,
+        total,
+        file_path: String::new(),
+    });
+
+    Ok(IndexProgressResult {
+        indexed,
+        skipped,
+        total,
+    })
 }
 
 #[cfg(test)]
@@ -590,20 +692,24 @@ mod tests {
 
     fn test_conn() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS code_index (
-            id TEXT PRIMARY KEY,
-            repo_path TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            symbol_name TEXT NOT NULL,
-            symbol_type TEXT NOT NULL,
-            line_number INTEGER NOT NULL,
-            end_line_number INTEGER,
-            content_fingerprint TEXT NOT NULL,
-            data_json TEXT,
-            containing_symbol TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );").unwrap();
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS code_index (
+                id TEXT PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                end_line_number INTEGER,
+                content_fingerprint TEXT NOT NULL,
+                data_json TEXT,
+                containing_symbol TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_code_index_repo_file_symbol_line
+                ON code_index(repo_path, file_path, symbol_name, line_number);
+        ").unwrap();
         conn
     }
 
@@ -1062,5 +1168,181 @@ function greet(name: string): void {
         assert_eq!(store.search_by_keyword(repo_path, "alpha").unwrap().len(), 1);
         assert_eq!(store.search_by_keyword(repo_path, "gamma").unwrap().len(), 1);
         assert_eq!(store.search_by_keyword(repo_path, "beta").unwrap().len(), 1);
+    }
+
+    fn assert_no_duplicate_symbols(file_path: &str, source: &str) {
+        let indexer = CodeIndexer::new();
+        let symbols = indexer.parse_file(file_path, source);
+        let mut seen = std::collections::HashSet::new();
+        let mut duplicates = Vec::new();
+        for s in &symbols {
+            let key = (s.symbol_name.clone(), s.line_number);
+            if !seen.insert(key.clone()) {
+                duplicates.push((key, s.symbol_type.clone()));
+            }
+        }
+        if !duplicates.is_empty() {
+            panic!(
+                "Duplicate symbols found in {}: {:#?}\nAll symbols: {:#?}",
+                file_path,
+                duplicates,
+                symbols
+                    .iter()
+                    .map(|s| (&s.symbol_name, s.line_number, &s.symbol_type))
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_file_no_duplicate_symbols_rust() {
+        let source = r#"
+use std::collections::HashMap;
+use std::io::{self, Write};
+
+#[derive(Debug)]
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+impl Point {
+    fn new(x: f64, y: f64) -> Self {
+        let dist = (x * x + y * y).sqrt();
+        println!("dist={}", dist);
+        Point { x, y }
+    }
+
+    fn origin() -> Self {
+        Self::new(0.0, 0.0)
+    }
+}
+
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+fn main() {
+    let p = Point::new(3.0, 4.0);
+    let mut map: HashMap<&str, i32> = HashMap::new();
+    map.insert("key", 42);
+    let v = vec![1, 2, 3];
+    println!("len={}", v.len());
+    helper(p);
+}
+
+fn helper(pt: Point) {
+    let result = pt.x + pt.y;
+    println!("{result}");
+}
+
+macro_rules! create_fn {
+    ($name:ident) => {
+        fn $name() { println!("macro"); }
+    };
+}
+
+create_fn!(generated_fn);
+
+trait Drawable {
+    fn draw(&self);
+    fn render(&self) {
+        self.draw();
+    }
+}
+"#;
+        assert_no_duplicate_symbols("test.rs", source);
+    }
+
+    #[test]
+    fn test_parse_file_no_duplicate_symbols_typescript() {
+        let source = r#"
+import { useState, useCallback } from "react";
+import type { ReactNode } from "react";
+
+interface ButtonProps {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+}
+
+class ComponentBase {
+    protected id: string;
+
+    constructor(id: string) {
+        this.id = id;
+    }
+
+    render(): ReactNode {
+        return null;
+    }
+}
+
+function useCounter(initial: number) {
+    const [count, setCount] = useState(initial);
+    const increment = useCallback(() => setCount(c => c + 1), []);
+    const decrement = useCallback(() => setCount(c => c - 1), []);
+    return { count, increment, decrement };
+}
+
+export function App() {
+    const { count, increment } = useCounter(0);
+    const label = `Count: ${count}`;
+    console.log(label);
+    return null;
+}
+
+export const helper = (x: number): number => {
+    return x * 2;
+};
+
+type Identity<T> = (value: T) => T;
+"#;
+        assert_no_duplicate_symbols("test.ts", source);
+    }
+
+    #[test]
+    fn test_insert_symbols_handles_duplicates_gracefully() {
+        let conn = test_conn();
+        let store = IndexStore::new(&conn);
+
+        let symbols = vec![
+            ExtractedSymbol {
+                symbol_name: "my_func".into(),
+                symbol_type: SymbolType::Definition,
+                line_number: 10,
+                end_line_number: Some(20),
+                data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
+            },
+            ExtractedSymbol {
+                symbol_name: "my_func".into(),
+                symbol_type: SymbolType::Definition,
+                line_number: 10,
+                end_line_number: Some(20),
+                data: Some(serde_json::json!({ "kind": "function" })),
+                containing_symbol: None,
+            },
+            ExtractedSymbol {
+                symbol_name: "other".into(),
+                symbol_type: SymbolType::Call,
+                line_number: 5,
+                end_line_number: None,
+                data: None,
+                containing_symbol: Some("main".into()),
+            },
+        ];
+
+        store.insert_symbols("/repo", "src/main.rs", "fp123", &symbols).unwrap();
+
+        let results = store.search_by_keyword("/repo", "my_func").unwrap();
+        assert_eq!(results.len(), 1, "duplicate (my_func,10) should be collapsed to one row");
+        assert_eq!(results[0].symbol_name, "my_func");
+
+        let results = store.search_by_keyword("/repo", "other").unwrap();
+        assert_eq!(results.len(), 1);
     }
 }
