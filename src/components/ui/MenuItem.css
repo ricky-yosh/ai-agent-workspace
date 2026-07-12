@@ -24,13 +24,31 @@
     transparent 100%
   );
 }
+.ui-menu-item:hover,
+.ui-bg-accent-hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent), transparent 90%) 0%,
+    color-mix(in oklch, var(--accent), transparent 96%) 60%,
+    transparent 100%
+  );
+}
 
 .ui-menu-item--active {
   background: rgba(0, 120, 212, 0.15);
 }
+.ui-menu-item--active,
+.ui-bg-accent-active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
 
 .ui-menu-item:focus-visible {
   box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
+  outline: none;
+}
+.ui-menu-item:focus-visible,
+.ui-focus-accent {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
   outline: none;
 }
 
@@ -76,6 +94,11 @@
 .ui-menu-item--confirmed {
   background: rgba(34, 197, 94, 0.12) !important;
   color: rgb(134, 239, 172);
+}
+.ui-menu-item--confirmed,
+.ui-confirmed {
+  background: var(--confirmed-bg, rgba(34, 197, 94, 0.12)) !important;
+  color: var(--confirmed-color, rgb(134, 239, 172));
 }
 
 .ui-menu-item--destructive {

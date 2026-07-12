@@ -1,6 +1,8 @@
 /* All color/layout tokens are set by applyTheme() in src/themes/index.ts.
    The :root block is intentionally empty — themes inject values at runtime. */
 
+@import "./components/ui/shared.css";
+
 * {
   margin: 0;
   padding: 0;

@@ -114,7 +114,8 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.issue-kbd {
+.issue-kbd,
+.ui-kbd.ui-kbd--sm {
   display: inline-flex;
   align-items: center;
   justify-content: center;

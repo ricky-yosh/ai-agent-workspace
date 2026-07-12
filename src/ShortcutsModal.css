@@ -55,7 +55,8 @@
   align-items: center;
 }
 
-.shortcuts-keys kbd {
+.shortcuts-keys kbd,
+.ui-kbd.ui-kbd--md {
   font-family: var(--font-family-sans);
   font-size: 12px;
   background: var(--bg-hover);
@@ -90,7 +91,8 @@
   flex-shrink: 0;
 }
 
-.shortcuts-footer kbd {
+.shortcuts-footer kbd,
+.ui-kbd.ui-kbd--sm {
   display: inline-flex;
   align-items: center;
   justify-content: center;

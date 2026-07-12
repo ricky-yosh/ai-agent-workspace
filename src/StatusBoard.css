@@ -200,7 +200,8 @@
   transform: scale(0.96);
 }
 
-.status-kbd {
+.status-kbd,
+.ui-kbd.ui-kbd--sm {
   display: inline-flex;
   align-items: center;
   font-family: inherit;
