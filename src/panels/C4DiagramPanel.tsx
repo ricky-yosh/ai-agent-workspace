@@ -13,111 +13,9 @@ import {
   type CanvasNode,
 } from "../components/CanvasRenderer";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-interface C4Diagram {
-  id: string;
-  repo_path: string;
-  name: string;
-  diagram_json: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface C4Node {
-  id: string;
-  label: string;
-  level: "context" | "container" | "component" | "code";
-  type: string;
-  parent?: string;
-  file_path?: string;
-  line_start?: number;
-  line_end?: number;
-  children_count?: number;
-  code_snippet?: string;
-  metadata?: Record<string, unknown>;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface C4Edge {
-  id: string;
-  source_id: string;
-  target_id: string;
-  label?: string;
-  type?: string;
-}
-
-interface C4Group {
-  id: string;
-  label: string;
-  level: string;
-  node_ids: string[];
-}
-
-interface C4DiagramData {
-  nodes: C4Node[];
-  edges: C4Edge[];
-  groups: C4Group[];
-}
-
-interface DrillEntry {
-  id: string;
-  label: string;
-  level: string;
-}
-
-interface IndexProgress {
-  phase: string;
-  current: number;
-  total: number;
-  file_path: string;
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function assignGridPositions(
-  nodes: C4Node[],
-  containerWidth: number,
-): C4Node[] {
-  if (nodes.length === 0) return nodes;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-  const spacingX = 220;
-  const spacingY = 160;
-  const startX = Math.max(50, (containerWidth - cols * spacingX) / 2);
-  return nodes.map((node, i) => ({
-    ...node,
-    x: startX + (i % cols) * spacingX,
-    y: 50 + Math.floor(i / cols) * spacingY,
-    width: 200,
-    height: 100,
-  }));
-}
-
-function parseDiagramJson(json: string): C4DiagramData | null {
-  try {
-    const parsed = JSON.parse(json);
-    return {
-      nodes: parsed.nodes ?? [],
-      edges: parsed.edges ?? [],
-      groups: parsed.groups ?? [],
-    };
-  } catch {
-    return null;
-  }
-}
-
-const LEVEL_ORDER = ["context", "container", "component", "code"] as const;
-
-function nextLevel(level: string): string | null {
-  const idx = LEVEL_ORDER.indexOf(level as (typeof LEVEL_ORDER)[number]);
-  if (idx < 0 || idx >= LEVEL_ORDER.length - 1) return null;
-  return LEVEL_ORDER[idx + 1];
-}
-
-// ── Component ──────────────────────────────────────────────────────────────
+import { nextLevel, assignGridPositions, parseDiagramJson, type C4Diagram, type C4DiagramData, type DrillEntry } from "./c4/types";
+import { useCodeIndexing } from "./c4/useCodeIndexing";
+import { C4NodeRenderer } from "./c4/C4NodeRenderer";
 
 function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
@@ -137,10 +35,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Indexing state
-  const [indexing, setIndexing] = useState(false);
-  const [indexProgress, setIndexProgress] = useState<IndexProgress | null>(null);
-  const [indexError, setIndexError] = useState<string | null>(null);
+  const { indexing, progress, error, startIndex, cancelIndex } = useCodeIndexing(repoPath);
 
   // Viewport
   const [offsetX, setOffsetX] = useState(0);
@@ -232,50 +127,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       fetchDiagrams();
     }, [fetchDiagrams]),
   );
-
-  useTauriEvent<IndexProgress & { repo_path: string }>(
-    "code-index-progress",
-    useCallback(
-      (payload) => {
-        if (payload.repo_path === repoPath) {
-          setIndexProgress({
-            phase: payload.phase,
-            current: payload.current,
-            total: payload.total,
-            file_path: payload.file_path,
-          });
-          if (payload.phase === "complete") {
-            setIndexing(false);
-          }
-        }
-      },
-      [repoPath],
-    ),
-  );
-
-  // ── Index handler ──────────────────────────────────────────────────────
-
-  const handleIndex = useCallback(async () => {
-    if (!repoPath) return;
-    setIndexing(true);
-    setIndexProgress(null);
-    setIndexError(null);
-    try {
-      await safeInvoke("index_code", { repoPath });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("Indexing failed:", message);
-      setIndexError(message);
-      setIndexing(false);
-    }
-  }, [repoPath]);
-
-  const handleCancelIndex = useCallback(async () => {
-    setIndexing(false);
-    setIndexProgress(null);
-    setIndexError(null);
-    await safeInvoke("cancel_index").catch(() => {});
-  }, []);
 
   // ── Parse diagram data when selected ───────────────────────────────────
 
@@ -406,114 +257,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     });
   }, []);
 
-  // ── Render node content ────────────────────────────────────────────────
-
   const renderNodeContent = useCallback(
-    (node: CanvasNode) => {
-      if (!diagramData) return null;
-      const c4Node = diagramData.nodes.find((n) => n.id === node.id);
-      if (!c4Node) return null;
-
-      if (c4Node.level === "code" && c4Node.code_snippet) {
-        return (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--canvas-accent-bright)",
-                marginBottom: 4,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {c4Node.label}
-            </div>
-            <pre
-              style={{
-                fontSize: 9,
-                fontFamily: "var(--font-mono, monospace)",
-                color: "var(--text-muted)",
-                margin: 0,
-                overflow: "hidden",
-                whiteSpace: "pre",
-                lineHeight: 1.3,
-                flex: 1,
-              }}
-            >
-              {c4Node.code_snippet.length > 200
-                ? c4Node.code_snippet.slice(0, 200) + "..."
-                : c4Node.code_snippet}
-            </pre>
-          </div>
-        );
-      }
-
-      const nl = nextLevel(c4Node.level);
-      const hasDrillableChildren =
-        nl &&
-        diagramData.nodes.some(
-          (n) =>
-            n.level === nl &&
-            (n.parent === c4Node.label || n.parent === c4Node.id),
-        );
-
-      return (
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: "var(--text-primary)",
-              textAlign: "center",
-              lineHeight: 1.3,
-              wordBreak: "break-word",
-            }}
-          >
-            {c4Node.label}
-          </div>
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--text-muted)",
-              textTransform: "capitalize",
-            }}
-          >
-            {c4Node.type || c4Node.level}
-          </div>
-          {hasDrillableChildren && (
-            <div
-              style={{
-                fontSize: 9,
-                color: "var(--canvas-accent)",
-                marginTop: 2,
-              }}
-            >
-              Click to drill down
-            </div>
-          )}
-        </div>
-      );
-    },
+    (node: CanvasNode) => <C4NodeRenderer node={node} diagramData={diagramData} />,
     [diagramData],
   );
 
@@ -605,7 +350,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       >
         <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>{"\u25C8"}</div>
 
-        {indexError && (
+        {error && (
           <div
             style={{
               background: "var(--bg-danger, rgba(239,68,68,0.1))",
@@ -619,7 +364,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               wordBreak: "break-word",
             }}
           >
-            {indexError}
+            {error}
           </div>
         )}
 
@@ -644,8 +389,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                   lineHeight: 1.4,
                 }}
               >
-                {indexProgress && indexProgress.total > 0
-                  ? `${indexProgress.current} of ${indexProgress.total} files`
+                {progress && progress.total > 0
+                  ? `${progress.current} of ${progress.total} files`
                   : "Scanning files..."}
               </div>
             </div>
@@ -663,8 +408,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               <div
                 style={{
                   width:
-                    indexProgress && indexProgress.total > 0
-                      ? `${(indexProgress.current / indexProgress.total) * 100}%`
+                    progress && progress.total > 0
+                      ? `${(progress.current / progress.total) * 100}%`
                       : "0%",
                   height: "100%",
                   background: "var(--canvas-accent)",
@@ -684,10 +429,10 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                 whiteSpace: "nowrap",
               }}
             >
-              {indexProgress?.file_path || ""}
+              {progress?.file_path || ""}
             </div>
 
-            <Button variant="secondary" size="sm" onClick={handleCancelIndex}>
+            <Button variant="secondary" size="sm" onClick={cancelIndex}>
               Cancel
             </Button>
           </>
@@ -716,7 +461,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               </div>
             </div>
 
-            <Button variant="primary" size="md" onClick={handleIndex}>
+            <Button variant="primary" size="md" onClick={startIndex}>
               Index Codebase
             </Button>
 
