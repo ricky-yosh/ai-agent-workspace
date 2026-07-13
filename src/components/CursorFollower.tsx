@@ -12,15 +12,14 @@ type CursorKind = "canvas" | "node" | "edgeRewire" | "placing" | "dragging";
 interface LabelSet {
   left: string;
   right: string;
-  shift: string;
 }
 
 const LABELS: Record<CursorKind, LabelSet> = {
-  canvas: { left: "", right: "Add", shift: "" },
-  node: { left: "Select", right: "Configure", shift: "Edge" },
-  edgeRewire: { left: "Rewire", right: "", shift: "" },
-  placing: { left: "Place", right: "Cancel", shift: "" },
-  dragging: { left: "Drag", right: "", shift: "" },
+  canvas: { left: "", right: "Add" },
+  node: { left: "Select", right: "Configure" },
+  edgeRewire: { left: "Rewire", right: "" },
+  placing: { left: "Place", right: "Cancel" },
+  dragging: { left: "Drag", right: "" },
 };
 
 export function CursorFollower({
@@ -44,7 +43,6 @@ export function CursorFollower({
   const dotRef = useRef<HTMLDivElement>(null);
   const labelLeftRef = useRef<HTMLSpanElement>(null);
   const labelRightRef = useRef<HTMLSpanElement>(null);
-  const labelShiftRef = useRef<HTMLSpanElement>(null);
   const iconLeftRef = useRef<SVGGElement>(null);
   const iconRightRef = useRef<SVGGElement>(null);
 
@@ -88,7 +86,6 @@ export function CursorFollower({
       const labels = LABELS[kind];
       setLabel(labelLeftRef.current, labels.left);
       setLabel(labelRightRef.current, labels.right);
-      setLabel(labelShiftRef.current, labels.shift);
       setIcon(iconLeftRef.current, labels.left ? 1 : 0.18);
       setIcon(iconRightRef.current, labels.right ? 1 : 0.18);
     },
@@ -243,12 +240,6 @@ export function CursorFollower({
             <path d="M3 11h18" />
           </svg>
           <span ref={labelRightRef} className="label" data-empty="true" />
-        </div>
-
-        {/* Shift column */}
-        <div className="col">
-          <span className="key">&#8679;</span>
-          <span ref={labelShiftRef} className="label" data-empty="true" />
         </div>
       </div>
     </>

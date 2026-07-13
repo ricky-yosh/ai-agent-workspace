@@ -57,28 +57,24 @@ const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5.0;
 
 
-
 // Handle hit-test constants
 const HIT_OUTWARD = 10;
 const HIT_INWARD = 2;
 
 function getConnectedNodeSides(node: CanvasNode, edges: CanvasEdge[]): Set<Side> {
-  const allConnected = edges.some(
-    e => e.source_node_id === node.id || e.target_node_id === node.id
-  );
-  if (allConnected) {
-    return new Set<Side>(['top', 'right', 'bottom', 'left']);
+  const connected = new Set<Side>();
+  for (const edge of edges) {
+    if (edge.source_node_id === node.id || edge.target_node_id === node.id) {
+      const { sourceSide, targetSide } = parseSides(edge.metadata_json);
+      if (edge.source_node_id === node.id && sourceSide) {
+        connected.add(sourceSide);
+      }
+      if (edge.target_node_id === node.id && targetSide) {
+        connected.add(targetSide);
+      }
+    }
   }
-  return new Set<Side>();
-}
-
-function handleCenter(side: Side, node: CanvasNode): { x: number; y: number } {
-  switch (side) {
-    case 'top': return { x: node.x + node.width / 2, y: node.y };
-    case 'bottom': return { x: node.x + node.width / 2, y: node.y + node.height };
-    case 'left': return { x: node.x, y: node.y + node.height / 2 };
-    case 'right': return { x: node.x + node.width, y: node.y + node.height / 2 };
-  }
+  return connected;
 }
 
 interface CanvasRendererProps {
@@ -837,7 +833,7 @@ export function CanvasRenderer({
 
                   {/* Side handles */}
                   {(['top', 'right', 'bottom', 'left'] as Side[]).map((side) => {
-                    const { x: cx, y: cy } = handleCenter(side, node);
+                    const { x: cx, y: cy } = geometrySideHandleCenter(node, side);
                     const isConnected = getConnectedNodeSides(node, edges).has(side);
                     const isSnapped = activeSnappedMidpoint !== null &&
                       Math.abs(activeSnappedMidpoint.x - cx) < 5 &&
@@ -863,8 +859,10 @@ export function CanvasRenderer({
                           style={{ pointerEvents: 'all', cursor: 'grab' }}
                           onPointerDown={(e: React.PointerEvent) => {
                             e.stopPropagation();
-                            e.preventDefault();
                             onHandleMouseDown?.(node.id, side);
+                          }}
+                          onMouseDown={(e: React.MouseEvent) => {
+                            e.stopPropagation();
                           }}
                         />
                         <path

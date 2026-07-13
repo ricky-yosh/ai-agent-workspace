@@ -1,18 +1,18 @@
 export type Side = "top" | "right" | "bottom" | "left";
 
-export interface Point {
+interface Point {
   x: number;
   y: number;
 }
 
-export interface Bounds {
+interface Bounds {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface IdObj {
+interface IdObj {
   id: string;
 }
 
@@ -51,6 +51,26 @@ export function facingSide(n: Bounds, otherCenter: Point): Side {
     : dy >= 0
       ? "bottom"
       : "top";
+}
+
+export function getEdgePoint(node: Bounds, tx: number, ty: number): Point {
+  const cx = node.x + node.width / 2;
+  const cy = node.y + node.height / 2;
+  const dx = tx - cx;
+  const dy = ty - cy;
+  const angle = Math.atan2(dy, dx);
+  const hw = node.width / 2;
+  const hh = node.height / 2;
+  const tanAngle = Math.abs(Math.tan(angle));
+  let ix: number, iy: number;
+  if (tanAngle * hw <= hh) {
+    ix = dx > 0 ? hw : -hw;
+    iy = ix * Math.tan(angle);
+  } else {
+    iy = dy > 0 ? hh : -hh;
+    ix = iy / Math.tan(angle);
+  }
+  return { x: cx + ix, y: cy + iy };
 }
 
 export function parseSides(
@@ -114,26 +134,6 @@ export function findNearestEdge(
     const ny = ddx / dist;
     const cpX = (srcCx + tgtCx) / 2 + nx * curvature;
     const cpY = (srcCy + tgtCy) / 2 + ny * curvature;
-
-    const getEdgePoint = (node: Bounds, tx: number, ty: number): Point => {
-      const ccx = node.x + node.width / 2;
-      const ccy = node.y + node.height / 2;
-      const edx = tx - ccx;
-      const edy = ty - ccy;
-      const angle = Math.atan2(edy, edx);
-      const hw = node.width / 2;
-      const hh = node.height / 2;
-      const tanAngle = Math.abs(Math.tan(angle));
-      let ix: number, iy: number;
-      if (tanAngle * hw <= hh) {
-        ix = edx > 0 ? hw : -hw;
-        iy = ix * Math.tan(angle);
-      } else {
-        iy = edy > 0 ? hh : -hh;
-        ix = iy / Math.tan(angle);
-      }
-      return { x: ccx + ix, y: ccy + iy };
-    };
 
     const p0 = getEdgePoint(sourceNode, cpX, cpY);
     const p2 = getEdgePoint(targetNode, cpX, cpY);

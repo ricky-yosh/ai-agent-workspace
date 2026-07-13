@@ -19,11 +19,6 @@ export interface ConnectionDragState {
   sourceNode: CanvasNode;
 }
 
-export interface SideInfo {
-  side: Side;
-  normal: { x: number; y: number };
-}
-
 export function useCanvasEdgeCreation(params: {
   nodes: CanvasNode[];
   selectedCanvasId: string | null;
@@ -41,6 +36,8 @@ export function useCanvasEdgeCreation(params: {
   startConnectionDrag: (nodeId: string, side: Side) => void;
   updateConnectionDrag: (canvasX: number, canvasY: number) => void;
   endConnectionDrag: (canvasX: number, canvasY: number) => void;
+  connectionDragRef: React.MutableRefObject<ConnectionDragState | null>;
+  dragOverNodeIdRef: React.MutableRefObject<string | null>;
 } {
   const { nodes, selectedCanvasId, showToast, setEdges, hoveredNodeId } = params;
 
@@ -60,6 +57,9 @@ export function useCanvasEdgeCreation(params: {
   const restLengthRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
+  const connectionDragRef = useRef<ConnectionDragState | null>(null);
+  const dragOverNodeIdRef = useRef<string | null>(null);
+  const justStartedRef = useRef(false);
 
   const startAnimationLoop = useCallback(() => {
     const animate = (time: number) => {
@@ -122,12 +122,22 @@ export function useCanvasEdgeCreation(params: {
         handleCanvasY: hc.y,
         sourceNode: node,
       });
+      connectionDragRef.current = {
+        sourceNodeId: node.id,
+        sourceSide: side,
+        handleCanvasX: hc.x,
+        handleCanvasY: hc.y,
+        sourceNode: node,
+      };
       setSourceDir(normal);
       setTargetDir(null);
       setRopeTarget({ x: hc.x, y: hc.y });
       setRopePoints([...rope]);
       setDragOverNodeId(null);
       setSnappedMidpoint(null);
+
+      dragOverNodeIdRef.current = null;
+      justStartedRef.current = true;
 
       startAnimationLoop();
     },
@@ -160,19 +170,30 @@ export function useCanvasEdgeCreation(params: {
       setTargetDir(tgtDir);
       setSnappedMidpoint(snapped);
       setDragOverNodeId(hoveredNodeId);
+      dragOverNodeIdRef.current = hoveredNodeId;
     },
     [hoveredNodeId, nodes],
   );
 
   const endConnectionDrag = useCallback(
     (_canvasX: number, _canvasY: number) => {
+      const drag = connectionDragRef.current;
+      const sourceNodeId = drag?.sourceNodeId;
+      const targetNodeId = dragOverNodeIdRef.current;
+
+      if (justStartedRef.current) {
+        justStartedRef.current = false;
+        if (!targetNodeId) {
+          return;
+        }
+      }
+
       stopAnimationLoop();
 
-      const drag = connectionDrag;
-      const sourceNodeId = drag?.sourceNodeId;
-      const targetNodeId = dragOverNodeId;
-
       const reset = () => {
+        connectionDragRef.current = null;
+        dragOverNodeIdRef.current = null;
+        justStartedRef.current = false;
         setConnectionDrag(null);
         setRopeTarget(null);
         setRopePoints(null);
@@ -227,8 +248,6 @@ export function useCanvasEdgeCreation(params: {
       }
     },
     [
-      connectionDrag,
-      dragOverNodeId,
       nodes,
       selectedCanvasId,
       showToast,
@@ -254,5 +273,7 @@ export function useCanvasEdgeCreation(params: {
     startConnectionDrag,
     updateConnectionDrag,
     endConnectionDrag,
+    connectionDragRef,
+    dragOverNodeIdRef,
   };
 }

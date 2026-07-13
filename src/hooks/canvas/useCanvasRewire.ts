@@ -8,6 +8,7 @@ import {
   SIDE_NORMAL,
   nodeCenter,
   facingSide,
+  getEdgePoint,
 } from "../../canvas/geometry";
 
 export interface RewireState {
@@ -35,6 +36,8 @@ export function useCanvasRewire(params: {
   startRewire: (edgeId: string, endX: number, endY: number) => void;
   updateRewire: (canvasX: number, canvasY: number) => void;
   endRewire: (canvasX: number, canvasY: number) => void;
+  rewireRef: React.MutableRefObject<RewireState | null>;
+  rewireDragOverNodeIdRef: React.MutableRefObject<string | null>;
 } {
   const { nodes, edges, selectedCanvasId, showToast, setEdges, hoveredNodeId } = params;
 
@@ -53,6 +56,8 @@ export function useCanvasRewire(params: {
   const rewireRestLengthRef = useRef(0);
   const rewireRafRef = useRef<number | null>(null);
   const rewireLastTimeRef = useRef<number>(0);
+  const rewireRef = useRef<RewireState | null>(null);
+  const rewireDragOverNodeIdRef = useRef<string | null>(null);
 
   const startAnimationLoop = useCallback(() => {
     const animate = (time: number) => {
@@ -89,29 +94,6 @@ export function useCanvasRewire(params: {
     }
     rewireLastTimeRef.current = 0;
   }, []);
-
-  const getEdgePoint = useCallback(
-    (node: CanvasNode, tx: number, ty: number) => {
-      const cx = node.x + node.width / 2;
-      const cy = node.y + node.height / 2;
-      const dxx = tx - cx;
-      const dyy = ty - cy;
-      const angle = Math.atan2(dyy, dxx);
-      const hw = node.width / 2;
-      const hh = node.height / 2;
-      const tanAngle = Math.abs(Math.tan(angle));
-      let ix: number, iy: number;
-      if (tanAngle * hw <= hh) {
-        ix = dxx > 0 ? hw : -hw;
-        iy = ix * Math.tan(angle);
-      } else {
-        iy = dyy > 0 ? hh : -hh;
-        ix = iy / Math.tan(angle);
-      }
-      return { x: cx + ix, y: cy + iy };
-    },
-    [],
-  );
 
   const startRewire = useCallback(
     (edgeId: string, endX: number, endY: number) => {
@@ -160,6 +142,13 @@ export function useCanvasRewire(params: {
         sourceX: sourceEnd.x,
         sourceY: sourceEnd.y,
       });
+      rewireRef.current = {
+        edgeId,
+        sourceNodeId: edge.source_node_id,
+        originalTargetNodeId: edge.target_node_id,
+        sourceX: sourceEnd.x,
+        sourceY: sourceEnd.y,
+      };
       setRewireSourceDir(srcNormal);
       setRewireTargetDir(null);
       setRewireRopePoints([...rope]);
@@ -168,7 +157,7 @@ export function useCanvasRewire(params: {
 
       startAnimationLoop();
     },
-    [nodes, edges, getEdgePoint, startAnimationLoop],
+    [nodes, edges, startAnimationLoop],
   );
 
   const updateRewire = useCallback(
@@ -195,6 +184,7 @@ export function useCanvasRewire(params: {
       setRewireTargetDir(tgtDir);
       setRewireSnappedMidpoint(snapped);
       setRewireDragOverNodeId(hoveredNodeId);
+      rewireDragOverNodeIdRef.current = hoveredNodeId;
     },
     [hoveredNodeId, nodes],
   );
@@ -203,10 +193,12 @@ export function useCanvasRewire(params: {
     (_canvasX: number, _canvasY: number) => {
       stopAnimationLoop();
 
-      const state = rewire;
-      const targetNodeId = rewireDragOverNodeId;
+      const state = rewireRef.current;
+      const targetNodeId = rewireDragOverNodeIdRef.current;
 
       const reset = () => {
+        rewireRef.current = null;
+        rewireDragOverNodeIdRef.current = null;
         setRewire(null);
         setRewireRopePoints(null);
         setRewireDragOverNodeId(null);
@@ -259,8 +251,6 @@ export function useCanvasRewire(params: {
       }
     },
     [
-      rewire,
-      rewireDragOverNodeId,
       nodes,
       selectedCanvasId,
       showToast,
@@ -285,5 +275,7 @@ export function useCanvasRewire(params: {
     startRewire,
     updateRewire,
     endRewire,
+    rewireRef,
+    rewireDragOverNodeIdRef,
   };
 }
