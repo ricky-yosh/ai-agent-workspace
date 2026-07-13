@@ -27,6 +27,7 @@ import {
   useCanvasRewire,
 } from "../hooks/canvas";
 import "../canvas/canvas-animations.css";
+import "./VisualCanvasPanel.css";
 
 interface VisualCanvas {
   id: string;
@@ -110,6 +111,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const {
     connectionDrag, ropePoints, dragOverNodeId, snappedMidpoint,
     startConnectionDrag, updateConnectionDrag, endConnectionDrag,
+    connectionDragRef,
   } = useCanvasEdgeCreation({
     nodes, selectedCanvasId, showToast, setEdges,
     hoveredNodeId,
@@ -119,6 +121,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const {
     rewire, rewireRopePoints, rewireDragOverNodeId, rewireSnappedMidpoint,
     startRewire, updateRewire, endRewire,
+    rewireRef,
   } = useCanvasRewire({
     nodes, edges, selectedCanvasId, showToast, setEdges,
     hoveredNodeId,
@@ -146,6 +149,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     nodes, selectedNodeIds, zoom, setNodes,
   });
 
+  const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
+    if (connectionDragRef.current) return;
+    dragHandleNodeMouseDown(nodeId, e);
+  }, [connectionDragRef, dragHandleNodeMouseDown]);
+
   // Clear selection when switching canvases
   useEffect(() => {
     setSelectedNodeIds(new Set());
@@ -170,16 +178,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     groupId?: string;
   } | null>(null);
 
-  // ── Node drag with edge creation routing ────────────────────────────────
-
-  // Handle node mouse down — directly trigger drag
-  const handleNodeMouseDown = useCallback((
-    nodeId: string,
-    e: React.MouseEvent
-  ) => {
-    dragHandleNodeMouseDown(nodeId, e);
-  }, [dragHandleNodeMouseDown]);
-
   // Handle mouse move on canvas (dispatcher)
   const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
     // Handle placement mode (ghost preview)
@@ -189,13 +187,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
 
     // Handle connection drag
-    if (connectionDrag) {
+    if (connectionDragRef.current) {
       updateConnectionDrag(canvasX, canvasY);
       return;
     }
 
     // Handle rewire drag
-    if (rewire) {
+    if (rewireRef.current) {
       updateRewire(canvasX, canvasY);
       return;
     }
@@ -208,7 +206,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
     if (!dragState) return;
     handleDragMove(e.clientX, e.clientY);
-  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, placementMode, connectionDrag, updateConnectionDrag, rewire, updateRewire]);
+  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, placementMode, connectionDragRef, updateConnectionDrag, rewireRef, updateRewire]);
 
   // Handle mouse up to end dragging
   const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
@@ -218,13 +216,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
 
     // Complete connection drag if active
-    if (connectionDrag) {
+    if (connectionDragRef.current) {
       endConnectionDrag(canvasX, canvasY);
       return;
     }
 
     // Complete rewire if active
-    if (rewire) {
+    if (rewireRef.current) {
       endRewire(canvasX, canvasY);
       return;
     }
@@ -268,7 +266,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         }
       }
     }
-  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, handleDragEnd, connectionDrag, endConnectionDrag, rewire, endRewire]);
+  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, handleDragEnd, connectionDragRef, endConnectionDrag, rewireRef, endRewire]);
 
   // ── Data fetching ──────────────────────────────────────────────────────
 
@@ -672,6 +670,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       }
 
       if (e.key === "Escape") {
+        // Cancel active connection drag
+        if (connectionDragRef.current) {
+          endConnectionDrag(0, 0);
+          return;
+        }
         // Cancel placement mode if active
         if (placementMode) {
           setPlacementMode(null);
@@ -815,7 +818,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   if (loading && canvases.length === 0) {
     return (
-      <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+      <div className="canvas-loading">
         Loading canvases...
       </div>
     );
@@ -823,7 +826,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   if (error) {
     return (
-      <div style={{ padding: 16, color: "var(--danger)", fontSize: 13 }}>
+      <div className="canvas-error">
         {error}
       </div>
     );
@@ -839,19 +842,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       return (
         <div
           tabIndex={0}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "100%",
-            gap: 16,
-            padding: 16,
-            color: "var(--text-muted)",
-            fontSize: 13,
-            outline: "none",
-            textAlign: "center",
-          }}
+          className="canvas-empty-state"
           onKeyDown={(e) => {
             if (e.key === "n" || e.key === "N") {
               e.preventDefault();
@@ -859,15 +850,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             }
           }}
         >
-          <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>&#9633;</div>
+          <div className="canvas-empty-state__icon">&#9633;</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>No canvases yet</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 220, lineHeight: 1.4 }}>
+            <div className="canvas-empty-state__title">No canvases yet</div>
+            <div className="canvas-empty-state__desc">
               Create one to organize your ideas visually
             </div>
           </div>
           <Button variant="primary" size="md" onClick={() => setCanvasModalOpen({ mode: "create" })}>
-            <Plus size={14} /> New canvas <kbd style={{ display: "inline-flex", alignItems: "center", fontFamily: "inherit", fontSize: 10, padding: "1px 4px", background: "rgba(0,0,0,0.2)", borderRadius: 3, marginLeft: 4, lineHeight: 1.2 }}>n</kbd>
+            <Plus size={14} /> New canvas <kbd className="canvas-empty-state__kbd">n</kbd>
           </Button>
           {sessionId && (
             <CanvasModal
@@ -885,7 +876,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       <div
         ref={canvasListRef}
         tabIndex={0}
-        style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box", outline: "none" }}
+        className="canvas-list"
         onKeyDown={(e) => {
           if (e.key === "n" || e.key === "N") {
             e.preventDefault();
@@ -893,8 +884,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           }
         }}
       >
-        <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="canvas-list__toolbar">
+          <div className="canvas-list__search-wrap">
             <SearchBar
               ref={canvasFilterInputRef}
               value={canvasFilterQuery}
@@ -903,7 +894,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               trailing={
                 canvasFilterQuery ? (
                   <>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    <span className="canvas-filter-count">
                       {filteredCanvases.length}/{canvases.length}
                     </span>
                     <Button
@@ -929,7 +920,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
           </Button>
         </div>
         {filteredCanvases.length === 0 ? (
-          <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
+          <div className="canvas-list__empty">
             {canvasFilterQuery ? "No matching canvases" : "No canvases yet"}
           </div>
         ) : (
@@ -946,20 +937,13 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                 delay: idx * 0.03,
                 ease: [0.2, 0, 0, 1],
               }}
-              style={{
-                padding: "8px 12px",
-                marginBottom: 4,
-                borderRadius: 6,
-                border: "1px solid var(--border)",
-                background: "var(--bg-secondary)",
-                cursor: "pointer",
-              }}
+              className="canvas-card"
               onClick={() => setSelectedCanvasId(canvas.id)}
             >
-              <div style={{ fontWeight: 500, fontSize: 13 }}>
+              <div className="canvas-card__title">
                 {canvas.name}
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+              <div className="canvas-card__date">
                 Created {new Date(canvas.created_at).toLocaleDateString()}
               </div>
             </motion.div>
@@ -997,17 +981,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     : edges;
 
   return (
-    <div className="visual-canvas-panel" style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
+    <div className="visual-canvas-panel">
 
 
       {/* Header with back button */}
-      <div style={{
-        padding: "8px 12px",
-        borderBottom: "1px solid var(--border)",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-      }}>
+      <div className="canvas-header">
         <Button
           variant="ghost"
           size="sm"
@@ -1015,11 +993,11 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         >
           &larr;
         </Button>
-        <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
+        <div className="canvas-header__title">
           {selectedCanvas?.name || "Canvas"}
         </div>
         {/* Zoom indicator and reset */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)" }}>
+        <div className="canvas-header__zoom">
           <span>{Math.round(zoom * 100)}%</span>
           <Button
             variant="ghost"
@@ -1047,15 +1025,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
       {/* Tag filter bar */}
       {uniqueTags.length > 0 && (
-        <div style={{
-          padding: "6px 12px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flexWrap: "wrap",
-        }}>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>
+        <div className="canvas-tag-bar">
+          <span className="canvas-tag-bar__label">
             Filter:
           </span>
           <Button
@@ -1127,14 +1098,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               width={node.width - 16}
               height={18}
             >
-              <div
-                style={{
-                  display: "flex",
-                  gap: 4,
-                  flexWrap: "nowrap",
-                  overflow: "hidden",
-                }}
-              >
+              <div className="canvas-tags-row">
                 {nodeTags.slice(0, 3).map((t) => {
                   const isNew = newlyAddedTagIds.has(t.id);
                   if (isNew) {
@@ -1152,11 +1116,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
                   return <Badge key={t.id} size="sm" variant="default">{t.tag}</Badge>;
                 })}
                 {nodeTags.length > 3 && (
-                  <span style={{
-                    fontSize: 9,
-                    color: "var(--text-muted)",
-                    alignSelf: "center",
-                  }}>
+                  <span className="canvas-tag-overflow">
                     +{nodeTags.length - 3}
                   </span>
                 )}
@@ -1240,80 +1200,42 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
       {/* Selection count indicator */}
       {selectedNodeIds.size > 1 && (
-        <div
-          style={{
-            position: "absolute",
-            top: 56,
-            right: 12,
-            padding: "4px 10px",
-            borderRadius: 6,
-            background: "var(--canvas-accent)",
-            color: "#fff",
-            fontSize: 11,
-            fontWeight: 500,
-            zIndex: 10,
-          }}
-        >
+        <div className="canvas-selection-count">
           {selectedNodeIds.size} selected
         </div>
       )}
 
       {/* Undo/Redo badge */}
       {(undoStack.length > 0 || redoStack.length > 0) && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 12,
-            left: 12,
-            display: "flex",
-            gap: 6,
-            zIndex: 10,
-          }}
-        >
-          <motion.button
-            initial={false}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+        <div className="canvas-undo-bar">
+          <Button
+            as={motion.button as React.ElementType}
+            className="canvas-undo-btn"
             onClick={handleUndo}
             disabled={undoStack.length === 0}
-            style={{
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: undoStack.length > 0 ? "var(--bg-secondary)" : "var(--bg-primary)",
-              color: undoStack.length > 0 ? "var(--text-primary)" : "var(--text-muted)",
-              fontSize: 11,
-              cursor: undoStack.length > 0 ? "pointer" : "not-allowed",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
+            {...({
+              initial: false,
+              animate: { scale: 1, opacity: 1 },
+              transition: { type: "spring", stiffness: 400, damping: 25 },
+            } as Record<string, unknown>)}
           >
-            <span style={{ fontSize: 13 }}>&#8630;</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{undoStack.length}</span>
-          </motion.button>
-          <motion.button
-            initial={false}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            <span className="canvas-undo-btn__icon">&#8630;</span>
+            <span className="canvas-undo-btn__count">{undoStack.length}</span>
+          </Button>
+          <Button
+            as={motion.button as React.ElementType}
+            className="canvas-undo-btn"
             onClick={handleRedo}
             disabled={redoStack.length === 0}
-            style={{
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: redoStack.length > 0 ? "var(--bg-secondary)" : "var(--bg-primary)",
-              color: redoStack.length > 0 ? "var(--text-primary)" : "var(--text-muted)",
-              fontSize: 11,
-              cursor: redoStack.length > 0 ? "pointer" : "not-allowed",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
+            {...({
+              initial: false,
+              animate: { scale: 1, opacity: 1 },
+              transition: { type: "spring", stiffness: 400, damping: 25 },
+            } as Record<string, unknown>)}
           >
-            <span style={{ fontSize: 13 }}>&#8631;</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{redoStack.length}</span>
-          </motion.button>
+            <span className="canvas-undo-btn__icon">&#8631;</span>
+            <span className="canvas-undo-btn__count">{redoStack.length}</span>
+          </Button>
         </div>
       )}
 
@@ -1325,22 +1247,7 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            style={{
-              position: "absolute",
-              bottom: 12,
-              left: "50%",
-              transform: "translateX(-50%)",
-              padding: "6px 14px",
-              borderRadius: 8,
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border)",
-              color: "var(--text-primary)",
-              fontSize: 12,
-              fontWeight: 500,
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
-              zIndex: 20,
-              whiteSpace: "nowrap",
-            }}
+            className="canvas-toast"
           >
             {toast}
           </motion.div>

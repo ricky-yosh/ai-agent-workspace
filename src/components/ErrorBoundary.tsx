@@ -1,5 +1,6 @@
 import { Button } from "./ui";
 import { Component, type ReactNode } from "react";
+import "./ErrorBoundary.css";
 
 interface Props {
   children: ReactNode;
@@ -37,24 +38,14 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          padding: 24,
-          color: "var(--text-secondary)",
-          background: "var(--bg-primary)",
-          gap: 12,
-        }}>
-          <div style={{ fontSize: 14, color: "oklch(0.56 0.195 28.8)", fontWeight: 600 }}>
+        <div className="error-boundary">
+          <div className="error-boundary__title">
             {this.props.name ? `${this.props.name} crashed` : "Something went wrong"}
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 400, textAlign: "center" }}>
+          <div className="error-boundary__message">
             {this.state.error?.message ?? "An unexpected error occurred"}
           </div>
-          <Button variant="primary" size="sm" onClick={this.handleReset} style={{ marginTop: 8 }}>
+          <Button variant="primary" size="sm" onClick={this.handleReset} className="error-boundary__btn">
             Try again
           </Button>
         </div>
