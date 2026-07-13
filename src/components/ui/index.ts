@@ -18,3 +18,5 @@ export { Text } from "./Text";
 export type { TextProps } from "./Text";
 export { Heading } from "./Heading";
 export type { HeadingProps } from "./Heading";
+export { Select } from "./Select";
+export type { SelectProps, SelectOption } from "./Select";

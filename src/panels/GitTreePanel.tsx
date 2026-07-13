@@ -13,7 +13,7 @@ import { parseNumstatToTree } from "./git/fileTreeParser";
 import type { FileTreeEntry } from "./git/fileTreeParser";
 import { CommitQuickOpenModal, type CommitQuickMatch } from "./git/CommitQuickOpenModal";
 import { LANE_WIDTH, ROW_HEIGHT, Lane, Connector, Dot, HeadRing } from "./git/gitGraphSvg";
-import { Button, CopyButton } from "../components/ui";
+import { Button, CopyButton, Select } from "../components/ui";
 import { X } from "lucide-react";
 import SearchBar from "../components/SearchBar";
 
@@ -761,29 +761,16 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
             placeholder="Filter commits…"
             trailing={
               <>
-                {/* NOTE: <select> not migrated — no Select primitive exists */}
-                <select
+                <Select
+                  variant="minimal"
                   value={searchField}
-                  onChange={(e) =>
-                    setSearchField(e.target.value as "keyword" | "author" | "date")
-                  }
-                  style={{
-                    background: "transparent",
-                    color: "var(--text-muted)",
-                    border: "none",
-                    padding: 0,
-                    fontSize: 11,
-                    cursor: "pointer",
-                    appearance: "none",
-                    WebkitAppearance: "none",
-                    outline: "none",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  <option value="keyword">Message</option>
-                  <option value="author">Author</option>
-                  <option value="date">Date range</option>
-                </select>
+                  onChange={(v) => setSearchField(v as "keyword" | "author" | "date")}
+                  options={[
+                    { value: "keyword", label: "Message" },
+                    { value: "author", label: "Author" },
+                    { value: "date", label: "Date range" },
+                  ]}
+                />
                 {searchQuery && (
                   <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                     {rows.length}
