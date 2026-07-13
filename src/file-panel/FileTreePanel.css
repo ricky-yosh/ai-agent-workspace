@@ -85,7 +85,7 @@
 }
 
 .ft-row--active {
-  background: rgba(56, 139, 253, 0.15) !important;
+  background: color-mix(in oklch, var(--accent), transparent 85%) !important;
   color: oklch(0.68 0.13 245);
 }
 

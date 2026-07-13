@@ -8,7 +8,7 @@ interface TemplateMiniatureProps {
 
 const PANEL_COLORS = [
   "rgba(124, 58, 237, 0.25)",
-  "rgba(56, 139, 253, 0.25)",
+  "color-mix(in oklch, var(--accent), transparent 75%)",
   "rgba(39, 174, 96, 0.25)",
   "rgba(242, 153, 74, 0.25)",
   "rgba(155, 89, 182, 0.25)",

@@ -179,7 +179,7 @@ export default function VariantA({ open, onClose, isEdit }: Props) {
               <div key={l.value}
                 onClick={() => { setLabel(l.value); setSubPage(null); }}
                 onMouseEnter={() => setLabelPickerIdx(i)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 6, cursor: "pointer", background: i === labelPickerIdx ? "rgba(0,120,212,0.15)" : "transparent", fontSize: 13 }}>
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 6, cursor: "pointer", background: i === labelPickerIdx ? "color-mix(in oklch, var(--accent), transparent 85%)" : "transparent", fontSize: 13 }}>
                 <span style={{ fontSize: 11, width: 16, color: "var(--text-muted)", textAlign: "right" }}>{l.key}</span>
                 <span style={{ padding: "2px 10px", borderRadius: 4, background: l.bg, color: l.fg, fontSize: 12, fontWeight: label === l.value ? 600 : 400 }}>{l.value}</span>
                 {label === l.value && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>current</span>}
@@ -201,7 +201,7 @@ export default function VariantA({ open, onClose, isEdit }: Props) {
             {actions.map((a, i) => (
               <div key={a.id}
                 onClick={() => { setActiveIdx(i); if (a.id === "delete") { if (!confirmingDelete) setConfirmingDelete(true); else onClose(); } else { openSubPage(a.id); } }}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 6, cursor: "pointer", background: i === activeIdx ? "rgba(0,120,212,0.15)" : "transparent", color: a.destructive ? "var(--danger)" : "var(--text-primary)", fontSize: 13 }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 6, cursor: "pointer", background: i === activeIdx ? "color-mix(in oklch, var(--accent), transparent 85%)" : "transparent", color: a.destructive ? "var(--danger)" : "var(--text-primary)", fontSize: 13 }}
                 onMouseEnter={() => setActiveIdx(i)}>
                 <a.icon size={14} style={{ color: a.destructive ? deleteCss : "var(--text-muted)", flexShrink: 0 }} />
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

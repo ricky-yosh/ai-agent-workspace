@@ -203,7 +203,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
                 fontSize: 12,
                 color: "var(--accent)",
                 borderRadius: 4,
-                background: "rgba(56, 132, 255, 0.1)",
+                background: "color-mix(in oklch, var(--accent), transparent 90%)",
               }}
             >
               {externalDiff.title}
@@ -292,7 +292,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
                         top: vRow.index * 20,
                         height: 20,
                         width: "100%",
-                        background: "rgba(56, 132, 255, 0.08)",
+                        background: "color-mix(in oklch, var(--accent), transparent 92%)",
                         color: "var(--text-muted)",
                         fontWeight: 600,
                         fontSize: 12,
@@ -326,7 +326,7 @@ function DiffViewerPanel({ panelType: _panelType }: PanelProps) {
                   signColor = "var(--diff-del-text)";
                 } else if (isHunkHeader) {
                   typeClass = "hunk-header";
-                  bg = "rgba(56, 132, 255, 0.08)";
+                  bg = "color-mix(in oklch, var(--accent), transparent 92%)";
                 }
 
                 const sign = isAddition ? "+" : isDeletion ? "-" : " ";

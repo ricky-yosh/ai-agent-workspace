@@ -353,7 +353,7 @@ function MainArea({ toggleZoomRef, panelActionsRef, openNewWorkspaceRef, openTab
         {loading && (
           <div style={{
             position: 'absolute', inset: 0, zIndex: "var(--z-overlay)",
-            background: 'rgba(18, 18, 18, 0.8)',
+            background: 'color-mix(in oklch, var(--bg-primary), transparent 20%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--text-muted)', fontSize: 14,
           }}>

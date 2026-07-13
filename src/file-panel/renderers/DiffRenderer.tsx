@@ -145,12 +145,12 @@ const STYLES: Record<DiffLineType, React.CSSProperties> = {
     color: "inherit",
   },
   "hunk-header": {
-    background: "rgba(56, 132, 255, 0.08)",
+    background: "color-mix(in oklch, var(--accent), transparent 92%)",
     color: "var(--text-muted)",
     fontStyle: "italic",
   },
   "file-header": {
-    background: "rgba(56, 132, 255, 0.08)",
+    background: "color-mix(in oklch, var(--accent), transparent 92%)",
     color: "var(--text-muted)",
     fontWeight: 600,
   },

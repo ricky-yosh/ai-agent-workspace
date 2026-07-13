@@ -89,7 +89,7 @@ export default function VariantC({ open, onClose, isEdit }: Props) {
 
       <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
         {chips.map((c, i) => (
-          <div key={c.id} onClick={() => { setMode("chips"); setChipIdx(i); }} tabIndex={-1} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6, cursor: "pointer", background: mode === "chips" && chipIdx === i ? "rgba(0,120,212,0.15)" : "var(--bg-panel)", border: mode === "chips" && chipIdx === i ? "1px solid var(--accent)" : "1px solid var(--border)", fontSize: 11, outline: "none" }}>
+          <div key={c.id} onClick={() => { setMode("chips"); setChipIdx(i); }} tabIndex={-1} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 6, cursor: "pointer", background: mode === "chips" && chipIdx === i ? "color-mix(in oklch, var(--accent), transparent 85%)" : "var(--bg-panel)", border: mode === "chips" && chipIdx === i ? "1px solid var(--accent)" : "1px solid var(--border)", fontSize: 11, outline: "none" }}>
             <c.icon size={12} style={{ color: "var(--text-muted)" }} />
             <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>{c.label}:</span>
             {editingChip === c.id ? (
