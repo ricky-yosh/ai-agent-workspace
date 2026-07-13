@@ -8,7 +8,7 @@ import { initMotion, type MotionPreference, resolveMotion, applyMotion, osPrefer
 import { applyTheme, type ThemeName } from "./themes";
 import { setShikiTheme } from "./file-panel/shikiSingleton";
 import "./Preferences.css";
-import { Button, Input } from "./components/ui";
+import { Button, Input, SegmentedControl } from "./components/ui";
 
 interface Preset {
   label: string;
@@ -376,28 +376,17 @@ function PreferencesForm() {
 
   return (
     <>
-      <div className="tabs">
-        <Button
-          variant={activeTab === "external-tools" ? "primary" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("external-tools")}
-        >
-          External Tools
-        </Button>
-        <Button
-          variant={activeTab === "appearance" ? "primary" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("appearance")}
-        >
-          Appearance
-        </Button>
-        <Button
-          variant={activeTab === "danger-zone" ? "primary" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("danger-zone")}
-        >
-          Danger Zone
-        </Button>
+      <div style={{ marginBottom: 20 }}>
+        <SegmentedControl
+          options={[
+            { value: "external-tools", label: "External Tools" },
+            { value: "appearance", label: "Appearance" },
+            { value: "danger-zone", label: "Danger Zone" },
+          ]}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as Tab)}
+          ariaLabel="Preferences tabs"
+        />
       </div>
 
       {activeTab === "external-tools" && (
