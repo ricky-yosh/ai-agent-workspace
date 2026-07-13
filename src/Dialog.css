@@ -231,7 +231,7 @@
 
 .dialog-btn:active {
   transform: translateY(1px);
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-inset);
 }
 
 .dialog-btn-create {
@@ -246,7 +246,7 @@
 
 .dialog-btn-create:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+  box-shadow: var(--shadow-inset);
 }
 
 .dialog-btn-create:disabled {

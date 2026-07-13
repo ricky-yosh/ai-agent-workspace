@@ -73,7 +73,7 @@
   background: transparent;
   border: none;
   padding: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   color: var(--text-muted);
   opacity: 0;
@@ -139,7 +139,7 @@
   display: inline-block;
   padding: 1px 5px;
   border: 1px solid var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-family: inherit;
   font-size: 12px;
   background: rgba(255, 255, 255, 0.06);

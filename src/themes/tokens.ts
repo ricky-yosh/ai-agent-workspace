@@ -109,6 +109,7 @@ export const TOKENS = {
   LINE_HEIGHT_RELAXED: '--line-height-relaxed',
 
   // Radius
+  RADIUS_XS: '--radius-xs',
   RADIUS_SM: '--radius-sm',
   RADIUS_MD: '--radius-md',
   RADIUS_LG: '--radius-lg',
@@ -118,6 +119,7 @@ export const TOKENS = {
   SHADOW_SM: '--shadow-sm',
   SHADOW_MD: '--shadow-md',
   SHADOW_LG: '--shadow-lg',
+  SHADOW_INSET: '--shadow-inset',
 
   // Duration
   DURATION_FAST: '--duration-fast',

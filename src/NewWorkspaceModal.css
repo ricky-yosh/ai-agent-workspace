@@ -178,7 +178,7 @@
 
 .new-workspace-list::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .new-workspace-item {
@@ -321,7 +321,7 @@
   font-size: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   color: var(--text-dim);
 }
 

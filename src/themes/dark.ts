@@ -106,6 +106,7 @@ export const darkTheme: ThemeDefinition = {
   [T.LINE_HEIGHT_RELAXED]: '1.6',
 
   // Radius
+  [T.RADIUS_XS]: '3px',
   [T.RADIUS_SM]: '4px',
   [T.RADIUS_MD]: '6px',
   [T.RADIUS_LG]: '8px',
@@ -115,6 +116,7 @@ export const darkTheme: ThemeDefinition = {
   [T.SHADOW_SM]: '0 1px 2px rgba(0,0,0,0.1)',
   [T.SHADOW_MD]: '0 2px 8px rgba(0,0,0,0.12)',
   [T.SHADOW_LG]: '0 4px 16px rgba(0,0,0,0.16)',
+  [T.SHADOW_INSET]: 'inset 0 1px 3px rgba(0,0,0,0.4)',
 
   // Duration
   [T.DURATION_FAST]: '100ms',
