@@ -12,7 +12,7 @@ import { useEventListener } from "./hooks/useEventListener";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Dialog } from "./components/Dialog";
 import SessionActionsModal from "./SessionActionsModal";
-import { Button, Input } from "./components/ui";
+import { Button, Input, Select } from "./components/ui";
 import "./SessionSidebar.css";
 
 function folderNameOf(path: string): string {
@@ -163,9 +163,8 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
       <div className="dialog-fields">
         <label className="dialog-label">
           Working Directory
-          {/* NOTE: dropzone not migrated to <Button> — complex drag-drop states (.drag-over, .has-value) and rich inner layout incompatible with Button primitive styling */}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             className={`dialog-dropzone${workingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
             autoFocus
             onClick={async () => {
@@ -187,25 +186,16 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
                 <span className="dialog-dropzone-hint">or click to browse</span>
               </>
             )}
-          </button>
+          </Button>
         </label>
         {uniqueDirs.length > 0 && (
-          <label className="dialog-label">
-            {/* NOTE: <select> not migrated — no Select primitive exists */}
-            Recent directories
-            <select
-              className="dialog-input"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) applyWorkingDir(e.target.value);
-              }}
-            >
-              <option value="" disabled>Select a recent directory...</option>
-              {uniqueDirs.map((dir) => (
-                <option key={dir} value={dir}>{dir}</option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Recent directories"
+            placeholder="Select a recent directory..."
+            options={uniqueDirs.map((dir) => ({ value: dir, label: dir }))}
+            value=""
+            onChange={(v) => { if (v) applyWorkingDir(v); }}
+          />
         )}
         <label className="dialog-label">
           Name
@@ -529,11 +519,12 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
            )}
           </div>
           <div className="sidebar-view sidebar-view-collapsed">
-            {/* NOTE: sidebar-collapsed-session buttons not migrated — tight vertical list layout coupled to .sidebar-collapsed-session CSS incompatible with Button primitive */}
             <div className="sidebar-collapsed-sessions">
               {sessions.map((s) => (
-                <button
+                <Button
                   key={s.id}
+                  variant="ghost"
+                  size="sm"
                   className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
                   onClick={() => handleSelect(s.id)}
                   title={`${s.name} — ${s.state}`}
@@ -545,7 +536,7 @@ export default function SessionSidebar({ openActionsRef, closeActionsRef }: { op
                     size={22}
                   />
                   <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
-                </button>
+                </Button>
               ))}
             </div>
           </div>

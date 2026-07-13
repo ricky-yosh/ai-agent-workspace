@@ -202,6 +202,12 @@
   margin-top: 2px;
 }
 
+/* Dropzone uses vertical stacking — override Button's horizontal content wrapper */
+.dialog-dropzone .ui-button__content {
+  flex-direction: column;
+  width: 100%;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
