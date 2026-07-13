@@ -16,6 +16,7 @@ import {
 import { nextLevel, assignGridPositions, parseDiagramJson, type C4Diagram, type C4DiagramData, type DrillEntry } from "./c4/types";
 import { useCodeIndexing } from "./c4/useCodeIndexing";
 import { C4NodeRenderer } from "./c4/C4NodeRenderer";
+import "./C4DiagramPanel.css";
 
 function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
@@ -318,117 +319,42 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
 
   if (loading) {
     return (
-      <div
-        style={{
-          padding: 16,
-          color: "var(--text-muted)",
-          fontSize: 13,
-        }}
-      >
-        Loading C4 diagrams...
-      </div>
+      <div className="c4-loading">Loading C4 diagrams...</div>
     );
   }
 
   // Zero state
   if (!selectedDiagram && diagrams.length === 0) {
     return (
-      <div
-        id="c4-diagram-panel-container"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          gap: 16,
-          padding: 16,
-          color: "var(--text-muted)",
-          fontSize: 13,
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>{"\u25C8"}</div>
+      <div id="c4-diagram-panel-container" className="c4-empty-state">
+        <div className="c4-empty-state__icon">{"\u25C8"}</div>
 
-        {error && (
-          <div
-            style={{
-              background: "var(--danger-subtle)",
-              border: "1px solid color-mix(in oklch, var(--danger), transparent 70%)",
-              borderRadius: 6,
-              padding: "8px 12px",
-              fontSize: 12,
-              color: "var(--danger)",
-              maxWidth: 320,
-              lineHeight: 1.5,
-              wordBreak: "break-word",
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {error && <div className="c4-error-banner">{error}</div>}
 
         {indexing ? (
           <>
             <div>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "var(--text-secondary)",
-                  marginBottom: 4,
-                }}
-              >
-                Indexing codebase
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  maxWidth: 220,
-                  lineHeight: 1.4,
-                }}
-              >
+              <div className="c4-indexing__title">Indexing codebase</div>
+              <div className="c4-indexing__text">
                 {progress && progress.total > 0
                   ? `${progress.current} of ${progress.total} files`
                   : "Scanning files..."}
               </div>
             </div>
 
-            <div
-              style={{
-                width: 240,
-                height: 6,
-                borderRadius: 3,
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border)",
-                overflow: "hidden",
-              }}
-            >
+            <div className="c4-indexing__progress-track">
               <div
+                className="c4-indexing__progress-fill"
                 style={{
                   width:
                     progress && progress.total > 0
                       ? `${(progress.current / progress.total) * 100}%`
                       : "0%",
-                  height: "100%",
-                  background: "var(--canvas-accent)",
-                  borderRadius: 3,
-                  transition: "width 150ms ease",
                 }}
               />
             </div>
 
-            <div
-              style={{
-                fontSize: 11,
-                opacity: 0.6,
-                maxWidth: 280,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <div className="c4-indexing__file-path">
               {progress?.file_path || ""}
             </div>
 
@@ -439,24 +365,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         ) : (
           <>
             <div>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "var(--text-secondary)",
-                  marginBottom: 4,
-                }}
-              >
-                No C4 diagrams yet
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  maxWidth: 260,
-                  lineHeight: 1.4,
-                }}
-              >
+              <div className="c4-empty-state__title">No C4 diagrams yet</div>
+              <div className="c4-empty-state__desc">
                 Index your codebase to enable generating C4 architecture diagrams with the AI
               </div>
             </div>
@@ -465,23 +375,13 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               Index Codebase
             </Button>
 
-            <div
-              style={{
-                flexShrink: 1,
-                minHeight: 0,
-                overflow: "auto",
-                width: "100%",
-                maxWidth: 400,
-              }}
-            >
+            <div className="c4-empty-state__snippet-wrap">
               <SnippetCard
                 hint="After indexing, ask the AI:"
                 copyText={zeroStatePrompt}
               >
                 Use the aiaw{" "}
-                <span style={{ color: "var(--canvas-accent)" }}>
-                  generate_c4_diagram
-                </span>{" "}
+                <span className="c4-accent">generate_c4_diagram</span>{" "}
                 tool to create a C4 diagram of the codebase
               </SnippetCard>
             </div>
@@ -494,21 +394,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   // Diagram list
   if (!selectedDiagram) {
     return (
-      <div
-        id="c4-diagram-panel-container"
-        style={{ padding: 8, overflow: "auto", height: "100%", boxSizing: "border-box" }}
-      >
-        <div
-          style={{
-            padding: "8px 4px",
-            fontSize: 12,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-            marginBottom: 4,
-          }}
-        >
-          C4 Diagrams
-        </div>
+      <div id="c4-diagram-panel-container" className="c4-list">
+        <div className="c4-list__title">C4 Diagrams</div>
         <AnimatePresence mode="popLayout">
           {diagrams.map((diagram, idx) => (
             <motion.div
@@ -522,21 +409,14 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                 delay: idx * 0.03,
                 ease: [0.2, 0, 0, 1],
               }}
-              style={{
-                padding: "8px 12px",
-                marginBottom: 4,
-                borderRadius: 6,
-                border: "1px solid var(--border)",
-                background: "var(--bg-secondary)",
-                cursor: "pointer",
-              }}
+              className="c4-diagram-row"
               onClick={() => {
                 if (renamingId !== diagram.id) {
                   setSelectedDiagram(diagram);
                 }
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="c4-diagram-row__inner">
                 {renamingId === diagram.id ? (
                   <Input
                     autoFocus
@@ -551,20 +431,12 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                       }
                     }}
                     onClick={(e) => e.stopPropagation()}
-                    style={{ flex: 1 }}
+                    className="c4-diagram-row__input"
                   />
                 ) : (
-                  <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
-                    {diagram.name}
-                  </div>
+                  <div className="c4-diagram-row__name">{diagram.name}</div>
                 )}
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <div className="c4-diagram-row__date">
                   {new Date(diagram.created_at).toLocaleDateString()}
                 </div>
                 <Button
@@ -580,7 +452,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
                   &#9998;
                 </Button>
                 {confirmDeleteId === diagram.id ? (
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div className="c4-diagram-row__delete-actions">
                     <Button
                       variant="danger"
                       size="sm"
@@ -626,33 +498,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   // ── Diagram view ───────────────────────────────────────────────────────
 
   return (
-    <div
-      id="c4-diagram-panel-container"
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
-      }}
-    >
-      {/* ── Design tokens ── */}
-      <style>{`
-        .c4-diagram-panel {
-          /* Colors are now provided by the theme system via applyTheme().
-             Canvas-specific tokens (--canvas-*) are set in the theme files. */
-        }
-      `}</style>
-
+    <div id="c4-diagram-panel-container" className="c4-view">
       {/* ── Header ── */}
-      <div
-        style={{
-          padding: "8px 12px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <div className="c4-header">
         <Button
           variant="ghost"
           size="sm"
@@ -661,18 +509,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         >
           &larr;
         </Button>
-        <div style={{ fontWeight: 500, fontSize: 13, flex: 1 }}>
-          {selectedDiagram.name}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 11,
-            color: "var(--text-muted)",
-          }}
-        >
+        <div className="c4-header__title">{selectedDiagram.name}</div>
+        <div className="c4-header__zoom">
           <span>{Math.round(zoom * 100)}%</span>
           <CopyButton
             text={buildDiagramPrompt()}
@@ -687,42 +525,26 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
 
       {/* ── Breadcrumb + Back ── */}
       {drillPath.length > 0 && (
-        <div
-          style={{
-            padding: "6px 12px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            fontSize: 12,
-          }}
-        >
-          <Button variant="ghost" size="sm" onClick={handleBack} style={{ marginRight: 4 }}>
+        <div className="c4-breadcrumb">
+          <Button variant="ghost" size="sm" onClick={handleBack} className="c4-breadcrumb__back">
             &larr; Back
           </Button>
           <span
             onClick={navigateToRoot}
-            style={{
-              color: "var(--canvas-accent)",
-              cursor: "pointer",
-              fontWeight: 500,
-            }}
+            className="c4-breadcrumb__link"
           >
             System
           </span>
           {drillPath.map((crumb, i) => (
-            <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ color: "var(--text-muted)" }}> &gt; </span>
+            <span key={i} className="c4-breadcrumb__item-wrap">
+              <span className="c4-breadcrumb__sep"> &gt; </span>
               <span
                 onClick={() => navigateToLevel(i + 1)}
-                style={{
-                  color:
-                    i === drillPath.length - 1
-                      ? "var(--text-primary)"
-                      : "var(--canvas-accent)",
-                  cursor: "pointer",
-                  fontWeight: i === drillPath.length - 1 ? 600 : 400,
-                }}
+                className={
+                  i === drillPath.length - 1
+                    ? "c4-breadcrumb__item c4-breadcrumb__item--active"
+                    : "c4-breadcrumb__item c4-breadcrumb__item--inactive"
+                }
               >
                 {crumb.label}
               </span>

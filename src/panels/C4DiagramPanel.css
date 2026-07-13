@@ -1,0 +1,233 @@
+/* ── Panel root ───────────────────────────────────────────── */
+.c4-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── Loading / Error / Empty states ───────────────────────── */
+.c4-loading {
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+}
+
+.c4-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--font-size-base);
+  text-align: center;
+}
+
+.c4-empty-state__icon {
+  font-size: 32px;
+  opacity: 0.25;
+  line-height: 1;
+}
+
+.c4-empty-state__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.c4-empty-state__desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  max-width: 260px;
+  line-height: 1.4;
+}
+
+.c4-empty-state__snippet-wrap {
+  flex-shrink: 1;
+  min-height: 0;
+  overflow: auto;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* ── Error banner ─────────────────────────────────────────── */
+.c4-error-banner {
+  background: var(--danger-subtle);
+  border: 1px solid color-mix(in oklch, var(--danger), transparent 70%);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--danger);
+  max-width: 320px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ── Indexing state ───────────────────────────────────────── */
+.c4-indexing__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.c4-indexing__text {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  max-width: 220px;
+  line-height: 1.4;
+}
+
+.c4-indexing__progress-track {
+  width: 240px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.c4-indexing__progress-fill {
+  height: 100%;
+  background: var(--canvas-accent);
+  border-radius: 3px;
+  transition: width 150ms ease;
+}
+
+.c4-indexing__file-path {
+  font-size: var(--font-size-xs);
+  opacity: 0.6;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Accent text ──────────────────────────────────────────── */
+.c4-accent {
+  color: var(--canvas-accent);
+}
+
+/* ── Diagram list (no selection) ──────────────────────────── */
+.c4-list {
+  padding: var(--space-2);
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.c4-list__title {
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+/* ── Diagram row ──────────────────────────────────────────── */
+.c4-diagram-row {
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.c4-diagram-row__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.c4-diagram-row__name {
+  font-weight: 500;
+  font-size: var(--font-size-base);
+  flex: 1;
+}
+
+.c4-diagram-row__input {
+  flex: 1;
+}
+
+.c4-diagram-row__date {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.c4-diagram-row__delete-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ── Header bar ───────────────────────────────────────────── */
+.c4-header {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.c4-header__title {
+  font-weight: 500;
+  font-size: var(--font-size-base);
+  flex: 1;
+}
+
+.c4-header__zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* ── Breadcrumb bar ───────────────────────────────────────── */
+.c4-breadcrumb {
+  padding: 6px var(--space-3);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.c4-breadcrumb__back {
+  margin-right: var(--space-1);
+}
+
+.c4-breadcrumb__link {
+  color: var(--canvas-accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.c4-breadcrumb__item-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.c4-breadcrumb__sep {
+  color: var(--text-muted);
+}
+
+.c4-breadcrumb__item {
+  cursor: pointer;
+}
+
+.c4-breadcrumb__item--inactive {
+  color: var(--canvas-accent);
+  font-weight: 400;
+}
+
+.c4-breadcrumb__item--active {
+  color: var(--text-primary);
+  font-weight: 600;
+}

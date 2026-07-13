@@ -16,6 +16,7 @@ import { LANE_WIDTH, ROW_HEIGHT, Lane, Connector, Dot, HeadRing } from "./git/gi
 import { Button, CopyButton, Select } from "../components/ui";
 import { X } from "lucide-react";
 import SearchBar from "../components/SearchBar";
+import "./GitTreePanel.css";
 
 interface CommitInfo {
   hash: string;
@@ -87,33 +88,19 @@ function renderTreeEntries(
     <div key={entry.path}>
       <div
         onClick={entry.kind === "file" ? () => handleFileClick(entry.path) : undefined}
-        style={{
-          padding: "1px 4px",
-          paddingLeft: depth * 16 + 4,
-          cursor: entry.kind === "file" ? "pointer" : "default",
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          borderRadius: 3,
-          color: entry.kind === "directory" ? "var(--text-muted)" : "var(--text-primary)",
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.background = "transparent";
-        }}
+        className={`git-tree-entry${entry.kind === "file" ? " git-tree-entry--clickable" : ""}${entry.kind === "directory" ? " git-tree-entry--directory" : ""}`}
+        style={{ paddingLeft: depth * 16 + 4 }}
       >
         {entry.kind === "file" && (
-          <span style={{ fontSize: 10, color: statusColor(entry.status) }}>{statusIcon(entry.status)}</span>
+          <span className="git-tree-entry__icon" style={{ color: statusColor(entry.status) }}>{statusIcon(entry.status)}</span>
         )}
         <span>{entry.kind === "directory" ? `${entry.name}/` : entry.name}</span>
-        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>
+        <span className="git-tree-entry__stats">
           {entry.additions !== undefined && entry.additions > 0 && (
-            <span style={{ color: "var(--text-success, #22c55e)" }}>+{entry.additions} </span>
+            <span className="git-tree-entry__stats--add">+{entry.additions} </span>
           )}
           {entry.deletions !== undefined && entry.deletions > 0 && (
-            <span style={{ color: "var(--text-error, #ef4444)" }}>-{entry.deletions}</span>
+            <span className="git-tree-entry__stats--del">-{entry.deletions}</span>
           )}
         </span>
       </div>
@@ -146,7 +133,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
     <>
       {parts.map((part, i) =>
         regex.test(part) ? (
-          <span key={i} style={{ background: "color-mix(in oklch, var(--status-paused), transparent 70%)" }}>
+          <span key={i} className="git-tree-highlight">
             {part}
           </span>
         ) : (
@@ -636,7 +623,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
         <svg
           width={svgWidth}
           height={ROW_HEIGHT}
-          style={{ display: "block", flexShrink: 0 }}
+          className="git-tree-graph-svg"
         >
           {Array.from({ length: maxCol + 1 }, (_, col) => (
             <Lane
@@ -705,56 +692,22 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
   const renderResizeHandle = (col: keyof typeof DEFAULT_WIDTHS) => (
     <div
       onMouseDown={(e) => handleResizeStart(col, e)}
-      style={{
-        width: 4,
-        cursor: "col-resize",
-        flexShrink: 0,
-        background: resizing === col ? "var(--accent-color, #3b82f6)" : "transparent",
-        transition: resizing === col ? "none" : "background 0.15s",
-      }}
-      onMouseEnter={(e) => {
-        if (resizing) return;
-        (e.currentTarget as HTMLElement).style.background = "var(--border)";
-      }}
-      onMouseLeave={(e) => {
-        if (resizing) return;
-        (e.currentTarget as HTMLElement).style.background = "transparent";
-      }}
+      className={`git-tree-resize-handle${resizing === col ? " git-tree-resize-handle--active" : ""}`}
     />
   );
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--bg-primary)",
-        color: "var(--text-primary)",
-        fontFamily: "var(--font-family-sans)",
-        fontSize: 13,
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "8px 12px",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>Git History</span>
+    <div className="git-tree-panel">
+      <div className="git-tree-panel__header">
+        <span className="git-tree-panel__header-title">Git History</span>
         <Button variant="ghost" size="sm" onClick={fetchTopology} title="Refresh">
           ↻
         </Button>
       </div>
 
       {/* Search bar */}
-      <div style={{ display: "flex", flexShrink: 0 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="git-tree-panel__search">
+        <div className="git-tree-panel__search-inner">
           <SearchBar
             value={searchQuery}
             onChange={(v) => setSearchQuery(v)}
@@ -772,7 +725,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                   ]}
                 />
                 {searchQuery && (
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                  <span className="git-tree-panel__search-count">
                     {rows.length}
                   </span>
                 )}
@@ -792,76 +745,39 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
         </div>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          borderBottom: "1px solid var(--border)",
-          fontSize: 11,
-          fontWeight: 600,
-          color: "var(--text-muted)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ width: colWidths.graphCol, padding: "4px 8px", flexShrink: 0 }}>Graph</div>
+      <div className="git-tree-panel__column-headers">
+        <div className="git-tree-panel__column-header" style={{ width: colWidths.graphCol }}>Graph</div>
         {renderResizeHandle("graphCol")}
-        <div style={{ width: colWidths.messageCol, padding: "4px 8px", flexShrink: 0 }}>Description</div>
+        <div className="git-tree-panel__column-header" style={{ width: colWidths.messageCol }}>Description</div>
         {renderResizeHandle("messageCol")}
-        <div style={{ width: colWidths.dateCol, padding: "4px 8px", flexShrink: 0 }}>Date</div>
+        <div className="git-tree-panel__column-header" style={{ width: colWidths.dateCol }}>Date</div>
         {renderResizeHandle("dateCol")}
-        <div style={{ width: colWidths.authorCol, padding: "4px 8px", flexShrink: 0 }}>Author</div>
+        <div className="git-tree-panel__column-header" style={{ width: colWidths.authorCol }}>Author</div>
         {renderResizeHandle("authorCol")}
-        <div style={{ width: colWidths.hashCol, padding: "4px 8px", flexShrink: 0 }}>Hash</div>
+        <div className="git-tree-panel__column-header" style={{ width: colWidths.hashCol }}>Hash</div>
         {renderResizeHandle("hashCol")}
       </div>
 
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflow: "auto",
-          position: "relative",
-        }}
-      >
+      <div ref={scrollRef} className="git-tree-panel__scroll-container">
         {loading && (
-          <div
-            style={{
-              padding: 24,
-              textAlign: "center",
-              color: "var(--text-muted)",
-            }}
-          >
+          <div className="git-tree-panel__state-message">
             Loading commit history...
           </div>
         )}
         {error && (
-          <div
-            style={{
-              padding: 24,
-              textAlign: "center",
-              color: "var(--text-error, #ef4444)",
-            }}
-          >
+          <div className="git-tree-panel__state-message git-tree-panel__state-message--error">
             {error}
           </div>
         )}
         {!loading && !error && commits.length === 0 && (
-          <div
-            style={{
-              padding: 24,
-              textAlign: "center",
-              color: "var(--text-muted)",
-            }}
-          >
+          <div className="git-tree-panel__state-message">
             No commits yet
           </div>
         )}
         {!loading && rows.length > 0 && (
           <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              width: "100%",
-              position: "relative",
-            }}
+            className="git-tree-panel__virtual-container"
+            style={{ height: virtualizer.getTotalSize() }}
           >
             {visibleItems.map((virtualItem) => {
               const row = rows[virtualItem.index];
@@ -882,54 +798,23 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                     }
                     handleCommitClick(row.sha);
                   }}
+                    className={`git-tree-row${isIndexSelected(virtualItem.index, selectionStart, selectionEnd) ? " git-tree-row--selected" : ""}`}
                     style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
                       height: ROW_HEIGHT,
                       transform: `translateY(${virtualItem.start}px)`,
-                      display: "flex",
-                      alignItems: "center",
-                      borderBottom: "1px solid var(--border)",
-                      cursor: "pointer",
-                      background:
-                        isIndexSelected(virtualItem.index, selectionStart, selectionEnd)
-                          ? "var(--accent-subtle)"
-                          : "transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
-                        (e.currentTarget as HTMLElement).style.background =
-                          "var(--bg-hover)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isIndexSelected(virtualItem.index, selectionStart, selectionEnd)) {
-                        (e.currentTarget as HTMLElement).style.background = "transparent";
-                      }
                     }}
                 >
                   <div
-                    style={{
-                      width: colWidths.graphCol,
-                      height: ROW_HEIGHT,
-                      flexShrink: 0,
-                      overflow: "hidden",
-                    }}
+                    className="git-tree-row__cell--graph"
+                    style={{ width: colWidths.graphCol, height: ROW_HEIGHT }}
                   >
                     {renderGraphCell(virtualItem.index)}
                   </div>
                   {renderResizeHandle("graphCol")}
                   <div
+                    className="git-tree-row__cell--message"
                     style={{
                       width: colWidths.messageCol,
-                      padding: "0 8px",
-                      flexShrink: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      minWidth: 0,
                       color: row.message ? "var(--text-primary)" : "var(--text-muted)",
                     }}
                   >
@@ -939,33 +824,18 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                         <span
                           key={ref}
                           title={shortRefName(ref)}
+                          className="git-tree-ref-label"
                           style={{
-                            fontSize: 11,
-                            lineHeight: "16px",
-                            padding: "0 6px",
-                            borderRadius: 3,
                             border: `1px solid ${refColor}`,
                             color: refColor,
                             background: `color-mix(in srgb, ${refColor} 15%, transparent)`,
-                            whiteSpace: "nowrap",
-                            flexShrink: 0,
-                            maxWidth: 140,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
                           }}
                         >
                           {shortRefName(ref)}
                         </span>
                       );
                     })}
-                    <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        minWidth: 0,
-                      }}
-                    >
+                    <span className="git-tree-row__message-text">
                       {searchField === "keyword" && searchQuery.trim()
                         ? highlightMatch(row.message || "", searchQuery)
                         : row.message || "..."}
@@ -973,46 +843,23 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                   </div>
                   {renderResizeHandle("messageCol")}
                   <div
-                    style={{
-                      width: colWidths.dateCol,
-                      padding: "0 8px",
-                      flexShrink: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: "var(--text-muted)",
-                      fontSize: 12,
-                    }}
+                    className="git-tree-row__cell--date"
+                    style={{ width: colWidths.dateCol }}
                   >
                     {row.relativeDate}
                   </div>
                   {renderResizeHandle("dateCol")}
                   <div
+                    className="git-tree-row__cell--author"
                     style={{
                       width: colWidths.authorCol,
-                      padding: "0 8px",
-                      flexShrink: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
                       color: row.author ? "var(--text-primary)" : "var(--text-muted)",
                     }}
                   >
                     {row.author || "..."}
                   </div>
                   {renderResizeHandle("authorCol")}
-                  <div
-                    style={{
-                      flex: 1,
-                      padding: "0 8px",
-                      flexShrink: 0,
-                      fontFamily: "var(--font-family-mono)",
-                      fontSize: 12,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <div className="git-tree-row__cell--hash">
                     {row.hash}
                   </div>
                   {renderResizeHandle("hashCol")}
@@ -1026,12 +873,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
       {/* Detail pane resize handle */}
       {detailPaneOpen && (
         <div
-          style={{
-            height: 4,
-            cursor: "ns-resize",
-            background: "var(--border)",
-            flexShrink: 0,
-          }}
+          className="git-tree-detail__resize-handle"
           onMouseDown={(e) => {
             e.preventDefault();
             const startY = e.clientY;
@@ -1053,27 +895,12 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
       {/* Commit Detail Pane */}
       {detailPaneOpen && (selectedSha || isRangeSelected) && (
         <div
-          style={{
-            height: detailPaneHeight,
-            flexShrink: 0,
-            overflow: "auto",
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            flexDirection: "column",
-          }}
+          className="git-tree-detail__container"
+          style={{ height: detailPaneHeight }}
         >
           {/* Header */}
-          <div
-            style={{
-              padding: "8px 12px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-            }}
-          >
-            <span style={{ fontWeight: 600, fontSize: 12 }}>Commit Details</span>
+          <div className="git-tree-detail__header">
+            <span className="git-tree-detail__header-title">Commit Details</span>
             <Button
               variant="ghost"
               size="sm"
@@ -1089,41 +916,25 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
           </div>
 
           {/* Content */}
-          <div style={{ padding: "12px", overflow: "auto", flex: 1 }}>
+          <div className="git-tree-detail__content">
             {isRangeSelected ? (
-              <div style={{ padding: "12px" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
+              <div className="git-tree-detail__range">
+                <div className="git-tree-detail__range-title">
                   Range: {rangeOldestSha?.slice(0, 7)}..{rangeNewestSha?.slice(0, 7)}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                <div className="git-tree-detail__range-count">
                   {selectedRangeShas.length} commits selected
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                <div className="git-tree-detail__range-hint">
                   Press Enter to open combined diff
                 </div>
               </div>
             ) : (
               <>
             {/* Full hash with copy */}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Hash:</span>
-              <code
-                style={{
-                  fontFamily: "var(--font-family-mono)",
-                  fontSize: 12,
-                  color: "var(--text-primary)",
-                  background: "var(--bg-input)",
-                  padding: "2px 6px",
-                  borderRadius: 3,
-                }}
-              >
+            <div className="git-tree-detail__hash-row">
+              <span className="git-tree-detail__hash-label">Hash:</span>
+              <code className="git-tree-detail__hash-value">
                 {selectedSha}
               </code>
               <CopyButton text={selectedSha || ""} label="Copy" />
@@ -1135,32 +946,24 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
               if (!commitData) return null;
               return (
                 <>
-                  <div style={{ marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Author: </span>
-                    <span style={{ fontSize: 12, color: "var(--text-primary)" }}>
+                  <div className="git-tree-detail__info-row">
+                    <span className="git-tree-detail__info-label">Author: </span>
+                    <span className="git-tree-detail__info-value">
                       {commitData.author_name} &lt;{commitData.author_email}&gt;
                     </span>
                   </div>
-                  <div style={{ marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Date: </span>
-                    <span style={{ fontSize: 12, color: "var(--text-primary)" }}>
+                  <div className="git-tree-detail__info-row">
+                    <span className="git-tree-detail__info-label">Date: </span>
+                    <span className="git-tree-detail__info-value">
                       {new Date(commitData.date).toLocaleString()} (
                       {relativeDate(commitData.date)})
                     </span>
                   </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  <div className="git-tree-detail__message">
+                    <span className="git-tree-detail__info-label">
                       Message:
                     </span>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "var(--text-primary)",
-                        whiteSpace: "pre-wrap",
-                        marginTop: 2,
-                        lineHeight: 1.5,
-                      }}
-                    >
+                    <div className="git-tree-detail__message-content">
                       {commitData.message}
                     </div>
                   </div>
@@ -1169,9 +972,9 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
             })()}
 
             {/* Files changed */}
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            <div className="git-tree-detail__files-section">
+              <div className="git-tree-detail__files-header">
+                <span className="git-tree-detail__files-header-label">
                   Files changed ({detailFiles.length > 0 ? countFiles(detailFiles) : 0})
                 </span>
                 <Button
@@ -1184,9 +987,9 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                 </Button>
               </div>
               {detailLoading ? (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 0" }}>Loading...</div>
+                <div className="git-tree-detail__loading">Loading...</div>
               ) : detailFiles.length > 0 ? (
-                <div style={{ fontSize: 12, fontFamily: "var(--font-family-mono)" }}>
+                <div className="git-tree-detail__files-content">
                   {fileTreeView === "tree"
                     ? renderTreeEntries(detailFiles, 0, handleDetailFileClick)
                     : (
@@ -1195,37 +998,24 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                           <div
                             key={file.path}
                             onClick={() => handleDetailFileClick(file.path)}
-                            style={{
-                              padding: "2px 4px",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              borderRadius: 3,
-                            }}
-                            onMouseEnter={(e) => {
-                              (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.currentTarget as HTMLElement).style.background = "transparent";
-                            }}
+                            className="git-tree-detail__file-row"
                           >
-                            <span style={{ fontSize: 10, color: statusColor(file.status) }}>
+                            <span className="git-tree-detail__file-icon" style={{ color: statusColor(file.status) }}>
                               {statusIcon(file.status)}
                             </span>
-                            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                            <span className="git-tree-detail__file-path">
                               {file.path.split("/").slice(0, -1).join("/")}
                               {file.path.includes("/") ? "/" : ""}
                             </span>
-                            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                            <span className="git-tree-detail__file-name">
                               {file.name}
                             </span>
-                            <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted)" }}>
+                            <span className="git-tree-detail__file-stats">
                               {file.additions !== undefined && file.additions > 0 && (
-                                <span style={{ color: "var(--text-success, #22c55e)" }}>+{file.additions} </span>
+                                <span className="git-tree-detail__file-stats--add">+{file.additions} </span>
                               )}
                               {file.deletions !== undefined && file.deletions > 0 && (
-                                <span style={{ color: "var(--text-error, #ef4444)" }}>-{file.deletions}</span>
+                                <span className="git-tree-detail__file-stats--del">-{file.deletions}</span>
                               )}
                             </span>
                           </div>
@@ -1234,7 +1024,7 @@ function GitTreePanel({ panelType: _panelType }: PanelProps) {
                     )}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "4px 0" }}>No file changes</div>
+                <div className="git-tree-detail__no-files">No file changes</div>
               )}
             </div>
             </>

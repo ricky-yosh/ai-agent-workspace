@@ -423,7 +423,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   // focused row and steal keyboard focus.
   if (loading && issues.length === 0) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+      <div className="issue-tracker-panel issue-panel__loading">
         Loading issues…
       </div>
     );
@@ -431,7 +431,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (error) {
     return (
-      <div className="issue-tracker-panel" style={{ padding: 16, color: "var(--danger)", fontSize: 13 }}>
+      <div className="issue-tracker-panel issue-panel__error">
         {error}
       </div>
     );
@@ -439,11 +439,11 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (issues.length === 0) {
     return (
-      <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, padding: 16, color: "var(--text-muted)", fontSize: 13, outline: "none", textAlign: "center" }} onKeyDown={handleKeyDown}>
-        <div style={{ fontSize: 32, opacity: 0.25, lineHeight: 1 }}>○</div>
+      <div ref={panelRef} className="issue-tracker-panel issue-panel__empty" tabIndex={0} onKeyDown={handleKeyDown}>
+        <div className="issue-panel__empty-icon">○</div>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>No issues yet</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 220, lineHeight: 1.4 }}>
+          <div className="issue-panel__empty-title">No issues yet</div>
+          <div className="issue-panel__empty-desc">
             Track tasks, bugs, and feature requests
           </div>
         </div>
@@ -534,7 +534,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
       </div>
       <div ref={listRef} className="issue-tracker-list">
         {filterQuery && displayedIssues.length === 0 ? (
-          <div style={{ padding: "16px 12px", color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
+          <div className="issue-panel__no-matches">
             No matching issues
           </div>
         ) : (
@@ -599,41 +599,27 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                     }}
                     onDoubleClick={() => setIssueModalOpen({ mode: "edit", issue })}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ color: "var(--text-muted)", fontWeight: 600, minWidth: 48, fontVariantNumeric: "tabular-nums" }}>
+                    <div className="issue-row__header">
+                      <span className="issue-row__number">
                         #{issue.number}
                       </span>
-                      <span style={{ fontWeight: 500, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className="issue-row__title">
                         {issue.title}
                       </span>
                       {progress !== null && (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                            background: "var(--bg-elevated)",
-                            borderRadius: 4,
-                            padding: "1px 5px",
-                            fontVariantNumeric: "tabular-nums",
-                            flexShrink: 0,
-                          }}
-                        >
+                        <span className="issue-row__progress">
                           {progress.done}/{progress.total}
                         </span>
                       )}
                       <IssueStateIcon state={issue.state} />
                     </div>
                     {issue.labels.length > 0 && (
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      <div className="issue-row__labels">
                         {issue.labels.map((label) => (
                           <span
                             key={label}
-                            style={{
-                              fontSize: 11,
-                              padding: "1px 6px",
-                              borderRadius: 4,
-                              ...labelStyle(label),
-                            }}
+                            className="issue-label"
+                            style={labelStyle(label)}
                           >
                             {label}
                           </span>
@@ -648,45 +634,29 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                     }}
                     className={bodyClass}
                   >
-                    <div style={{ padding: "8px 12px" }}>
+                    <div className="issue-body__content">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                          h2: ({ children }) => (
-                            <h2 style={{ fontSize: 14, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h2>
-                          ),
-                          h3: ({ children }) => (
-                            <h3 style={{ fontSize: 13, fontWeight: "normal", margin: "6px 0 4px" }}>{children}</h3>
-                          ),
+                          h2: ({ children }) => <h2>{children}</h2>,
+                          h3: ({ children }) => <h3>{children}</h3>,
                           code: ({ children, className }) => {
                             const isBlock = Boolean(className);
                             if (isBlock) {
-                              return <code style={{ fontFamily: "var(--font-family-mono)", fontSize: 11 }}>{children}</code>;
+                              return <code className="issue-md-code--block">{children}</code>;
                             }
-                            return (
-                              <code style={{ background: "rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 4px", fontFamily: "var(--font-family-mono)", fontSize: 11 }}>
-                                {children}
-                              </code>
-                            );
+                            return <code className="issue-md-code--inline">{children}</code>;
                           },
-                          pre: ({ children }) => (
-                            <pre style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: 8, overflowX: "auto", fontSize: 11, margin: "4px 0" }}>
-                              {children}
-                            </pre>
-                          ),
-                          blockquote: ({ children }) => (
-                            <blockquote style={{ borderLeft: "3px solid var(--border)", margin: 0, paddingLeft: 10, color: "var(--text-muted)" }}>
-                              {children}
-                            </blockquote>
-                          ),
-                          p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
-                          ul: ({ children }) => <ul style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ul>,
-                          ol: ({ children }) => <ol style={{ paddingLeft: 20, margin: "4px 0" }}>{children}</ol>,
+                          pre: ({ children }) => <pre>{children}</pre>,
+                          blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+                          p: ({ children }) => <p>{children}</p>,
+                          ul: ({ children }) => <ul>{children}</ul>,
+                          ol: ({ children }) => <ol>{children}</ol>,
                           a: ({ children, href }) => (
-                            <a href={href} style={{ color: "#60a5fa", textDecoration: "none" }}>{children}</a>
+                            <a href={href}>{children}</a>
                           ),
                           input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
-                            <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} style={{ accentColor: "#4ade80", cursor: "default", marginRight: 4 }} />
+                            <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} />
                           ),
                         }}
                       >
