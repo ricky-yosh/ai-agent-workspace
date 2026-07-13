@@ -1,3 +1,22 @@
+.issue-tracker-panel {
+  padding: 8px;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.issue-tracker-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.issue-tracker-search-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
 .issue-tracker-list {
   outline: none;
 }
