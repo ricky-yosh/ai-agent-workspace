@@ -36,7 +36,7 @@
 }
 
 .ft-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-overlay);
   color: var(--text-primary);
 }
 
@@ -73,7 +73,7 @@
 }
 
 .ft-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-overlay);
 }
 
 .ft-row--dir {

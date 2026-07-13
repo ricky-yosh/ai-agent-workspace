@@ -79,7 +79,7 @@
   justify-content: flex-end;
   gap: 6px;
   padding: var(--space-2) var(--space-4);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-subtle);
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
@@ -87,7 +87,7 @@
 .shortcuts-footer-sep {
   width: 1px;
   height: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-overlay-hover);
   flex-shrink: 0;
 }
 
@@ -101,8 +101,8 @@
   padding: 0 3px;
   font-family: inherit;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-xs);
   color: var(--text-dim);
 }

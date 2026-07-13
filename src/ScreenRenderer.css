@@ -101,13 +101,13 @@
 }
 
 .screen-sash:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: color-mix(in oklch, var(--bg-primary), transparent 75%);
   border-radius: 2px;
 }
 
 /* Snap cue: brighter gray pill when the sash locks to grid/vertex. */
 .screen-sash--snapped {
-  background: rgba(255, 255, 255, 0.5);
+  background: color-mix(in oklch, var(--bg-primary), transparent 50%);
   border-radius: 2px;
   opacity: 1;
 }
@@ -236,8 +236,8 @@
   pointer-events: none;
   z-index: 16;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border);
+  background: var(--bg-overlay-hover);
   border-radius: var(--radius-island);
 }
 

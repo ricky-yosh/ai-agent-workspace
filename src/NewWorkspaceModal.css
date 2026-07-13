@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .nwm-header-title {
@@ -32,14 +32,14 @@
   font-weight: 500;
   color: var(--text-muted);
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-control);
   cursor: pointer;
 }
 
 .nwm-edit-toggle:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-overlay);
 }
 
 .nwm-edit-toggle--on {
@@ -73,7 +73,7 @@
 }
 
 .nwm-right {
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  border-left: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -291,7 +291,7 @@
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-subtle);
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
@@ -305,7 +305,7 @@
 .new-workspace-footer-sep {
   width: 1px;
   height: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-overlay-hover);
   flex-shrink: 0;
 }
 
@@ -319,8 +319,8 @@
   padding: 0 3px;
   font-family: inherit;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-xs);
   color: var(--text-dim);
 }

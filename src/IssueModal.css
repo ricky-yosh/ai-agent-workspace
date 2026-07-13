@@ -151,8 +151,8 @@
   flex-shrink: 0;
   font-family: inherit;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-xs);
   color: var(--text-dim);
 }
@@ -189,7 +189,7 @@
   flex-wrap: wrap;
   margin-top: 14px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-subtle);
   font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
@@ -210,8 +210,8 @@
   padding: 0 3px;
   font-family: inherit;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-xs);
   color: var(--text-dim);
 }

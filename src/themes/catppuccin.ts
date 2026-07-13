@@ -14,6 +14,9 @@ export const catppuccinTheme: ThemeDefinition = {
   [T.BG_INPUT]: 'oklch(0.404 0.032 280.152)',         // #45475a
   [T.BG_INPUT_HOVER]: 'oklch(0.477 0.034 278.643)',   // #585b70 (surface 2)
   [T.BG_ELEVATED]: 'oklch(0.324 0.032 281.978)',      // #313244
+  [T.BG_OVERLAY]: 'rgba(255, 255, 255, 0.06)',
+  [T.BG_OVERLAY_HOVER]: 'rgba(255, 255, 255, 0.10)',
+  [T.BORDER_OVERLAY]: 'rgba(255, 255, 255, 0.10)',
 
   // Text — Catppuccin text/subtext
   [T.TEXT_PRIMARY]: 'oklch(0.879 0.043 272.277)',      // #cdd6f4 (text)

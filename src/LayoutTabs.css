@@ -64,7 +64,7 @@
   color: var(--text-primary);
   /* Subtle ghost hover — pill already shows the active surface,
      so we keep this very faint to avoid fighting the pill */
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-overlay);
 }
 
 /* Active tab: pill provides the background; only text needs to change */

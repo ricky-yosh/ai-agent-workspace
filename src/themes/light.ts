@@ -13,6 +13,9 @@ export const lightTheme: ThemeDefinition = {
   [T.BG_INPUT]: 'oklch(1.000 0.000 0.000)',
   [T.BG_INPUT_HOVER]: 'oklch(0.970 0.002 286.000)',
   [T.BG_ELEVATED]: 'oklch(1.000 0.000 0.000)',
+  [T.BG_OVERLAY]: 'rgba(0, 0, 0, 0.04)',
+  [T.BG_OVERLAY_HOVER]: 'rgba(0, 0, 0, 0.08)',
+  [T.BORDER_OVERLAY]: 'rgba(0, 0, 0, 0.08)',
 
   // Text — dark on light
   [T.TEXT_PRIMARY]: 'oklch(0.220 0.002 286.000)',

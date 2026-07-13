@@ -10,6 +10,9 @@ export const TOKENS = {
   BG_INPUT: '--bg-input',
   BG_INPUT_HOVER: '--bg-input-hover',
   BG_ELEVATED: '--bg-elevated',
+  BG_OVERLAY: '--bg-overlay',
+  BG_OVERLAY_HOVER: '--bg-overlay-hover',
+  BORDER_OVERLAY: '--border-overlay',
 
   // Text
   TEXT_PRIMARY: '--text-primary',

@@ -13,6 +13,9 @@ export const darkTheme: ThemeDefinition = {
   [T.BG_INPUT]: 'oklch(0.356 0.000 89.876)',
   [T.BG_INPUT_HOVER]: 'oklch(0.409 0.000 89.876)',
   [T.BG_ELEVATED]: 'oklch(0.321 0.000 89.876)',
+  [T.BG_OVERLAY]: 'rgba(255, 255, 255, 0.06)',
+  [T.BG_OVERLAY_HOVER]: 'rgba(255, 255, 255, 0.10)',
+  [T.BORDER_OVERLAY]: 'rgba(255, 255, 255, 0.10)',
 
   // Text
   [T.TEXT_PRIMARY]: 'oklch(0.845 0.000 89.876)',

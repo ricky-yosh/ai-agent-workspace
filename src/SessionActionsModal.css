@@ -172,8 +172,8 @@
   font-family: inherit;
   font-size: 10px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   flex-shrink: 0;
@@ -208,8 +208,8 @@
   padding: 0 3px;
   font-family: inherit;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
   border-radius: var(--radius-xs);
   color: var(--text-dim);
 }
