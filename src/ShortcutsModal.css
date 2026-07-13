@@ -46,7 +46,7 @@
 }
 
 .shortcuts-row--active {
-  background: rgba(0, 120, 212, 0.15);
+  background: color-mix(in oklch, var(--accent), transparent 85%);
 }
 
 .shortcuts-keys {

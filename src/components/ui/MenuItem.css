@@ -16,14 +16,6 @@
   line-height: 22px;
 }
 
-.ui-menu-item:hover {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 120, 212, 0.10) 0%,
-    rgba(0, 120, 212, 0.04) 60%,
-    transparent 100%
-  );
-}
 .ui-menu-item:hover,
 .ui-bg-accent-hover {
   background: linear-gradient(
@@ -34,18 +26,11 @@
   );
 }
 
-.ui-menu-item--active {
-  background: rgba(0, 120, 212, 0.15);
-}
 .ui-menu-item--active,
 .ui-bg-accent-active {
   background: color-mix(in oklch, var(--accent), transparent 85%);
 }
 
-.ui-menu-item:focus-visible {
-  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
-  outline: none;
-}
 .ui-menu-item:focus-visible,
 .ui-focus-accent {
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);

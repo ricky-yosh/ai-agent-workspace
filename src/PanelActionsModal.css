@@ -69,14 +69,6 @@
   color: var(--text-primary);
 }
 
-.panel-actions-item:hover {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 120, 212, 0.10) 0%,
-    rgba(0, 120, 212, 0.04) 60%,
-    transparent 100%
-  );
-}
 .panel-actions-item:hover,
 .ui-bg-accent-hover {
   background: linear-gradient(
@@ -87,18 +79,11 @@
   );
 }
 
-.panel-actions-item--active {
-  background: rgba(0, 120, 212, 0.15);
-}
 .panel-actions-item--active,
 .ui-bg-accent-active {
   background: color-mix(in oklch, var(--accent), transparent 85%);
 }
 
-.panel-actions-item:focus-visible {
-  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
-  outline: none;
-}
 .panel-actions-item:focus-visible,
 .ui-focus-accent {
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
@@ -162,7 +147,7 @@
 
 .panel-actions-item:hover .panel-actions-current-badge,
 .panel-actions-item--active .panel-actions-current-badge {
-  background: rgba(0, 120, 212, 0.20);
+  background: color-mix(in oklch, var(--accent), transparent 80%);
 }
 
 /* ── Footer ──────────────────────────────────────────── */

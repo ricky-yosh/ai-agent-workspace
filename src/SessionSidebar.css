@@ -371,7 +371,7 @@
 .new-session-btn:focus-visible,
 .sidebar-toggle-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
 }
 
 

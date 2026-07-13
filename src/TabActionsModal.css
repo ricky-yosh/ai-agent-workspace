@@ -63,14 +63,6 @@
   color: var(--text-primary);
 }
 
-.tab-actions-item:hover {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 120, 212, 0.10) 0%,
-    rgba(0, 120, 212, 0.04) 60%,
-    transparent 100%
-  );
-}
 .tab-actions-item:hover,
 .ui-bg-accent-hover {
   background: linear-gradient(
@@ -81,18 +73,11 @@
   );
 }
 
-.tab-actions-item--active {
-  background: rgba(0, 120, 212, 0.15);
-}
 .tab-actions-item--active,
 .ui-bg-accent-active {
   background: color-mix(in oklch, var(--accent), transparent 85%);
 }
 
-.tab-actions-item:focus-visible {
-  box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.55);
-  outline: none;
-}
 .tab-actions-item:focus-visible,
 .ui-focus-accent {
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);

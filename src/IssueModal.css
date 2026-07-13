@@ -74,14 +74,6 @@
   transition: background var(--duration-fast, 120ms);
 }
 
-.issue-modal-item:hover {
-  background: linear-gradient(
-    90deg,
-    rgba(0, 120, 212, 0.10) 0%,
-    rgba(0, 120, 212, 0.04) 60%,
-    transparent 100%
-  );
-}
 .issue-modal-item:hover,
 .ui-bg-accent-hover {
   background: linear-gradient(
@@ -92,9 +84,6 @@
   );
 }
 
-.issue-modal-item.issue-modal-item--active {
-  background: rgba(0, 120, 212, 0.15);
-}
 .issue-modal-item.issue-modal-item--active,
 .ui-bg-accent-active {
   background: color-mix(in oklch, var(--accent), transparent 85%);
