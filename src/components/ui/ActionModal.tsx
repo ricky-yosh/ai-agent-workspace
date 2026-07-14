@@ -6,6 +6,7 @@ import "./ActionModal.css";
 
 export interface ActionModalAction {
   label: string;
+  icon?: ReactNode;
   /** Single keyboard character, e.g. "r" for rename, "d" for delete */
   shortcut: string;
   destructive?: boolean;
@@ -168,21 +169,28 @@ export function ActionModal({
     [view, focusedIndex, actions, handleExecuteAction, handleConfirmAction, onClose, returnToList],
   );
 
-  const headerNode =
-    view !== "list" ? (
-      <button className="action-modal__back" onClick={returnToList}>
-        ← Back
-      </button>
-    ) : undefined;
+  const headerNode = (
+    <div className="action-modal__header">
+      {view !== "list" ? (
+        <button className="action-modal__back" onClick={returnToList}>
+          ← Back
+        </button>
+      ) : (
+        <div className="dialog-title">{title}</div>
+      )}
+      <button className="dialog-close-btn" onClick={onClose}>✕</button>
+    </div>
+  );
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title={view === "list" ? title : undefined}
+      title={undefined}
       header={headerNode}
       onKeyDown={handleKeyDown}
-      width={400}
+      width={440}
+      overlayClassName="dialog-overlay--action"
     >
       {view === "list" && (
         <div className="action-modal__list">
@@ -191,6 +199,7 @@ export function ActionModal({
               key={idx}
               active={idx === focusedIndex}
               label={action.label}
+              leading={action.icon}
               destructive={action.destructive}
               trailing={
                 <kbd className="action-modal__shortcut">

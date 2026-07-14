@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Edit3, Trash2 } from "lucide-react";
 // lucide icons now provided by CopyButton
 import { Button, Input, CopyButton, ListCard, FilterableList, SnippetCard, ActionModal } from "../components/ui";
 import type { PanelProps } from "../panelRegistry";
@@ -479,6 +480,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           actions={[
             {
               label: "Rename",
+              icon: <Edit3 size={14} />,
               shortcut: "r",
               renderSubPage: ({ value, onChange, onSave }) => (
                 <Input
@@ -498,6 +500,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
             },
             {
               label: "Delete",
+              icon: <Trash2 size={14} />,
               shortcut: "d",
               destructive: true,
               confirmMessage: "Permanently delete this diagram?",
