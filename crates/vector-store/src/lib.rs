@@ -21,7 +21,7 @@ pub struct StoredChunk {
     pub line_start: i32,
     pub line_end: i32,
     pub chunk_text: String,
-    pub embedding_json: String,
+    pub embedding: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,35 +55,64 @@ impl<'a> VectorStore<'a> {
         self.clear_repo(repo_path)?;
 
         let chunks = extract_code_chunks(repo_path)?;
-
-        let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
-        if texts.is_empty() {
+        if chunks.is_empty() {
             return Ok(0);
         }
-        let embeddings = self.model.embed(texts, None)?;
 
+        // Embed and insert in bounded batches so peak memory stays O(batch)
+        // rather than O(whole repo), and wrap all writes in a single
+        // transaction (one fsync instead of one per row).
+        const EMBED_BATCH: usize = 128;
+
+        self.conn.execute_batch("BEGIN")?;
+        match self.index_chunks_batched(repo_path, &chunks, EMBED_BATCH) {
+            Ok(count) => {
+                self.conn.execute_batch("COMMIT")?;
+                Ok(count)
+            }
+            Err(e) => {
+                // Roll back so a partial index doesn't leak an open
+                // transaction onto the reused connection.
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
+    fn index_chunks_batched(
+        &mut self,
+        repo_path: &str,
+        chunks: &[CodeChunk],
+        batch_size: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp();
         let mut count = 0;
-        for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
-            let id = uuid::Uuid::new_v4().to_string();
-            let embedding_json = serde_json::to_string(embedding)?;
-            self.conn.execute(
-                "INSERT INTO code_vectors (id, repo_path, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding_json, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![
-                    id,
-                    repo_path,
-                    chunk.file_path,
-                    chunk.symbol_name,
-                    chunk.symbol_type,
-                    chunk.line_start as i32,
-                    chunk.line_end as i32,
-                    chunk.text,
-                    embedding_json,
-                    now,
-                ],
-            )?;
-            count += 1;
+
+        for batch in chunks.chunks(batch_size) {
+            let texts: Vec<&str> = batch.iter().map(|c| c.text.as_str()).collect();
+            let embeddings = self.model.embed(texts, None)?;
+
+            for (chunk, embedding) in batch.iter().zip(embeddings.iter()) {
+                let id = uuid::Uuid::new_v4().to_string();
+                let embedding_bytes = pack_embedding(embedding);
+                self.conn.execute(
+                    "INSERT INTO code_vectors (id, repo_path, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        id,
+                        repo_path,
+                        chunk.file_path,
+                        chunk.symbol_name,
+                        chunk.symbol_type,
+                        chunk.line_start as i32,
+                        chunk.line_end as i32,
+                        chunk.text,
+                        embedding_bytes,
+                        now,
+                    ],
+                )?;
+                count += 1;
+            }
         }
 
         Ok(count)
@@ -98,7 +127,7 @@ impl<'a> VectorStore<'a> {
         let query_embedding = self.embed_query(query)?;
 
         let mut stmt = self.conn.prepare(
-            "SELECT id, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding_json
+            "SELECT id, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding
              FROM code_vectors WHERE repo_path = ?1",
         )?;
         let rows = stmt.query_map(params![repo_path], |row| {
@@ -111,15 +140,14 @@ impl<'a> VectorStore<'a> {
                 line_start: row.get(4)?,
                 line_end: row.get(5)?,
                 chunk_text: row.get(6)?,
-                embedding_json: row.get(7)?,
+                embedding: row.get(7)?,
             })
         })?;
 
         let mut results: Vec<SearchResult> = Vec::new();
         for row in rows {
             let chunk = row?;
-            let chunk_embedding: Vec<f32> = serde_json::from_str(&chunk.embedding_json)
-                .unwrap_or_default();
+            let chunk_embedding: Vec<f32> = unpack_embedding(&chunk.embedding);
             let score = fastembed::similarity::cosine_similarity(&query_embedding, &chunk_embedding);
             results.push(SearchResult {
                 file_path: chunk.file_path,
@@ -158,6 +186,23 @@ impl<'a> VectorStore<'a> {
 #[cfg(test)]
 fn is_supported(file_path: &str) -> bool {
     ai_agent_workspace_code_intelligence::is_supported(file_path)
+}
+
+/// Pack an embedding vector into a flat little-endian f32 byte buffer for BLOB storage.
+fn pack_embedding(embedding: &[f32]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(embedding.len() * 4);
+    for f in embedding {
+        buf.extend_from_slice(&f.to_le_bytes());
+    }
+    buf
+}
+
+/// Reverse of [`pack_embedding`]: reinterpret a little-endian f32 byte buffer as a vector.
+fn unpack_embedding(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect()
 }
 
 pub fn extract_code_chunks(repo_path: &str) -> Result<Vec<CodeChunk>, Box<dyn std::error::Error>> {
@@ -276,6 +321,15 @@ mod tests {
         let b = vec![0.0, 1.0];
         let sim = fastembed::similarity::cosine_similarity(&a, &b);
         assert!((sim - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_pack_unpack_embedding_roundtrip() {
+        let original = vec![1.0f32, -0.5, 3.1415, 0.0, -123.456];
+        let packed = pack_embedding(&original);
+        assert_eq!(packed.len(), original.len() * 4);
+        let unpacked = unpack_embedding(&packed);
+        assert_eq!(original, unpacked);
     }
 
     #[test]

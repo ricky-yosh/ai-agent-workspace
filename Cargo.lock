@@ -140,9 +140,7 @@ dependencies = [
  "regex",
  "rusqlite",
  "serde",
- "serde_json",
  "uuid",
- "walkdir",
 ]
 
 [[package]]

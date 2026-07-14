@@ -134,6 +134,29 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         }
     }
 
+    if current_version < 17 {
+        // v16 -> v17: store embeddings as packed-f32 BLOB instead of JSON text.
+        // code_vectors holds only rebuildable embeddings, so recreate the table
+        // with the new column type; a reindex repopulates it.
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS code_vectors;
+             CREATE TABLE code_vectors (
+                id TEXT PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                line_start INTEGER NOT NULL,
+                line_end INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                created_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_path ON code_vectors(repo_path);
+             CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_file ON code_vectors(repo_path, file_path);"
+        )?;
+    }
+
     Ok(())
 }
 
@@ -212,5 +235,59 @@ mod tests {
         assert!(fk_enabled);
     }
 
+    fn code_vectors_embedding_type(conn: &Connection) -> String {
+        conn.prepare("PRAGMA table_info(code_vectors)")
+            .unwrap()
+            .query_map([], |row| {
+                let name: String = row.get(1)?;
+                let col_type: String = row.get(2)?;
+                Ok((name, col_type))
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .find(|(name, _)| name == "embedding")
+            .map(|(_, col_type)| col_type)
+            .expect("code_vectors should have an embedding column")
+    }
 
+    #[test]
+    fn test_code_vectors_embedding_is_blob_on_fresh_db() {
+        let conn = setup_db();
+        assert_eq!(code_vectors_embedding_type(&conn), "BLOB");
+    }
+
+    #[test]
+    fn test_migrate_converts_legacy_code_vectors_to_blob() {
+        // Simulate a pre-v17 database whose code_vectors used embedding_json TEXT.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE code_vectors (
+                id TEXT PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                line_start INTEGER NOT NULL,
+                line_end INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (16);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert_eq!(code_vectors_embedding_type(&conn), "BLOB");
+        let has_legacy_col = conn
+            .prepare("PRAGMA table_info(code_vectors)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .any(|name| name == "embedding_json");
+        assert!(!has_legacy_col, "legacy embedding_json column should be gone");
+    }
 }
