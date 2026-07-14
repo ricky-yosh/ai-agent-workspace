@@ -1,12 +1,14 @@
 import { useState, useCallback } from "react";
 import { useTauriEvent } from "../../hooks/useTauriEvent";
 import { safeInvoke } from "../../safeInvoke";
-import type { IndexProgress } from "./types";
+import type { IndexProgress, IndexResult } from "./types";
 
 export interface UseCodeIndexingResult {
   indexing: boolean;
   progress: IndexProgress | null;
   error: string | null;
+  lastResult: IndexResult | null;
+  lastIndexedAt: Date | null;
   startIndex: () => Promise<void>;
   cancelIndex: () => Promise<void>;
 }
@@ -15,6 +17,8 @@ export function useCodeIndexing(repoPath: string): UseCodeIndexingResult {
   const [indexing, setIndexing] = useState(false);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<IndexResult | null>(null);
+  const [lastIndexedAt, setLastIndexedAt] = useState<Date | null>(null);
 
   useTauriEvent<IndexProgress & { repo_path: string }>(
     "code-index-progress",
@@ -39,7 +43,9 @@ export function useCodeIndexing(repoPath: string): UseCodeIndexingResult {
     setProgress(null);
     setError(null);
     try {
-      await safeInvoke("index_code", { repoPath });
+      const result = await safeInvoke<IndexResult>("index_code", { repoPath });
+      setLastResult(result);
+      setLastIndexedAt(new Date());
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Indexing failed:", message);
@@ -55,5 +61,5 @@ export function useCodeIndexing(repoPath: string): UseCodeIndexingResult {
     await safeInvoke("cancel_index").catch(() => {});
   }, []);
 
-  return { indexing, progress, error, startIndex, cancelIndex };
+  return { indexing, progress, error, lastResult, lastIndexedAt, startIndex, cancelIndex };
 }

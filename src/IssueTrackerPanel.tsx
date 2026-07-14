@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
-import { Button } from "./components/ui";
-import { Plus, X } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { Button, AnimatedListRow, FilterableList } from "./components/ui";
+import { Plus } from "lucide-react";
 import type { PanelProps } from "./panelRegistry";
 import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
-import SearchBar from "./components/SearchBar";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { safeInvoke } from "./safeInvoke";
 import ReactMarkdown from "react-markdown";
@@ -79,7 +77,7 @@ interface ChangeEvent {
 }
 
 function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
-  const { sessionId, focusedAreaId, areaId } = usePanelContext();
+  const { sessionId } = usePanelContext();
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,10 +90,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
   const bodyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const filterInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const issuesRef = useRef<Issue[]>([]);
   const prevSnapshotsRef = useRef<Map<string, { title: string; labels: string[]; state: string; body: string }>>(new Map());
   const fetchInFlight = useRef(false);
@@ -281,22 +276,6 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     issuesRef.current = issues;
   }, [issues]);
 
-  useEffect(() => {
-    if (focusedIndex === null) return;
-    rowRefs.current.get(focusedIndex)?.scrollIntoView({ block: "nearest" });
-  }, [focusedIndex]);
-
-  useEffect(() => {
-    if (document.activeElement === filterInputRef.current) return;
-    if (focusedAreaId === areaId) {
-      if (focusedIndex !== null) {
-        rowRefs.current.get(focusedIndex)?.focus();
-      } else {
-        panelRef.current?.focus();
-      }
-    }
-  }, [focusedAreaId, areaId, focusedIndex]);
-
   useLayoutEffect(() => {
     panelRef.current?.focus();
   }, []);
@@ -307,116 +286,6 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     });
     return () => cancelAnimationFrame(raf);
   }, []);
-
-  useEffect(() => {
-    function onGlobalKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === "/" &&
-        panelRef.current?.contains(document.activeElement) &&
-        document.activeElement !== filterInputRef.current
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        filterInputRef.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onGlobalKeyDown, { capture: true });
-    return () => document.removeEventListener("keydown", onGlobalKeyDown, { capture: true });
-  }, []);
-
-  const moveFocus = useCallback((newIndex: number) => {
-    setFocusedIndex(newIndex);
-    rowRefs.current.get(newIndex)?.focus();
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      // This handler is delegated on the panel container, so it also receives
-      // keydowns that bubble up from the filter input. The input manages its
-      // own keys (typing, Escape, ArrowDown), so ignore events originating
-      // there to avoid e.g. triggering row typeahead while the user is typing.
-      if (e.target === filterInputRef.current) return;
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          moveFocus(focusedIndex === null ? 0 : Math.min(focusedIndex + 1, displayedIssues.length - 1));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          if (focusedIndex !== null && focusedIndex > 0) {
-            moveFocus(focusedIndex - 1);
-          } else {
-            setFocusedIndex(null);
-            filterInputRef.current?.focus();
-          }
-          break;
-        case "Home":
-          e.preventDefault();
-          moveFocus(0);
-          break;
-        case "End":
-          e.preventDefault();
-          moveFocus(displayedIssues.length - 1);
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          if (focusedIndex !== null) {
-            setExpandedId(displayedIssues[focusedIndex].id);
-          }
-          break;
-        case "ArrowLeft":
-          e.preventDefault();
-          if (focusedIndex !== null) {
-            setExpandedId(null);
-          }
-          break;
-        case "Enter":
-          if (focusedIndex !== null) {
-            const id = displayedIssues[focusedIndex].id;
-            setExpandedId((prev) => (prev === id ? null : id));
-          }
-          break;
-        case "Escape":
-          if (focusedIndex !== null && expandedId === displayedIssues[focusedIndex]?.id) {
-            setExpandedId(null);
-          } else {
-            setFocusedIndex(null);
-          }
-          break;
-        case "/":
-          e.preventDefault();
-          filterInputRef.current?.focus();
-          break;
-        case "c":
-        case "C":
-          e.preventDefault();
-          setIssueModalOpen({ mode: "create" });
-          break;
-        case "e":
-        case "E":
-          if (focusedIndex !== null && displayedIssues[focusedIndex]) {
-            e.preventDefault();
-            setIssueModalOpen({ mode: "edit", issue: displayedIssues[focusedIndex] });
-          }
-          break;
-        default: {
-          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            const char = e.key.toLowerCase();
-            const start = focusedIndex === null ? 0 : focusedIndex + 1;
-            const len = displayedIssues.length;
-            for (let i = 0; i < len; i++) {
-              const idx = (start + i) % len;
-              if (displayedIssues[idx].title.toLowerCase().startsWith(char)) {
-                moveFocus(idx);
-                break;
-              }
-            }
-          }
-        }
-      }
-    },
-    [displayedIssues, focusedIndex, expandedId, moveFocus],
-  );
 
   // Only replace the whole panel with the loading state on the very first
   // load. Background refetches keep the list mounted so they don't unmount the
@@ -439,7 +308,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
 
   if (issues.length === 0) {
     return (
-      <div ref={panelRef} className="issue-tracker-panel issue-panel__empty" tabIndex={0} onKeyDown={handleKeyDown}>
+      <div ref={panelRef} className="issue-tracker-panel issue-panel__empty" tabIndex={0}>
         <div className="issue-panel__empty-icon">○</div>
         <div>
           <div className="issue-panel__empty-title">No issues yet</div>
@@ -463,213 +332,156 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   }
 
   return (
-    <div ref={panelRef} className="issue-tracker-panel" tabIndex={0} onKeyDown={handleKeyDown} onFocus={(e) => { if (e.target === e.currentTarget && focusedIndex === null) { setFocusedIndex(0); rowRefs.current.get(0)?.focus(); } }}>
-      <div className="issue-tracker-toolbar">
-        <div className="issue-tracker-search-wrap">
-          <SearchBar
-            ref={filterInputRef}
-            value={filterQuery}
-            onChange={(v) => {
-              setFilterQuery(v);
-              setFocusedIndex(null);
-            }}
-            placeholder="Filter issues… (press /)"
-            onMouseDown={() => {
-              filterInputRef.current?.focus();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setFilterQuery("");
-                setFocusedIndex(null);
-                rowRefs.current.get(0)?.focus();
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                if (displayedIssues.length > 0) {
-                  moveFocus(0);
-                }
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                if (displayedIssues.length > 0) {
-                  moveFocus(displayedIssues.length - 1);
-                }
-              }
-            }}
-            onBlur={(e) => {
-              if (!panelRef.current?.contains(e.relatedTarget as Node)) {
-                setFocusedIndex(null);
-              }
-            }}
-            trailing={
-              filterQuery ? (
-                <>
-                  <span className="issue-filter-count">
-                    {displayedIssues.length}/{issues.length}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setFilterQuery("");
-                      setFocusedIndex(null);
-                      filterInputRef.current?.focus();
-                    }}
-                    aria-label="Clear filter"
-                  >
-                    <X size={12} />
-                  </Button>
-                </>
-              ) : null
+    <div ref={panelRef} className="issue-tracker-panel" tabIndex={0}>
+      <FilterableList
+        items={displayedIssues}
+        totalCount={issues.length}
+        focusedIndex={focusedIndex}
+        onFocusedIndexChange={setFocusedIndex}
+        searchQuery={filterQuery}
+        onSearchChange={setFilterQuery}
+        searchPlaceholder="Filter issues… (press /)"
+        createLabel="New issue"
+        createKey="c"
+        onCreateClick={() => setIssueModalOpen({ mode: "create" })}
+        onExitComplete={() => {
+          setRemovingIds((prevRemoving) => {
+            if (prevRemoving.size > 0) {
+              setIssues((prevIssues) => prevIssues.filter((i) => !prevRemoving.has(i.id)));
+              markEventsProcessed();
             }
-          />
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => setIssueModalOpen({ mode: "create" })}
-          title="New issue (c)"
-        >
-          <Plus size={14} />
-        </Button>
-      </div>
-      <div ref={listRef} className="issue-tracker-list">
-        {filterQuery && displayedIssues.length === 0 ? (
-          <div className="issue-panel__no-matches">
-            No matching issues
-          </div>
-        ) : (
-          <AnimatePresence mode="popLayout" onExitComplete={() => {
-            // When any exit animation completes, clean up all removing items
-            setRemovingIds((prevRemoving) => {
-              if (prevRemoving.size > 0) {
-                // Remove all exited items from the issues array
-                setIssues((prevIssues) => prevIssues.filter((i) => !prevRemoving.has(i.id)));
-                // Mark CDC events as processed
-                markEventsProcessed();
+            return new Set();
+          });
+        }}
+        onItemExtraKey={(issue, e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            setExpandedId((prev) => (prev === issue.id ? null : issue.id));
+          } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            setExpandedId(issue.id);
+          } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            setExpandedId(null);
+          } else if (e.key === "e" || e.key === "E") {
+            e.preventDefault();
+            setIssueModalOpen({ mode: "edit", issue });
+          } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            const char = e.key.toLowerCase();
+            const start = focusedIndex === null ? 0 : focusedIndex + 1;
+            const len = displayedIssues.length;
+            for (let i = 0; i < len; i++) {
+              const idx = (start + i) % len;
+              if (displayedIssues[idx].title.toLowerCase().startsWith(char)) {
+                setFocusedIndex(idx);
+                break;
               }
-              return new Set();
-            });
-          }}>
-            {displayedIssues.map((issue, idx) => {
-              const isRemoving = removingIds.has(issue.id);
-              const isSelected = isRemoving ? false : expandedId === issue.id;
-              const isFocused = isRemoving ? false : focusedIndex === idx;
-              const progress = parseTaskProgress(issue.body);
-              const rowClass = ["issue-row", isSelected ? "selected" : "", isFocused ? "focused" : ""].filter(Boolean).join(" ");
-              const bodyClass = ["issue-body", isSelected && issue.body !== "" ? "expanded" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
-              const isHighlighted = highlightedIds.has(issue.id);
-              return (
-                <motion.div
-                  key={issue.id}
-                  layout
-                  initial={isFirstLoad ? { opacity: 0, y: 8 } : false}
-                  animate={{
-                    opacity: 1,
-                    y: 0,
-                    backgroundColor: isHighlighted ? "rgba(77, 142, 240, 0.18)" : undefined,
-                    borderColor: isHighlighted ? "rgba(77, 142, 240, 0.25)" : undefined,
-                  }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{
-                    duration: isFirstLoad ? 0.2 : 0.15,
-                    delay: isFirstLoad ? idx * 0.03 : 0,
-                    ease: [0.2, 0, 0, 1],
-                    layout: { duration: 0.2 },
-                  }}
-                >
-                  <div
-                    ref={(el) => {
-                      if (el) {
-                        rowRefs.current.set(idx, el);
-                      } else {
-                        rowRefs.current.delete(idx);
-                      }
-                    }}
-                    className={rowClass}
-                    tabIndex={(focusedIndex ?? 0) === idx ? 0 : -1}
-                    onFocus={() => setFocusedIndex(idx)}
-                    onBlur={(e) => {
-                      if (!listRef.current?.contains(e.relatedTarget as Node)) {
-                        setFocusedIndex(null);
-                      }
-                    }}
-                    onClick={() => {
-                      setExpandedId(isSelected ? null : issue.id);
-                      moveFocus(idx);
-                    }}
-                    onDoubleClick={() => setIssueModalOpen({ mode: "edit", issue })}
-                  >
-                    <div className="issue-row__header">
-                      <span className="issue-row__number">
-                        #{issue.number}
-                      </span>
-                      <span className="issue-row__title">
-                        {issue.title}
-                      </span>
-                      {progress !== null && (
-                        <span className="issue-row__progress">
-                          {progress.done}/{progress.total}
-                        </span>
-                      )}
-                      <IssueStateIcon state={issue.state} />
-                    </div>
-                    {issue.labels.length > 0 && (
-                      <div className="issue-row__labels">
-                        {issue.labels.map((label) => (
-                          <span
-                            key={label}
-                            className="issue-label"
-                            style={labelStyle(label)}
-                          >
-                            {label}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    ref={(el) => {
-                      if (el) bodyRefs.current.set(issue.id, el);
-                      else bodyRefs.current.delete(issue.id);
-                    }}
-                    className={bodyClass}
-                  >
-                    <div className="issue-body__content">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          h2: ({ children }) => <h2>{children}</h2>,
-                          h3: ({ children }) => <h3>{children}</h3>,
-                          code: ({ children, className }) => {
-                            const isBlock = Boolean(className);
-                            if (isBlock) {
-                              return <code className="issue-md-code--block">{children}</code>;
-                            }
-                            return <code className="issue-md-code--inline">{children}</code>;
-                          },
-                          pre: ({ children }) => <pre>{children}</pre>,
-                          blockquote: ({ children }) => <blockquote>{children}</blockquote>,
-                          p: ({ children }) => <p>{children}</p>,
-                          ul: ({ children }) => <ul>{children}</ul>,
-                          ol: ({ children }) => <ol>{children}</ol>,
-                          a: ({ children, href }) => (
-                            <a href={href}>{children}</a>
-                          ),
-                          input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
-                            <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} />
-                          ),
-                        }}
+            }
+          }
+        }}
+        emptyMessage="No issues yet"
+        noMatchesMessage="No matching issues"
+      >
+        {(issue, idx, { isFocused, onFocus, onBlur, setCardRef }) => {
+          const isRemoving = removingIds.has(issue.id);
+          const isSelected = isRemoving ? false : expandedId === issue.id;
+          const progress = parseTaskProgress(issue.body);
+          const rowClass = ["issue-row", isSelected ? "selected" : "", isFocused ? "focused" : ""].filter(Boolean).join(" ");
+          const bodyClass = ["issue-body", isSelected && issue.body !== "" ? "expanded" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
+          const isHighlighted = highlightedIds.has(issue.id);
+          return (
+            <AnimatedListRow
+              key={issue.id}
+              isFirstLoad={isFirstLoad}
+              index={idx}
+              isHighlighted={isHighlighted}
+            >
+              <div
+                ref={(el) => {
+                  setCardRef(el);
+                }}
+                className={rowClass}
+                tabIndex={0}
+                onFocus={onFocus}
+                onBlur={onBlur}
+                onClick={() => {
+                  setExpandedId(isSelected ? null : issue.id);
+                  setFocusedIndex(idx);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setIssueModalOpen({ mode: "edit", issue });
+                }}
+              >
+                <div className="issue-row__header">
+                  <span className="issue-row__number">
+                    #{issue.number}
+                  </span>
+                  <span className="issue-row__title">
+                    {issue.title}
+                  </span>
+                  {progress !== null && (
+                    <span className="issue-row__progress">
+                      {progress.done}/{progress.total}
+                    </span>
+                  )}
+                  <IssueStateIcon state={issue.state} />
+                </div>
+                {issue.labels.length > 0 && (
+                  <div className="issue-row__labels">
+                    {issue.labels.map((label) => (
+                      <span
+                        key={label}
+                        className="issue-label"
+                        style={labelStyle(label)}
                       >
-                        {issue.body}
-                      </ReactMarkdown>
-                    </div>
+                        {label}
+                      </span>
+                    ))}
                   </div>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        )}
-      </div>
+                )}
+              </div>
+              <div
+                ref={(el) => {
+                  if (el) bodyRefs.current.set(issue.id, el);
+                  else bodyRefs.current.delete(issue.id);
+                }}
+                className={bodyClass}
+              >
+                <div className="issue-body__content">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h2: ({ children }) => <h2>{children}</h2>,
+                      h3: ({ children }) => <h3>{children}</h3>,
+                      code: ({ children, className }) => {
+                        const isBlock = Boolean(className);
+                        if (isBlock) {
+                          return <code className="issue-md-code--block">{children}</code>;
+                        }
+                        return <code className="issue-md-code--inline">{children}</code>;
+                      },
+                      pre: ({ children }) => <pre>{children}</pre>,
+                      blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+                      p: ({ children }) => <p>{children}</p>,
+                      ul: ({ children }) => <ul>{children}</ul>,
+                      ol: ({ children }) => <ol>{children}</ol>,
+                      a: ({ children, href }) => (
+                        <a href={href}>{children}</a>
+                      ),
+                      input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
+                        <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} />
+                      ),
+                    }}
+                  >
+                    {issue.body}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </AnimatedListRow>
+          );
+        }}
+      </FilterableList>
 
       {sessionId && (
         <IssueModal

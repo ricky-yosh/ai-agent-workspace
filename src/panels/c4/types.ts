@@ -61,6 +61,12 @@ export interface IndexProgress {
   file_path: string;
 }
 
+export interface IndexResult {
+  indexed: number;
+  skipped: number;
+  total: number;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export function assignGridPositions(

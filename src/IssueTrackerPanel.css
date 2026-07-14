@@ -5,22 +5,6 @@
   box-sizing: border-box;
 }
 
-.issue-tracker-toolbar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  align-items: center;
-}
-
-.issue-tracker-search-wrap {
-  flex: 1;
-  min-width: 0;
-}
-
-.issue-tracker-list {
-  outline: none;
-}
-
 /* ── Row ─────────────────────────────────────────────────── */
 .issue-row {
   padding: 8px 12px;
@@ -100,39 +84,6 @@
   border-color: rgba(77, 142, 240, 0.35);
 }
 
-/* ── Filter search ───────────────────────────────────────── */
-.issue-filter-count {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.issue-filter-clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--radius-xs);
-  flex-shrink: 0;
-  position: relative;
-}
-
-.issue-filter-clear::after {
-  content: "";
-  position: absolute;
-  inset: -8px;
-}
-
-.issue-filter-clear:hover {
-  color: var(--text-primary);
-  background: var(--bg-overlay);
-}
-
 .issue-kbd,
 .ui-kbd.ui-kbd--sm {
   display: inline-flex;
@@ -195,14 +146,6 @@
   color: var(--text-muted);
   max-width: 220px;
   line-height: 1.4;
-}
-
-/* ── No matching issues ───────────────────────────────────── */
-.issue-panel__no-matches {
-  padding: var(--space-4) var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--font-size-base);
-  text-align: center;
 }
 
 /* ── Row inner elements ───────────────────────────────────── */

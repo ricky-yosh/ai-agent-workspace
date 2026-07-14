@@ -69,40 +69,7 @@
 
 /* Canvas list (no selection) */
 .canvas-list {
-  padding: 8px;
-  overflow: auto;
   height: 100%;
-  box-sizing: border-box;
-  outline: none;
-}
-
-.canvas-list__toolbar {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-  align-items: center;
-}
-
-.canvas-list__search-wrap {
-  flex: 1;
-  min-width: 0;
-}
-
-.canvas-list__empty {
-  padding: 16px 12px;
-  color: var(--text-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-/* Canvas card */
-.canvas-card {
-  padding: 8px 12px;
-  margin-bottom: 4px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  cursor: pointer;
 }
 
 .canvas-card__title {
@@ -238,8 +205,4 @@
   overflow: hidden;
 }
 
-/* Filter count label */
-.canvas-filter-count {
-  font-size: 11px;
-  color: var(--text-muted);
-}
+

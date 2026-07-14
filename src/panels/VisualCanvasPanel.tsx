@@ -5,10 +5,9 @@ import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
-import { Badge, Button } from "../components/ui";
-import { Plus, X } from "lucide-react";
+import { Badge, Button, ListCard, FilterableList } from "../components/ui";
+import { Plus } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
-import SearchBar from "../components/SearchBar";
 import CanvasModal from "../CanvasModal";
 import {
   CanvasRenderer,
@@ -55,10 +54,10 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [canvasModalOpen, setCanvasModalOpen] = useState<{ mode: "create" } | { mode: "rename"; canvas: VisualCanvas } | null>(null);
   const [canvasFilterQuery, setCanvasFilterQuery] = useState("");
-  const canvasFilterInputRef = useRef<HTMLInputElement>(null);
-  const canvasListRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [focusedCanvasIndex, setFocusedCanvasIndex] = useState<number | null>(null);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
 
   // Tag enter animation: track newly added tag IDs
   const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
@@ -278,12 +277,15 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         setCanvases(data);
         setLoading(false);
         setError(null);
+        if (isFirstLoad) {
+          setIsFirstLoad(false);
+        }
       })
       .catch((err) => {
         setError(String(err));
         setLoading(false);
       });
-  }, [sessionId]);
+  }, [sessionId, isFirstLoad]);
 
   const fetchNodes = useCallback(() => {
     if (!selectedCanvasId) {
@@ -696,22 +698,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   // ── Effects ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    function onGlobalKeyDown(e: KeyboardEvent) {
-      if (
-        e.key === "/" &&
-        canvasListRef.current?.contains(document.activeElement) &&
-        document.activeElement !== canvasFilterInputRef.current
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        canvasFilterInputRef.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onGlobalKeyDown, { capture: true });
-    return () => document.removeEventListener("keydown", onGlobalKeyDown, { capture: true });
-  }, []);
-
-  useEffect(() => {
     fetchCanvases();
   }, [fetchCanvases]);
 
@@ -873,72 +859,44 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
 
     return (
-      <div
-        ref={canvasListRef}
-        tabIndex={0}
-        className="canvas-list"
-        onKeyDown={(e) => {
-          if (e.key === "n" || e.key === "N") {
-            e.preventDefault();
-            setCanvasModalOpen({ mode: "create" });
-          }
-        }}
-      >
-        <div className="canvas-list__toolbar">
-          <div className="canvas-list__search-wrap">
-            <SearchBar
-              ref={canvasFilterInputRef}
-              value={canvasFilterQuery}
-              onChange={setCanvasFilterQuery}
-              placeholder="Filter canvases… (press /)"
-              trailing={
-                canvasFilterQuery ? (
-                  <>
-                    <span className="canvas-filter-count">
-                      {filteredCanvases.length}/{canvases.length}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCanvasFilterQuery("")}
-                      aria-label="Clear filter"
-                    >
-                      <X size={12} />
-                    </Button>
-                  </>
-                ) : null
-              }
-            />
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setCanvasModalOpen({ mode: "create" })}
-            title="New canvas (n)"
-          >
-            <Plus size={14} />
-          </Button>
-        </div>
-        {filteredCanvases.length === 0 ? (
-          <div className="canvas-list__empty">
-            {canvasFilterQuery ? "No matching canvases" : "No canvases yet"}
-          </div>
-        ) : (
-        <AnimatePresence mode="popLayout">
-          {filteredCanvases.map((canvas, idx) => (
-            <motion.div
+      <div className="canvas-list">
+        <FilterableList
+          items={filteredCanvases}
+          totalCount={canvases.length}
+          focusedIndex={focusedCanvasIndex}
+          onFocusedIndexChange={setFocusedCanvasIndex}
+          searchQuery={canvasFilterQuery}
+          onSearchChange={setCanvasFilterQuery}
+          searchPlaceholder="Filter canvases… (press /)"
+          createLabel="New canvas"
+          createKey="n"
+          onCreateClick={() => setCanvasModalOpen({ mode: "create" })}
+          onItemExtraKey={(canvas, e) => {
+            if (e.key === "e" || e.key === "E") {
+              e.preventDefault();
+              setCanvasModalOpen({ mode: "rename", canvas });
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              setSelectedCanvasId(canvas.id);
+            }
+          }}
+          emptyMessage="No canvases yet"
+          noMatchesMessage="No matching canvases"
+        >
+          {(canvas, idx, { isFocused, onFocus, onBlur, setCardRef }) => (
+            <ListCard
               key={canvas.id}
-              layout
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{
-                duration: 0.2,
-                delay: idx * 0.03,
-                ease: [0.2, 0, 0, 1],
-              }}
-              className="canvas-card"
+              isFirstLoad={isFirstLoad}
+              index={idx}
+              isFocused={isFocused}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              cardRef={setCardRef}
               onClick={() => setSelectedCanvasId(canvas.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setCanvasModalOpen({ mode: "rename", canvas });
+              }}
             >
               <div className="canvas-card__title">
                 {canvas.name}
@@ -946,10 +904,9 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
               <div className="canvas-card__date">
                 Created {new Date(canvas.created_at).toLocaleDateString()}
               </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-        )}
+            </ListCard>
+          )}
+        </FilterableList>
 
         {sessionId && (
           <CanvasModal

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "motion/react";
 // lucide icons now provided by CopyButton
-import { Button, Input, CopyButton, SnippetCard } from "../components/ui";
+import { Button, Input, CopyButton, ListCard, FilterableList, SnippetCard, ActionModal } from "../components/ui";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
@@ -32,11 +31,27 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const [diagramData, setDiagramData] = useState<C4DiagramData | null>(null);
   const [currentLevel, setCurrentLevel] = useState<string>("context");
   const [drillPath, setDrillPath] = useState<DrillEntry[]>([]);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<C4Diagram | null>(null);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
 
-  const { indexing, progress, error, startIndex, cancelIndex } = useCodeIndexing(repoPath);
+  const filteredDiagrams = filterQuery
+    ? diagrams.filter((d) => d.name.toLowerCase().includes(filterQuery.toLowerCase()))
+    : diagrams;
+
+  const { indexing, progress, error, lastResult, lastIndexedAt, startIndex, cancelIndex } = useCodeIndexing(repoPath);
+
+  const relativeTime = useCallback((date: Date): string => {
+    const diffMs = Date.now() - date.getTime();
+    const diffSec = Math.round(diffMs / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return `${diffMin} min ago`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr} hr ago`;
+    return date.toLocaleDateString();
+  }, []);
 
   // Viewport
   const [offsetX, setOffsetX] = useState(0);
@@ -97,10 +112,12 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       .then((data) => {
         setDiagrams(data);
         setLoading(false);
+        setIsFirstLoad(false);
       })
       .catch((err) => {
         console.error("Failed to fetch C4 diagrams:", err);
         setLoading(false);
+        setIsFirstLoad(false);
       });
   }, [repoPath]);
 
@@ -273,7 +290,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         if (selectedDiagram?.id === id) {
           setSelectedDiagram(null);
         }
-        setConfirmDeleteId(null);
       } catch (err) {
         console.error("Failed to delete C4 diagram:", err);
       }
@@ -282,8 +298,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   );
 
   const handleRenameDiagram = useCallback(
-    async (id: string) => {
-      const trimmed = renameValue.trim();
+    async (id: string, newName: string) => {
+      const trimmed = newName.trim();
       if (!trimmed) return;
       try {
         const updated = await safeInvoke<C4Diagram>("rename_c4_diagram", {
@@ -301,10 +317,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       } catch (err) {
         console.error("Failed to rename C4 diagram:", err);
       }
-      setRenamingId(null);
-      setRenameValue("");
     },
-    [renameValue, selectedDiagram],
+    [selectedDiagram],
   );
 
   // ── Reset view on drill ────────────────────────────────────────────────
@@ -371,6 +385,13 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               </div>
             </div>
 
+            {lastResult && lastIndexedAt && (
+              <div className="c4-index-status">
+                <span className="c4-index-status__dot" />
+                Indexed {lastResult.indexed} files{lastResult.skipped > 0 ? ` (${lastResult.skipped} skipped)` : ""} &middot; {relativeTime(lastIndexedAt)}
+              </div>
+            )}
+
             <Button variant="primary" size="md" onClick={startIndex}>
               Index Codebase
             </Button>
@@ -395,102 +416,99 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   if (!selectedDiagram) {
     return (
       <div id="c4-diagram-panel-container" className="c4-list">
-        <div className="c4-list__title">C4 Diagrams</div>
-        <AnimatePresence mode="popLayout">
-          {diagrams.map((diagram, idx) => (
-            <motion.div
+        {lastResult && lastIndexedAt && (
+          <div className="c4-index-status c4-index-status--list">
+            <span className="c4-index-status__dot" />
+            Indexed {lastResult.indexed} files{lastResult.skipped > 0 ? ` (${lastResult.skipped} skipped)` : ""} &middot; {relativeTime(lastIndexedAt)}
+          </div>
+        )}
+        <FilterableList
+          items={filteredDiagrams}
+          focusedIndex={focusedIndex}
+          onFocusedIndexChange={setFocusedIndex}
+          title="C4 Diagrams"
+          searchQuery={filterQuery}
+          onSearchChange={setFilterQuery}
+          searchPlaceholder="Filter diagrams… (press /)"
+          onItemExtraKey={(diagram, e) => {
+            if (e.key === "e" || e.key === "E") {
+              e.preventDefault();
+              setEditTarget(diagram);
+            } else if (e.key === "Delete" || e.key === "Backspace") {
+              e.preventDefault();
+              setEditTarget(diagram);
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              setSelectedDiagram(diagram);
+            }
+          }}
+          emptyMessage="No C4 diagrams yet"
+          noMatchesMessage="No matching diagrams"
+        >
+          {(diagram, idx, { isFocused, onFocus, onBlur, setCardRef }) => (
+            <ListCard
               key={diagram.id}
-              layout
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{
-                duration: 0.2,
-                delay: idx * 0.03,
-                ease: [0.2, 0, 0, 1],
-              }}
-              className="c4-diagram-row"
-              onClick={() => {
-                if (renamingId !== diagram.id) {
-                  setSelectedDiagram(diagram);
-                }
+              isFirstLoad={isFirstLoad}
+              index={idx}
+              isFocused={isFocused}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              cardRef={setCardRef}
+              onClick={() => setFocusedIndex(idx)}
+              onDoubleClick={() => setSelectedDiagram(diagram)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setEditTarget(diagram);
               }}
             >
               <div className="c4-diagram-row__inner">
-                {renamingId === diagram.id ? (
-                  <Input
-                    autoFocus
-                    value={renameValue}
-                    onChange={(v) => setRenameValue(v)}
-                    onBlur={() => handleRenameDiagram(diagram.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameDiagram(diagram.id);
-                      if (e.key === "Escape") {
-                        setRenamingId(null);
-                        setRenameValue("");
-                      }
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="c4-diagram-row__input"
-                  />
-                ) : (
-                  <div className="c4-diagram-row__name">{diagram.name}</div>
-                )}
+                <div className="c4-diagram-row__name">{diagram.name}</div>
                 <div className="c4-diagram-row__date">
                   {new Date(diagram.created_at).toLocaleDateString()}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRenamingId(diagram.id);
-                    setRenameValue(diagram.name);
-                  }}
-                  title="Rename"
-                >
-                  &#9998;
-                </Button>
-                {confirmDeleteId === diagram.id ? (
-                  <div className="c4-diagram-row__delete-actions">
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteDiagram(diagram.id);
-                      }}
-                    >
-                      Delete
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDeleteId(null);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDeleteId(diagram.id);
-                    }}
-                    title="Delete"
-                  >
-                    &#10005;
-                  </Button>
-                )}
               </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+            </ListCard>
+          )}
+        </FilterableList>
+
+        <ActionModal
+          open={editTarget !== null}
+          onClose={() => setEditTarget(null)}
+          title="Edit Diagram"
+          initialDraftValue={editTarget?.name ?? ""}
+          actions={[
+            {
+              label: "Rename",
+              shortcut: "r",
+              renderSubPage: ({ value, onChange, onSave }) => (
+                <Input
+                  autoFocus
+                  value={value}
+                  onChange={onChange}
+                  onKeyDown={(e: React.KeyboardEvent) => {
+                    if (e.key === "Enter") onSave();
+                  }}
+                  placeholder="Diagram name"
+                />
+              ),
+              onConfirm: (draftValue) => {
+                if (!editTarget || !draftValue) return;
+                handleRenameDiagram(editTarget.id, draftValue);
+              },
+            },
+            {
+              label: "Delete",
+              shortcut: "d",
+              destructive: true,
+              confirmMessage: "Permanently delete this diagram?",
+              onConfirm: () => {
+                if (!editTarget) return;
+                handleDeleteDiagram(editTarget.id);
+                setEditTarget(null);
+              },
+            },
+          ]}
+        />
       </div>
     );
   }
