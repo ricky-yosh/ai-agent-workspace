@@ -1,6 +1,5 @@
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeChunk {
@@ -156,6 +155,7 @@ impl<'a> VectorStore<'a> {
     }
 }
 
+#[cfg(test)]
 fn is_supported(file_path: &str) -> bool {
     ai_agent_workspace_code_intelligence::is_supported(file_path)
 }
@@ -163,20 +163,15 @@ fn is_supported(file_path: &str) -> bool {
 pub fn extract_code_chunks(repo_path: &str) -> Result<Vec<CodeChunk>, Box<dyn std::error::Error>> {
     let mut chunks = Vec::new();
 
-    for entry in WalkDir::new(repo_path) {
-        let entry = entry?;
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let relative = path.strip_prefix(repo_path).unwrap_or(path);
+    // Reuse the shared filtered walker from code-intelligence, which excludes
+    // node_modules/.git/target/.scratch and only returns supported files. This
+    // keeps exclusion logic in one place so the two indexers can't drift.
+    let files = ai_agent_workspace_code_intelligence::collect_supported_files(repo_path)?;
+    for path in files {
+        let relative = path.strip_prefix(repo_path).unwrap_or(&path);
         let file_path = relative.to_string_lossy().to_string();
 
-        if !is_supported(&file_path) {
-            continue;
-        }
-
-        let content = match std::fs::read_to_string(path) {
+        let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => continue,
         };
