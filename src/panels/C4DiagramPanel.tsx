@@ -41,6 +41,10 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     ? diagrams.filter((d) => d.name.toLowerCase().includes(filterQuery.toLowerCase()))
     : diagrams;
 
+  // Newest snapshot (repo returns diagrams ordered by created_at DESC) is the
+  // "current" one; older rows read as archived reference history.
+  const currentDiagramId = diagrams[0]?.id;
+
   const { indexing, progress, error, lastResult, lastIndexedAt, startIndex, cancelIndex } = useCodeIndexing(repoPath);
 
   const relativeTime = useCallback((date: Date): string => {
@@ -380,9 +384,9 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
         ) : (
           <>
             <div>
-              <div className="c4-empty-state__title">No C4 diagrams yet</div>
+              <div className="c4-empty-state__title">No C4 snapshots yet</div>
               <div className="c4-empty-state__desc">
-                Index your codebase to enable generating C4 architecture diagrams with the AI
+                Index your codebase, then generate point-in-time C4 architecture snapshots with the AI
               </div>
             </div>
 
@@ -427,10 +431,10 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
           items={filteredDiagrams}
           focusedIndex={focusedIndex}
           onFocusedIndexChange={setFocusedIndex}
-          title="C4 Diagrams"
+          title="C4 Snapshots"
           searchQuery={filterQuery}
           onSearchChange={setFilterQuery}
-          searchPlaceholder="Filter diagrams… (press /)"
+          searchPlaceholder="Filter snapshots… (press /)"
           onItemExtraKey={(diagram, e) => {
             if (e.key === "e" || e.key === "E") {
               e.preventDefault();
@@ -443,8 +447,8 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               setSelectedDiagram(diagram);
             }
           }}
-          emptyMessage="No C4 diagrams yet"
-          noMatchesMessage="No matching diagrams"
+          emptyMessage="No C4 snapshots yet"
+          noMatchesMessage="No matching snapshots"
         >
           {(diagram, idx, { isFocused, onFocus, onBlur, setCardRef }) => (
             <ListCard
@@ -463,9 +467,14 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
               }}
             >
               <div className="c4-diagram-row__inner">
-                <div className="c4-diagram-row__name">{diagram.name}</div>
+                <div className="c4-diagram-row__heading">
+                  <div className="c4-diagram-row__name">{diagram.name}</div>
+                  {diagram.id === currentDiagramId && (
+                    <span className="c4-diagram-row__badge">Current</span>
+                  )}
+                </div>
                 <div className="c4-diagram-row__date">
-                  {new Date(diagram.created_at).toLocaleDateString()}
+                  Captured {relativeTime(new Date(diagram.created_at))}
                 </div>
               </div>
             </ListCard>
