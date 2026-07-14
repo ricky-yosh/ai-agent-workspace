@@ -12,7 +12,6 @@ tauri-integration = ["tauri"]
 ai-agent-workspace-core = { path = "../core" }
 ai-agent-workspace-commands = { path = "../commands" }
 ai-agent-workspace-code-intelligence = { path = "../code-intelligence" }
-ai-agent-workspace-vector-store = { path = "../vector-store" }
 ai-agent-workspace-git-operations = { path = "../git-operations" }
 tauri = { version = "2", features = [], optional = true }
 tokio = { version = "1", features = ["full"] }

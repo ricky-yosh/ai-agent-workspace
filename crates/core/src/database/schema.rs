@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 18;
+pub const SCHEMA_VERSION: i32 = 19;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -170,23 +170,6 @@ CREATE INDEX IF NOT EXISTS idx_code_index_repo_path ON code_index(repo_path);
 CREATE INDEX IF NOT EXISTS idx_code_index_repo_file ON code_index(repo_path, file_path);
 CREATE INDEX IF NOT EXISTS idx_code_index_symbol ON code_index(repo_path, symbol_name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_code_index_repo_file_symbol_line ON code_index(repo_path, file_path, symbol_name, line_number);
-
-CREATE TABLE IF NOT EXISTS code_vectors (
-    id TEXT PRIMARY KEY,
-    repo_path TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    symbol_name TEXT NOT NULL,
-    symbol_type TEXT NOT NULL,
-    line_start INTEGER NOT NULL,
-    line_end INTEGER NOT NULL,
-    chunk_text TEXT NOT NULL,
-    embedding BLOB NOT NULL,
-    content_fingerprint TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_path ON code_vectors(repo_path);
-CREATE INDEX IF NOT EXISTS idx_code_vectors_repo_file ON code_vectors(repo_path, file_path);
 "#;
 
 #[cfg(test)]
@@ -239,13 +222,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_tables_includes_code_vectors() {
-        assert!(CREATE_TABLES.contains("code_vectors"));
+    fn test_create_tables_excludes_code_vectors() {
+        assert!(!CREATE_TABLES.contains("code_vectors"));
     }
 
     #[test]
-    fn test_schema_version_is_eighteen() {
-        assert_eq!(SCHEMA_VERSION, 18);
+    fn test_schema_version_is_nineteen() {
+        assert_eq!(SCHEMA_VERSION, 19);
     }
 
     #[test]

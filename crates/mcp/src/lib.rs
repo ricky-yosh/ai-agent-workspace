@@ -166,9 +166,7 @@ impl McpHandler {
         generate_c4_diagram,
         search_history,
         blame,
-        get_owners,
-        vector_search,
-        reindex_vectors
+        get_owners
     });
 
     #[tool(description = "List all sessions")]
@@ -769,80 +767,6 @@ impl McpHandler {
         Ok(CallToolResult::success(vec![Content::json(&result)?]))
     }
 
-    #[tool(description = "Semantic search across the codebase using vector embeddings. Finds code by intent, not text matching.")]
-    async fn vector_search(
-        &self,
-        #[tool(param)] query: String,
-        #[tool(param)] limit: Option<usize>,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-
-        // Cheap, model-free check for whether an index exists before loading the
-        // embedding model.
-        let count = {
-            let conn = self.db.connection()
-                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-            ai_agent_workspace_vector_store::count_chunks(&conn, &repo_path)
-                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
-        };
-
-        if count == 0 {
-            return Ok(CallToolResult::success(vec![Content::text(
-                "No vector index found for this repo. Call the `reindex_vectors` tool first to build the semantic search index."
-            )]));
-        }
-
-        // Model load + search are blocking (ONNX inference, full-table scan);
-        // run them off the async runtime so other tools stay responsive.
-        let db = self.db.clone();
-        let repo = repo_path.clone();
-        let limit = limit.unwrap_or(10);
-        let results = tokio::task::spawn_blocking(move || -> Result<Vec<ai_agent_workspace_vector_store::SearchResult>, String> {
-            let conn = db.connection().map_err(|e| e.to_string())?;
-            let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
-                .map_err(|e| format!("Failed to initialize vector store: {e}"))?;
-            store.search(&repo, &query, limit)
-                .map_err(|e| format!("Search failed: {e}"))
-        })
-        .await
-        .map_err(|e| rmcp::Error::internal_error(format!("search task failed: {e}"), None))?
-        .map_err(|e| rmcp::Error::internal_error(e, None))?;
-
-        Ok(CallToolResult::success(vec![Content::json(&results)?]))
-    }
-
-    #[tool(description = "Rebuild the vector index for semantic search. This embeds all code chunks in the repo and may take a while.")]
-    async fn reindex_vectors(&self) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-
-        // Indexing (walk + embed + SQLite writes) is a long blocking job; run it
-        // off the async runtime so other tools stay responsive.
-        let db = self.db.clone();
-        let repo = repo_path.clone();
-        let (count, total) = tokio::task::spawn_blocking(move || -> Result<(usize, usize), String> {
-            let conn = db.connection().map_err(|e| e.to_string())?;
-            let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
-                .map_err(|e| format!("Failed to initialize vector store: {e}"))?;
-            let count = store.index_repo(&repo)
-                .map_err(|e| format!("Indexing failed: {e}"))?;
-            let total = ai_agent_workspace_vector_store::count_chunks(&conn, &repo)
-                .map_err(|e| e.to_string())?;
-            Ok((count, total))
-        })
-        .await
-        .map_err(|e| rmcp::Error::internal_error(format!("reindex task failed: {e}"), None))?
-        .map_err(|e| rmcp::Error::internal_error(e, None))?;
-
-        Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
-            "repo_path": repo_path,
-            "chunks_reindexed": count,
-            "chunks_total": total,
-        }))?]))
-    }
 }
 
 fn build_c4_structure(
