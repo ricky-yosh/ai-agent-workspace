@@ -232,15 +232,18 @@ impl<'a> VectorStore<'a> {
         results.truncate(limit);
         Ok(results)
     }
+}
 
-    pub fn count_chunks(&self, repo_path: &str) -> Result<usize, rusqlite::Error> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM code_vectors WHERE repo_path = ?1",
-            params![repo_path],
-            |row| row.get(0),
-        )?;
-        Ok(count as usize)
-    }
+/// Count indexed chunks for a repo. Free function (no model load required) so
+/// callers can cheaply check whether an index exists before building a
+/// [`VectorStore`], which loads the embedding model.
+pub fn count_chunks(conn: &rusqlite::Connection, repo_path: &str) -> Result<usize, rusqlite::Error> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM code_vectors WHERE repo_path = ?1",
+        params![repo_path],
+        |row| row.get(0),
+    )?;
+    Ok(count as usize)
 }
 
 #[cfg(test)]
@@ -359,6 +362,34 @@ mod tests {
         let b = vec![0.0, 1.0];
         let sim = fastembed::similarity::cosine_similarity(&a, &b);
         assert!((sim - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_count_chunks() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE code_vectors (
+                id TEXT PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                line_start INTEGER NOT NULL,
+                line_end INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                content_fingerprint TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            INSERT INTO code_vectors VALUES ('a', '/repo', 'x.rs', 's', 'function', 1, 2, 't', x'00', 'fp', 0);
+            INSERT INTO code_vectors VALUES ('b', '/repo', 'y.rs', 's', 'function', 1, 2, 't', x'00', 'fp', 0);
+            INSERT INTO code_vectors VALUES ('c', '/other', 'z.rs', 's', 'function', 1, 2, 't', x'00', 'fp', 0);",
+        )
+        .unwrap();
+
+        assert_eq!(count_chunks(&conn, "/repo").unwrap(), 2);
+        assert_eq!(count_chunks(&conn, "/other").unwrap(), 1);
+        assert_eq!(count_chunks(&conn, "/missing").unwrap(), 0);
     }
 
     #[test]

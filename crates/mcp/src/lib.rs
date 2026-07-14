@@ -778,14 +778,15 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let repo_path = self.db.get_working_directory(&session_id)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection()
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
-            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
-
-        let count = store.count_chunks(&repo_path)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        // Cheap, model-free check for whether an index exists before loading the
+        // embedding model.
+        let count = {
+            let conn = self.db.connection()
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            ai_agent_workspace_vector_store::count_chunks(&conn, &repo_path)
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
+        };
 
         if count == 0 {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -793,12 +794,21 @@ impl McpHandler {
             )]));
         }
 
-        let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
-            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
-
+        // Model load + search are blocking (ONNX inference, full-table scan);
+        // run them off the async runtime so other tools stay responsive.
+        let db = self.db.clone();
+        let repo = repo_path.clone();
         let limit = limit.unwrap_or(10);
-        let results = store.search(&repo_path, &query, limit)
-            .map_err(|e| rmcp::Error::internal_error(format!("Search failed: {}", e), None))?;
+        let results = tokio::task::spawn_blocking(move || -> Result<Vec<ai_agent_workspace_vector_store::SearchResult>, String> {
+            let conn = db.connection().map_err(|e| e.to_string())?;
+            let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
+                .map_err(|e| format!("Failed to initialize vector store: {e}"))?;
+            store.search(&repo, &query, limit)
+                .map_err(|e| format!("Search failed: {e}"))
+        })
+        .await
+        .map_err(|e| rmcp::Error::internal_error(format!("search task failed: {e}"), None))?
+        .map_err(|e| rmcp::Error::internal_error(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::json(&results)?]))
     }
@@ -808,16 +818,24 @@ impl McpHandler {
         let session_id = self.require_session_id()?;
         let repo_path = self.db.get_working_directory(&session_id)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let conn = self.db.connection()
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
-            .map_err(|e| rmcp::Error::internal_error(format!("Failed to initialize vector store: {}", e), None))?;
-
-        let count = store.index_repo(&repo_path)
-            .map_err(|e| rmcp::Error::internal_error(format!("Indexing failed: {}", e), None))?;
-        let total = store.count_chunks(&repo_path)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        // Indexing (walk + embed + SQLite writes) is a long blocking job; run it
+        // off the async runtime so other tools stay responsive.
+        let db = self.db.clone();
+        let repo = repo_path.clone();
+        let (count, total) = tokio::task::spawn_blocking(move || -> Result<(usize, usize), String> {
+            let conn = db.connection().map_err(|e| e.to_string())?;
+            let mut store = ai_agent_workspace_vector_store::VectorStore::new(&conn)
+                .map_err(|e| format!("Failed to initialize vector store: {e}"))?;
+            let count = store.index_repo(&repo)
+                .map_err(|e| format!("Indexing failed: {e}"))?;
+            let total = ai_agent_workspace_vector_store::count_chunks(&conn, &repo)
+                .map_err(|e| e.to_string())?;
+            Ok((count, total))
+        })
+        .await
+        .map_err(|e| rmcp::Error::internal_error(format!("reindex task failed: {e}"), None))?
+        .map_err(|e| rmcp::Error::internal_error(e, None))?;
 
         Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
             "repo_path": repo_path,
