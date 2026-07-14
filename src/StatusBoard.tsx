@@ -44,7 +44,7 @@ export default function StatusBoard() {
       label: "Claude Code",
       methodHint: "Run in your terminal:",
       buildSnippet(path: string) {
-        return `claude mcp add aiaws -- "${path}"`;
+        return `claude mcp add aiaw -- "${path}"`;
       },
     },
     {

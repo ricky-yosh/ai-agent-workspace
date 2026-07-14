@@ -50,11 +50,11 @@ This creates the git tag, pushes it, creates the GitHub release, and attaches al
 
 ```sh
 # Register the MCP server with Claude Code (absolute path — no install needed)
-claude mcp add aiaws -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
+claude mcp add aiaw -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
 
 # List registered MCP servers
 claude mcp list
 
 # Remove the MCP server
-claude mcp remove aiaws
+claude mcp remove aiaw
 ```

@@ -24,7 +24,7 @@ A macOS desktop app where humans and AI agents share a visual workspace. The app
 Register the MCP server with Claude Code:
 
 ```sh
-claude mcp add aiaws -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
+claude mcp add aiaw -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
 ```
 
 The app's zero state can do this for you, or you can run it manually. The binary lives inside the `.app` bundle — no separate installation needed.
