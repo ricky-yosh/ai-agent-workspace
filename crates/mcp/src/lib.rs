@@ -816,10 +816,13 @@ impl McpHandler {
 
         let count = store.index_repo(&repo_path)
             .map_err(|e| rmcp::Error::internal_error(format!("Indexing failed: {}", e), None))?;
+        let total = store.count_chunks(&repo_path)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
         Ok(CallToolResult::success(vec![Content::json(&serde_json::json!({
             "repo_path": repo_path,
-            "chunks_indexed": count,
+            "chunks_reindexed": count,
+            "chunks_total": total,
         }))?]))
     }
 }

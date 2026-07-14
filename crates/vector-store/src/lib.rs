@@ -1,5 +1,6 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeChunk {
@@ -51,21 +52,17 @@ impl<'a> VectorStore<'a> {
         Ok(embeddings.into_iter().next().unwrap_or_default())
     }
 
+    /// Incrementally (re)index `repo_path`: only files whose content has changed
+    /// since the last run are re-embedded; unchanged files are skipped and rows
+    /// for deleted files are pruned. Returns the number of chunks re-embedded
+    /// this run (0 on a no-op reindex).
     pub fn index_repo(&mut self, repo_path: &str) -> Result<usize, Box<dyn std::error::Error>> {
-        self.clear_repo(repo_path)?;
-
-        let chunks = extract_code_chunks(repo_path)?;
-        if chunks.is_empty() {
-            return Ok(0);
-        }
-
-        // Embed and insert in bounded batches so peak memory stays O(batch)
-        // rather than O(whole repo), and wrap all writes in a single
-        // transaction (one fsync instead of one per row).
+        // Bound peak memory to one batch of embeddings and wrap all writes in a
+        // single transaction (one fsync instead of one per row).
         const EMBED_BATCH: usize = 128;
 
         self.conn.execute_batch("BEGIN")?;
-        match self.index_chunks_batched(repo_path, &chunks, EMBED_BATCH) {
+        match self.index_incremental(repo_path, EMBED_BATCH) {
             Ok(count) => {
                 self.conn.execute_batch("COMMIT")?;
                 Ok(count)
@@ -79,13 +76,83 @@ impl<'a> VectorStore<'a> {
         }
     }
 
-    fn index_chunks_batched(
+    fn index_incremental(
         &mut self,
         repo_path: &str,
-        chunks: &[CodeChunk],
         batch_size: usize,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let now = chrono::Utc::now().timestamp();
+        let files = ai_agent_workspace_code_intelligence::collect_supported_files(repo_path)?;
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut chunks_written = 0;
+
+        for path in files {
+            let relative = path.strip_prefix(repo_path).unwrap_or(&path);
+            let file_path = relative.to_string_lossy().to_string();
+
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            seen.insert(file_path.clone());
+
+            // Skip files whose content is unchanged since the last index.
+            let fingerprint =
+                ai_agent_workspace_code_intelligence::CodeIndexer::fingerprint(&content);
+            let stored: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT content_fingerprint FROM code_vectors WHERE repo_path = ?1 AND file_path = ?2 LIMIT 1",
+                    params![repo_path, file_path],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if stored.as_deref() == Some(fingerprint.as_str()) {
+                continue;
+            }
+
+            // Changed or new: replace this file's rows.
+            self.conn.execute(
+                "DELETE FROM code_vectors WHERE repo_path = ?1 AND file_path = ?2",
+                params![repo_path, file_path],
+            )?;
+
+            let mut chunks = Vec::new();
+            extract_chunks_from_file(&file_path, &content, &mut chunks);
+            chunks_written +=
+                self.embed_and_insert_file(repo_path, &fingerprint, &chunks, now, batch_size)?;
+        }
+
+        // Prune rows for files that no longer exist on disk.
+        let existing: Vec<String> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT DISTINCT file_path FROM code_vectors WHERE repo_path = ?1")?;
+            let rows = stmt.query_map(params![repo_path], |row| row.get(0))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        for file_path in existing {
+            if !seen.contains(&file_path) {
+                self.conn.execute(
+                    "DELETE FROM code_vectors WHERE repo_path = ?1 AND file_path = ?2",
+                    params![repo_path, file_path],
+                )?;
+            }
+        }
+
+        Ok(chunks_written)
+    }
+
+    /// Embed `chunks` (all belonging to one file) in bounded batches and insert
+    /// them, tagging every row with the file's `fingerprint`.
+    fn embed_and_insert_file(
+        &mut self,
+        repo_path: &str,
+        fingerprint: &str,
+        chunks: &[CodeChunk],
+        now: i64,
+        batch_size: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
         let mut count = 0;
 
         for batch in chunks.chunks(batch_size) {
@@ -96,8 +163,8 @@ impl<'a> VectorStore<'a> {
                 let id = uuid::Uuid::new_v4().to_string();
                 let embedding_bytes = pack_embedding(embedding);
                 self.conn.execute(
-                    "INSERT INTO code_vectors (id, repo_path, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    "INSERT INTO code_vectors (id, repo_path, file_path, symbol_name, symbol_type, line_start, line_end, chunk_text, embedding, content_fingerprint, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                     params![
                         id,
                         repo_path,
@@ -108,6 +175,7 @@ impl<'a> VectorStore<'a> {
                         chunk.line_end as i32,
                         chunk.text,
                         embedding_bytes,
+                        fingerprint,
                         now,
                     ],
                 )?;
@@ -173,14 +241,6 @@ impl<'a> VectorStore<'a> {
         )?;
         Ok(count as usize)
     }
-
-    fn clear_repo(&self, repo_path: &str) -> Result<(), rusqlite::Error> {
-        self.conn.execute(
-            "DELETE FROM code_vectors WHERE repo_path = ?1",
-            params![repo_path],
-        )?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -203,28 +263,6 @@ fn unpack_embedding(bytes: &[u8]) -> Vec<f32> {
         .chunks_exact(4)
         .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect()
-}
-
-pub fn extract_code_chunks(repo_path: &str) -> Result<Vec<CodeChunk>, Box<dyn std::error::Error>> {
-    let mut chunks = Vec::new();
-
-    // Reuse the shared filtered walker from code-intelligence, which excludes
-    // node_modules/.git/target/.scratch and only returns supported files. This
-    // keeps exclusion logic in one place so the two indexers can't drift.
-    let files = ai_agent_workspace_code_intelligence::collect_supported_files(repo_path)?;
-    for path in files {
-        let relative = path.strip_prefix(repo_path).unwrap_or(&path);
-        let file_path = relative.to_string_lossy().to_string();
-
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        extract_chunks_from_file(&file_path, &content, &mut chunks);
-    }
-
-    Ok(chunks)
 }
 
 fn extract_chunks_from_file(file_path: &str, content: &str, chunks: &mut Vec<CodeChunk>) {
