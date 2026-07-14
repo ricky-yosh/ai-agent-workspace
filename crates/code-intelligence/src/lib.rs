@@ -608,7 +608,12 @@ pub fn is_supported(file_path: &str) -> bool {
 /// supported file (see [`is_supported`]).
 pub fn collect_supported_files(repo_path: &str) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
     let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
-    for entry in WalkDir::new(repo_path) {
+    for entry in WalkDir::new(repo_path).into_iter().filter_entry(|e| {
+        !e.file_name()
+            .to_str()
+            .map(|s| s == "node_modules" || s == ".git" || s == "target" || s == ".scratch")
+            .unwrap_or(false)
+    }) {
         let entry = entry?;
         if !entry.file_type().is_file() {
             continue;
@@ -679,7 +684,19 @@ where
         let relative = path.strip_prefix(repo_path).unwrap_or(path);
         let file_path_str = relative.to_string_lossy().to_string();
 
-        let content = std::fs::read_to_string(path)?;
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => {
+                skipped += 1;
+                on_progress(IndexProgressEvent {
+                    phase: "indexing".into(),
+                    current: i + 1,
+                    total,
+                    file_path: file_path_str,
+                });
+                continue;
+            }
+        };
         let fingerprint = CodeIndexer::fingerprint(&content);
 
         if let Some(stored) = storage.get_fingerprint(repo_path, &file_path_str) {
