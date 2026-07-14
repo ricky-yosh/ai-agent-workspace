@@ -1,0 +1,56 @@
+.action-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.action-modal__sub-page {
+  /* content fills available space */
+}
+
+.action-modal__back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  padding: 0;
+  margin-bottom: var(--space-4);
+}
+
+.action-modal__back:hover {
+  color: var(--text-primary);
+}
+
+.action-modal__shortcut {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 1px 5px;
+  font-family: inherit;
+}
+
+.action-modal__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.action-modal__confirm-message {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.action-modal__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
