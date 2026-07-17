@@ -1,31 +1,47 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  type Node,
+  type Edge,
+  type OnConnect,
+  type OnConnectStart,
+  type OnConnectEnd,
+  type Connection,
+  type OnSelectionChangeParams,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type { PanelProps } from "../panelRegistry";
 import { registerPanel } from "../panelRegistry";
 import { usePanelContext } from "../PanelContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
-import { Badge, Button, ListCard, FilterableList } from "../components/ui";
+import { Button, ListCard, FilterableList, Input } from "../components/ui";
+import { Dialog } from "../components/Dialog";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Plus } from "lucide-react";
-import { ContextMenu, type ContextMenuItem } from "../components/ContextMenu";
 import CanvasModal from "../CanvasModal";
+import CanvasNodeComponent from "./CanvasNodeComponent";
+import CanvasGroupNodeComponent from "./CanvasGroupNodeComponent";
+import CanvasConnectionLine from "./CanvasConnectionLine";
+import CanvasEdge from "./CanvasEdge";
+import NodeEditModal from "./NodeEditModal";
+import EdgeEditModal from "./EdgeEditModal";
+import { useCanvasToast } from "../hooks/canvas/useCanvasToast";
+import { useCanvasUndo } from "../hooks/canvas/useCanvasUndo";
 import {
-  CanvasRenderer,
+  useCanvasSync,
+  backendNodeToXYFlowNode,
+  backendEdgeToXYFlowEdge,
   type CanvasNode,
-  type CanvasEdge,
-  type CanvasGroup,
-} from "../components/CanvasRenderer";
-import {
-  useCanvasToast,
-  useCanvasViewport,
-  useCanvasUndoRedo,
-  useCanvasSelection,
-  useCanvasInlineEdit,
-  useCanvasNodeDrag,
-  useCanvasEdgeCreation,
-  useCanvasRewire,
-} from "../hooks/canvas";
-import "../canvas/canvas-animations.css";
+  type CanvasTag,
+  type CanvasEdge as BackendCanvasEdge,
+} from "../hooks/canvas/useCanvasSync";
 import "./VisualCanvasPanel.css";
 
 interface VisualCanvas {
@@ -36,20 +52,20 @@ interface VisualCanvas {
   updated_at: string;
 }
 
-interface CanvasTag {
+interface CanvasGroup {
   id: string;
-  node_id: string;
-  tag: string;
+  canvas_id: string;
+  label: string;
+  node_ids_json: string;
+  metadata_json: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
   const [canvases, setCanvases] = useState<VisualCanvas[]>([]);
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null);
-  const [nodes, setNodes] = useState<CanvasNode[]>([]);
-  const [edges, setEdges] = useState<CanvasEdge[]>([]);
-  const [groups, setGroups] = useState<CanvasGroup[]>([]);
   const [tags, setTags] = useState<CanvasTag[]>([]);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [canvasModalOpen, setCanvasModalOpen] = useState<{ mode: "create" } | { mode: "rename"; canvas: VisualCanvas } | null>(null);
@@ -58,214 +74,78 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [focusedCanvasIndex, setFocusedCanvasIndex] = useState<number | null>(null);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [viewportLoaded, setViewportLoaded] = useState(false);
 
-  // Tag enter animation: track newly added tag IDs
-  const [newlyAddedTagIds, setNewlyAddedTagIds] = useState<Set<string>>(new Set());
+  // Track known tag IDs for change detection
   const prevTagIdsRef = useRef<Set<string>>(new Set());
+
+  // Node modal state
+  const [nodeModalOpen, setNodeModalOpen] = useState(false);
+  const [nodeModalNodeId, setNodeModalNodeId] = useState<string | null>(null);
+
+  // Edge modal state
+  const [edgeModalOpen, setEdgeModalOpen] = useState(false);
+  const [edgeModalEdgeId, setEdgeModalEdgeId] = useState<string | null>(null);
+
+  // Group rename state
+  const [groupRenameId, setGroupRenameId] = useState<string | null>(null);
+  const [groupRenameValue, setGroupRenameValue] = useState("");
+
+  // ── Delete confirmation state ──────────────────────────────────────────
+  const [selectedNodeCount, setSelectedNodeCount] = useState(0);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmItems, setDeleteConfirmItems] = useState<string[]>([]);
+  const [deleteConfirmEntityType, setDeleteConfirmEntityType] = useState<"nodes" | "edges" | "groups" | "mixed">("nodes");
+
+  // ── Undo / Redo ────────────────────────────────────────────────────────
+  const { captureState, pushUndo, undo, redo, canUndo, canRedo, clear } = useCanvasUndo();
+  const reactFlowInstance = useReactFlow();
+  const dragStartStateRef = useRef<ReturnType<typeof captureState> | null>(null);
+
+  // Clear undo stack when canvas changes
+  useEffect(() => {
+    if (selectedCanvasId) clear();
+  }, [selectedCanvasId]);
+
+  // ── Viewport persistence ───────────────────────────────────────────────
+
+  // Reset viewport loaded flag when canvas changes
+  useEffect(() => {
+    setViewportLoaded(false);
+  }, [selectedCanvasId]);
+
+  // Restore viewport on mount
+  useEffect(() => {
+    if (!selectedCanvasId || viewportLoaded) return;
+    (async () => {
+      try {
+        const vs = await safeInvoke<any>("get_canvas_view_state", { canvasId: selectedCanvasId });
+        if (vs && typeof vs.offset_x === "number") {
+          reactFlowInstance.setViewport({ x: vs.offset_x, y: vs.offset_y, zoom: vs.zoom });
+        }
+      } catch (e) { /* no saved viewport */ }
+      setViewportLoaded(true);
+    })();
+  }, [selectedCanvasId, viewportLoaded, reactFlowInstance]);
 
   // ── Hooks ──────────────────────────────────────────────────────────────
 
   // Toast
-  const { toast, showToast } = useCanvasToast();
+  const { toast } = useCanvasToast();
 
-  // Viewport (pan and zoom)
-  const {
-    offsetX, offsetY, zoom,
-    setOffsetX, setOffsetY, setZoom,
-    saveViewState,
-  } = useCanvasViewport(selectedCanvasId);
+  // xyflow state
+  const [xyflowNodes, setXYFlowNodes, onNodesChange] = useNodesState<Node>([]);
+  const [xyflowEdges, setXYFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Undo/Redo — needs nodesRef for reading current nodes in executeUndo/executeRedo
-  const nodesRef = useRef<CanvasNode[]>([]);
-  nodesRef.current = nodes;
+  const [xyflowGroups, setXYFlowGroups] = useState<Node[]>([]);
 
-  const {
-    undoStack, redoStack,
-    pushUndo, handleUndo, handleRedo,
-  } = useCanvasUndoRedo({
-    selectedCanvasId,
-    nodesRef,
-    setNodes,
-    showToast,
+  // Sync hook — provides persistNodePosition and pendingNodeIds
+  const { persistNodePosition } = useCanvasSync({
+    canvasId: selectedCanvasId,
+    sessionId,
+    setNodes: setXYFlowNodes,
+    setEdges: setXYFlowEdges,
   });
-
-  // Selection (multi-select, box-select, delete)
-  const {
-    selectedNodeIds, setSelectedNodeIds,
-    deletingNodeIds, setDeletingNodeIds,
-    boxSelect,
-    justCompletedBoxSelectRef,
-    handleNodeClick,
-    handleBoxSelectMove,
-    handleBoxSelectEnd,
-    deleteSelectedNodes,
-  } = useCanvasSelection({
-    nodes, offsetX, offsetY, zoom, pushUndo,
-  });
-
-  // Hovered node ID (for side handles)
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-
-  // Edge creation via handle drag-to-connect
-  const {
-    connectionDrag, ropePoints, dragOverNodeId, snappedMidpoint,
-    startConnectionDrag, updateConnectionDrag, endConnectionDrag,
-    connectionDragRef,
-  } = useCanvasEdgeCreation({
-    nodes, selectedCanvasId, showToast, setEdges,
-    hoveredNodeId,
-  });
-
-  // Edge rewire via arrowhead grab
-  const {
-    rewire, rewireRopePoints, rewireDragOverNodeId, rewireSnappedMidpoint,
-    startRewire, updateRewire, endRewire,
-    rewireRef,
-  } = useCanvasRewire({
-    nodes, edges, selectedCanvasId, showToast, setEdges,
-    hoveredNodeId,
-  });
-
-  // Inline edit
-  const {
-    editingNodeId, setEditingNodeId, editingValue, setEditingValue,
-    editInputRef,
-    handleNodeDoubleClick,
-    confirmEdit, handleEditKeyDown,
-  } = useCanvasInlineEdit({
-    nodes, pushUndo, setNodes, setSelectedNodeIds,
-  });
-
-  // Node drag
-  const {
-    dragState, draggedNodeId,
-    handleNodeMouseDown: dragHandleNodeMouseDown,
-    handleDragMove,
-    handleDragEnd,
-    dragThrottleRef,
-    batchUpdatePositionsRef,
-  } = useCanvasNodeDrag({
-    nodes, selectedNodeIds, zoom, setNodes,
-  });
-
-  const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
-    if (connectionDragRef.current) return;
-    dragHandleNodeMouseDown(nodeId, e);
-  }, [connectionDragRef, dragHandleNodeMouseDown]);
-
-  // Clear selection when switching canvases
-  useEffect(() => {
-    setSelectedNodeIds(new Set());
-  }, [selectedCanvasId]);
-
-  // Placement mode state (for ghost preview)
-  const [placementMode, setPlacementMode] = useState<{
-    type: 'node' | 'group';
-    startX: number;
-    startY: number;
-  } | null>(null);
-  const [cursorCanvasPos, setCursorCanvasPos] = useState<{ x: number; y: number } | null>(null);
-
-  // Context menu state (right-click on empty canvas, node, edge, or group)
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    canvasX: number;
-    canvasY: number;
-    nodeId?: string;
-    edgeId?: string;
-    groupId?: string;
-  } | null>(null);
-
-  // Handle mouse move on canvas (dispatcher)
-  const handleCanvasMouseMove = useCallback((canvasX: number, canvasY: number, viewportX: number, viewportY: number, e: React.MouseEvent) => {
-    // Handle placement mode (ghost preview)
-    if (placementMode) {
-      setCursorCanvasPos({ x: canvasX, y: canvasY });
-      return;
-    }
-
-    // Handle connection drag
-    if (connectionDragRef.current) {
-      updateConnectionDrag(canvasX, canvasY);
-      return;
-    }
-
-    // Handle rewire drag
-    if (rewireRef.current) {
-      updateRewire(canvasX, canvasY);
-      return;
-    }
-
-    // Handle box-select rubber band
-    if (boxSelect) {
-      handleBoxSelectMove(viewportX, viewportY);
-      return;
-    }
-
-    if (!dragState) return;
-    handleDragMove(e.clientX, e.clientY);
-  }, [dragState, handleDragMove, boxSelect, handleBoxSelectMove, placementMode, connectionDragRef, updateConnectionDrag, rewireRef, updateRewire]);
-
-  // Handle mouse up to end dragging
-  const handleMouseUp = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
-    // Complete box-select if active
-    if (boxSelect) {
-      handleBoxSelectEnd();
-    }
-
-    // Complete connection drag if active
-    if (connectionDragRef.current) {
-      endConnectionDrag(canvasX, canvasY);
-      return;
-    }
-
-    // Complete rewire if active
-    if (rewireRef.current) {
-      endRewire(canvasX, canvasY);
-      return;
-    }
-
-    // If we were dragging, record the move(s) for undo
-    const dragSnapshot = handleDragEnd();
-    if (dragSnapshot) {
-      if (dragSnapshot.multiNodeStarts) {
-        // Multi-node drag undo: record moves for all dragged nodes
-        for (const [nodeId, startPos] of dragSnapshot.multiNodeStarts) {
-          const currentNode = nodes.find((n) => n.id === nodeId);
-          if (currentNode) {
-            const moved = currentNode.x !== startPos.x || currentNode.y !== startPos.y;
-            if (moved) {
-              pushUndo({
-                type: "move_node",
-                nodeId,
-                beforeX: startPos.x,
-                beforeY: startPos.y,
-                afterX: currentNode.x,
-                afterY: currentNode.y,
-              });
-            }
-          }
-        }
-      } else {
-        // Single node drag undo
-        const currentNode = nodes.find((n) => n.id === dragSnapshot.nodeId);
-        if (currentNode) {
-          const moved = currentNode.x !== dragSnapshot.nodeStartX || currentNode.y !== dragSnapshot.nodeStartY;
-          if (moved) {
-            pushUndo({
-              type: "move_node",
-              nodeId: dragSnapshot.nodeId,
-              beforeX: dragSnapshot.nodeStartX,
-              beforeY: dragSnapshot.nodeStartY,
-              afterX: currentNode.x,
-              afterY: currentNode.y,
-            });
-          }
-        }
-      }
-    }
-  }, [dragState, nodes, pushUndo, boxSelect, handleBoxSelectEnd, handleDragEnd, connectionDragRef, endConnectionDrag, rewireRef, endRewire]);
 
   // ── Data fetching ──────────────────────────────────────────────────────
 
@@ -289,12 +169,38 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   const fetchNodes = useCallback(() => {
     if (!selectedCanvasId) {
-      setNodes([]);
+      setXYFlowNodes([]);
       return;
     }
-    safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId })
-      .then((data) => {
-        setNodes(data);
+    Promise.all([
+      safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId }),
+      safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: selectedCanvasId }),
+      safeInvoke<{ id: string; node_id: string; url: string; source_type: string }[]>("list_canvas_node_sources", { nodeId: "__all__" }).catch(() => []),
+    ])
+      .then(([backendNodes, backendTags, backendSources]) => {
+        const tagsByNode = new Map<string, string[]>();
+        for (const t of backendTags) {
+          if (!tagsByNode.has(t.node_id)) tagsByNode.set(t.node_id, []);
+          tagsByNode.get(t.node_id)!.push(t.tag);
+        }
+        const sourcesByNode = new Map<string, { id: string; url: string; source_type: string }[]>();
+        for (const s of backendSources) {
+          if (!sourcesByNode.has(s.node_id)) sourcesByNode.set(s.node_id, []);
+          sourcesByNode.get(s.node_id)!.push({ id: s.id, url: s.url, source_type: s.source_type });
+        }
+        setXYFlowNodes(
+          backendNodes.map((n) => {
+            const base = backendNodeToXYFlowNode(n);
+            return {
+              ...base,
+              data: {
+                ...base.data,
+                tags: tagsByNode.get(n.id) || [],
+                sources: sourcesByNode.get(n.id) || [],
+              },
+            };
+          })
+        );
       })
       .catch((err) => {
         console.error("Failed to fetch nodes:", err);
@@ -303,12 +209,12 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   const fetchEdges = useCallback(() => {
     if (!selectedCanvasId) {
-      setEdges([]);
+      setXYFlowEdges([]);
       return;
     }
-    safeInvoke<CanvasEdge[]>("list_canvas_edges", { canvasId: selectedCanvasId })
+    safeInvoke<BackendCanvasEdge[]>("list_canvas_edges", { canvasId: selectedCanvasId })
       .then((data) => {
-        setEdges(data);
+        setXYFlowEdges(data.map(backendEdgeToXYFlowEdge));
       })
       .catch((err) => {
         console.error("Failed to fetch edges:", err);
@@ -317,12 +223,24 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   const fetchGroups = useCallback(() => {
     if (!selectedCanvasId) {
-      setGroups([]);
+      setXYFlowGroups([]);
       return;
     }
     safeInvoke<CanvasGroup[]>("list_canvas_groups", { canvasId: selectedCanvasId })
-      .then((data) => {
-        setGroups(data);
+      .then((backendGroups) => {
+        const groupNodes: Node[] = backendGroups.map((g) => {
+          const memberIds: string[] = JSON.parse(g.node_ids_json || "[]");
+          return {
+            id: g.id,
+            type: "canvasGroup",
+            position: { x: 0, y: 0 },
+            data: { label: g.label, memberIds, node_ids_json: g.node_ids_json },
+            draggable: false,
+            selectable: true,
+            style: { zIndex: -1 },
+          };
+        });
+        setXYFlowGroups(groupNodes);
       })
       .catch((err) => {
         console.error("Failed to fetch groups:", err);
@@ -337,23 +255,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     }
     safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: selectedCanvasId })
       .then((data) => {
-        // Detect newly added tags (IDs not in previous set)
-        const newIds = data.filter((t) => !prevTagIdsRef.current.has(t.id)).map((t) => t.id);
-        if (newIds.length > 0) {
-          setNewlyAddedTagIds((prev) => {
-            const next = new Set(prev);
-            for (const id of newIds) next.add(id);
-            return next;
-          });
-          // Remove from animation set after animation completes
-          setTimeout(() => {
-            setNewlyAddedTagIds((prev) => {
-              const next = new Set(prev);
-              for (const id of newIds) next.delete(id);
-              return next;
-            });
-          }, 300);
-        }
         prevTagIdsRef.current = new Set(data.map((t) => t.id));
         setTags(data);
       })
@@ -362,338 +263,193 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       });
   }, [selectedCanvasId]);
 
-  // ── Placement mode handlers ────────────────────────────────────────────
+  // ── Selection change handler ────────────────────────────────────────────
 
-  const handleAddNodeAtPosition = useCallback((cx: number, cy: number) => {
-    setPlacementMode({ type: 'node', startX: cx, startY: cy });
-    setContextMenu(null);
+  const onSelectionChange = useCallback(({ nodes }: OnSelectionChangeParams) => {
+    // Filter out group nodes from count
+    const realNodes = nodes.filter((n) => n.type !== "canvasGroup");
+    setSelectedNodeCount(realNodes.length);
   }, []);
 
-  const placeNodeAtCursor = useCallback((cx: number, cy: number) => {
-    if (!selectedCanvasId || !placementMode) return;
+  // ── Connection handlers ────────────────────────────────────────────────
 
-    const defaultWidth = 200;
-    const defaultHeight = 60;
-
-    const defaultContent = "New node";
-
-    safeInvoke<CanvasNode>("create_canvas_node", {
-      canvasId: selectedCanvasId,
-      content: defaultContent,
-      x: cx - defaultWidth / 2,
-      y: cy - defaultHeight / 2,
-      width: defaultWidth,
-      height: defaultHeight,
-      metadataJson: null,
-    }).then((newNode) => {
-      setNodes((prev) => [...prev, newNode]);
-      // Push undo command
-      pushUndo({ type: "create_node", node: newNode });
-      // Enter edit mode on the new node
-      setEditingNodeId(newNode.id);
-      setEditingValue(newNode.content);
-      // Select the new node
-      setSelectedNodeIds(new Set([newNode.id]));
-      // Clear placement mode
-      setPlacementMode(null);
-      setCursorCanvasPos(null);
-    }).catch((err) => {
-      console.error("Failed to create node:", err);
-      showToast("Failed to create node");
-      setPlacementMode(null);
-      setCursorCanvasPos(null);
-    });
-  }, [selectedCanvasId, placementMode, pushUndo, showToast, setNodes, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
-
-  const placeGroupAtCursor = useCallback((_cx: number, _cy: number) => {
-    if (!selectedCanvasId || !placementMode || placementMode.type !== 'group') return;
-    if (selectedNodeIds.size === 0) {
-      showToast("Select nodes first to create a group");
-      setPlacementMode(null);
-      setCursorCanvasPos(null);
-      return;
-    }
-
-    const groupNodeIds = [...selectedNodeIds];
-    safeInvoke<CanvasGroup>("create_canvas_group", {
-      canvasId: selectedCanvasId,
-      label: "Group",
-      nodeIdsJson: JSON.stringify(groupNodeIds),
-      metadataJson: null,
-    }).then((newGroup) => {
-      setGroups((prev) => [...prev, newGroup]);
-      showToast("Group created");
-      setPlacementMode(null);
-      setCursorCanvasPos(null);
-    }).catch((err) => {
-      console.error("Failed to create group:", err);
-      showToast("Failed to create group");
-      setPlacementMode(null);
-      setCursorCanvasPos(null);
-    });
-  }, [selectedCanvasId, placementMode, selectedNodeIds, showToast]);
-
-  // Calculate ghost size based on selected nodes
-  const getGroupGhostSize = useCallback(() => {
-    if (selectedNodeIds.size === 0) return { width: 300, height: 200 };
-
-    const selectedNodes = nodes.filter(n => selectedNodeIds.has(n.id));
-    const padding = 20;
-    const minX = Math.min(...selectedNodes.map(n => n.x));
-    const minY = Math.min(...selectedNodes.map(n => n.y));
-    const maxX = Math.max(...selectedNodes.map(n => n.x + n.width));
-    const maxY = Math.max(...selectedNodes.map(n => n.y + n.height));
-
-    return { width: maxX - minX + padding * 2, height: maxY - minY + padding * 2 };
-  }, [selectedNodeIds, nodes]);
-
-  // Handle click on empty canvas to deselect and clear edit
-  const handleCanvasClick = useCallback((canvasX: number, canvasY: number, _e: React.MouseEvent) => {
-    // Don't clear selection if we just completed a box-select
-    if (justCompletedBoxSelectRef.current) return;
-
-    // If in placement mode, place the element at the click position
-    if (placementMode) {
-      if (placementMode.type === 'node') {
-        placeNodeAtCursor(canvasX, canvasY);
-      } else if (placementMode.type === 'group') {
-        placeGroupAtCursor(canvasX, canvasY);
-      }
-      return;
-    }
-
-    setSelectedNodeIds(new Set());
-    setEditingNodeId(null);
-    setEditingValue("");
-    // Close context menu on any click
-    setContextMenu(null);
-  }, [placementMode, placeNodeAtCursor, placeGroupAtCursor, justCompletedBoxSelectRef, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
-
-  // Add a group at a specific canvas position (enters placement mode)
-  const handleAddGroupAtPosition = useCallback((cx: number, cy: number) => {
-    if (selectedNodeIds.size === 0) {
-      showToast("Select nodes first to create a group");
-      return;
-    }
-    setPlacementMode({ type: 'group', startX: cx, startY: cy });
-    setContextMenu(null);
-  }, [selectedNodeIds, showToast]);
-
-  // ── Context menu handlers ──────────────────────────────────────────────
-
-  // Context menu items for the empty canvas
-  const canvasMenuItems: ContextMenuItem[] = [
-    { label: "Add Node", shortcut: "N", onClick: () => handleAddNodeAtPosition(contextMenu!.canvasX, contextMenu!.canvasY) },
-    { label: "", separator: true, onClick: () => {} },
-    { label: "Add Group", shortcut: "G", onClick: () => handleAddGroupAtPosition(contextMenu!.canvasX, contextMenu!.canvasY) },
-  ];
-
-  // Handle "Edit" from context menu — enters inline edit mode
-  const handleEditNode = useCallback((nodeId: string | undefined) => {
+  const handleConnectStart: OnConnectStart = useCallback((_event, params) => {
+    const { nodeId } = params;
     if (!nodeId) return;
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    setEditingNodeId(node.id);
-    setEditingValue(node.content);
-    setSelectedNodeIds(new Set());
-  }, [nodes, setEditingNodeId, setEditingValue, setSelectedNodeIds]);
+    setXYFlowNodes((nds) =>
+      nds.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, isConnectSource: true } } : n
+      )
+    );
+  }, [setXYFlowNodes]);
 
-  // Handle "Delete" from context menu — deletes the node
-  const handleDeleteNode = useCallback(async (nodeId: string | undefined) => {
-    if (!nodeId) return;
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
+  const handleConnectEnd: OnConnectEnd = useCallback(() => {
+    setXYFlowNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        data: { ...n.data, isConnectSource: false, isConnectTarget: false },
+      }))
+    );
+  }, [setXYFlowNodes]);
 
-    // Start fade-out animation
-    setDeletingNodeIds((prev) => new Set(prev).add(nodeId));
-    setSelectedNodeIds((prev) => {
-      const next = new Set(prev);
-      next.delete(nodeId);
-      return next;
-    });
+  const onConnect: OnConnect = useCallback(async (connection: Connection) => {
+    if (!selectedCanvasId || !connection.source || !connection.target) return;
+
+    // Capture state before creating edge for undo
+    const preConnectState = captureState(xyflowNodes, xyflowEdges, xyflowGroups);
 
     try {
-      await safeInvoke("delete_canvas_node", { id: node.id });
-      pushUndo({ type: "delete_node", node });
-    } catch (err) {
-      console.error("Failed to delete node:", err);
-    }
-
-    // Remove from deleting set after animation completes
-    setTimeout(() => {
-      setDeletingNodeIds((prev) => {
-        const next = new Set(prev);
-        next.delete(nodeId);
-        return next;
+      const sourceHandle = connection.sourceHandle || "right";
+      const targetHandle = connection.targetHandle || "left";
+      const edge = await safeInvoke<BackendCanvasEdge>("create_canvas_edge", {
+        canvasId: selectedCanvasId,
+        sourceNodeId: connection.source,
+        targetNodeId: connection.target,
+        metadataJson: JSON.stringify({ sourceSide: sourceHandle, targetSide: targetHandle }),
       });
-    }, 260);
-    setContextMenu(null);
-  }, [nodes, pushUndo, setSelectedNodeIds]);
-
-  // Context menu items for a node
-  const nodeMenuItems: ContextMenuItem[] = [
-    { label: "Edit", shortcut: "Enter", onClick: () => handleEditNode(contextMenu?.nodeId) },
-    { label: "", separator: true, onClick: () => {} },
-    { label: "Add to Group", disabled: true, onClick: () => {} },
-    { label: "Add Tag", disabled: true, onClick: () => {} },
-    { label: "", separator: true, onClick: () => {} },
-    { label: "Delete", shortcut: "Del", onClick: () => handleDeleteNode(contextMenu?.nodeId) },
-  ];
-
-  // Handle "Edit Label" from edge context menu
-  const handleEditEdgeLabel = useCallback((edgeId: string | undefined) => {
-    if (!edgeId) return;
-    const edge = edges.find((e) => e.id === edgeId);
-    if (!edge) return;
-    const currentLabel = edge.label ?? "";
-    const newLabel = prompt("Edit edge label:", currentLabel);
-    if (newLabel === null) return;
-    const trimmed = newLabel.trim();
-    if (trimmed === currentLabel) return;
-
-    safeInvoke<CanvasEdge>("update_canvas_edge", {
-      id: edgeId,
-      label: trimmed.length > 0 ? trimmed : null,
-      metadataJson: null,
-    }).then((updatedEdge) => {
-      setEdges((prev) => prev.map((e) => (e.id === edgeId ? updatedEdge : e)));
-      showToast(trimmed.length > 0 ? `Label updated to "${trimmed}"` : "Label removed");
-    }).catch((err) => {
-      console.error("Failed to update edge label:", err);
-      showToast("Failed to update edge label");
-    });
-    setContextMenu(null);
-  }, [edges, showToast]);
-
-  // Handle "Delete" from edge context menu
-  const handleDeleteEdge = useCallback(async (edgeId: string | undefined) => {
-    if (!edgeId) return;
-    const edge = edges.find((e) => e.id === edgeId);
-    if (!edge) return;
-
-    try {
-      await safeInvoke("delete_canvas_edge", { id: edgeId });
-      setEdges((prev) => prev.filter((e) => e.id !== edgeId));
-      showToast("Edge deleted");
+      pushUndo(preConnectState);
+      setXYFlowEdges((eds) => [...eds, backendEdgeToXYFlowEdge(edge)]);
+      setXYFlowNodes((nds) =>
+        nds.map((n) =>
+          n.id === connection.target ? { ...n, data: { ...n.data, isConnected: true } } : n
+        )
+      );
+      setTimeout(() => {
+        setXYFlowNodes((nds) =>
+          nds.map((n) =>
+            n.id === connection.target ? { ...n, data: { ...n.data, isConnected: false } } : n
+          )
+        );
+      }, 600);
     } catch (err) {
-      console.error("Failed to delete edge:", err);
-      showToast("Failed to delete edge");
+      console.error("Failed to create edge:", err);
     }
-    setContextMenu(null);
-  }, [edges, showToast]);
+  }, [selectedCanvasId, setXYFlowEdges, setXYFlowNodes]);
 
-  // Context menu items for an edge
-  const edgeMenuItems: ContextMenuItem[] = [
-    { label: "Edit Label", onClick: () => handleEditEdgeLabel(contextMenu?.edgeId) },
-    { label: "", separator: true, onClick: () => {} },
-    { label: "Delete", shortcut: "Del", onClick: () => handleDeleteEdge(contextMenu?.edgeId) },
-  ];
+  // ── Delete handler ──────────────────────────────────────────────────────
 
-  // Handle "Rename" from group context menu
-  const handleRenameGroup = useCallback((groupId: string | undefined) => {
-    if (!groupId) return;
-    const group = groups.find((g) => g.id === groupId);
-    if (!group) return;
-    const currentLabel = group.label;
-    const newLabel = prompt("Rename group:", currentLabel);
-    if (newLabel === null) return;
-    const trimmed = newLabel.trim();
-    if (trimmed.length === 0) return;
-    if (trimmed === currentLabel) return;
+  const handleDelete = useCallback(async () => {
+    // Capture state before deleting for undo
+    const preDeleteState = captureState(xyflowNodes, xyflowEdges, xyflowGroups);
 
-    safeInvoke<CanvasGroup>("update_canvas_group", {
-      id: groupId,
-      label: trimmed,
-      nodeIdsJson: null,
-      metadataJson: null,
-    }).then((updatedGroup) => {
-      setGroups((prev) => prev.map((g) => (g.id === groupId ? updatedGroup : g)));
-      showToast(`Group renamed to "${trimmed}"`);
-    }).catch((err) => {
-      console.error("Failed to rename group:", err);
-      showToast("Failed to rename group");
-    });
-    setContextMenu(null);
-  }, [groups, showToast]);
-
-  // Handle "Dissolve" from group context menu — removes group, keeps nodes
-  const handleDissolveGroup = useCallback((groupId: string | undefined) => {
-    if (!groupId) return;
-    const group = groups.find((g) => g.id === groupId);
-    if (!group) return;
-
-    safeInvoke("delete_canvas_group", { id: groupId }).then(() => {
-      setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      showToast("Group dissolved");
-    }).catch((err) => {
-      console.error("Failed to dissolve group:", err);
-      showToast("Failed to dissolve group");
-    });
-    setContextMenu(null);
-  }, [groups, showToast]);
-
-  // Handle "Delete" from group context menu — same as dissolve (safe default)
-  const handleDeleteGroup = useCallback((groupId: string | undefined) => {
-    handleDissolveGroup(groupId);
-  }, [handleDissolveGroup]);
-
-  // Context menu items for a group
-  const groupMenuItems: ContextMenuItem[] = [
-    { label: "Rename", onClick: () => handleRenameGroup(contextMenu?.groupId) },
-    { label: "", separator: true, onClick: () => {} },
-    { label: "Dissolve", onClick: () => handleDissolveGroup(contextMenu?.groupId) },
-    { label: "Delete", onClick: () => handleDeleteGroup(contextMenu?.groupId) },
-  ];
-
-  // ── Keyboard effect ────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Undo/Redo shortcuts (Cmd+Z, Cmd+Shift+Z)
-      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-      const modifier = isMac ? e.metaKey : e.ctrlKey;
-
-      if (modifier && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        handleUndo();
-        return;
-      }
-      if (modifier && (e.key === "Z" || (e.key === "z" && e.shiftKey) || e.key === "y")) {
-        e.preventDefault();
-        handleRedo();
-        return;
-      }
-
-      if (e.key === "Delete" || e.key === "Backspace") {
-        // Only delete if not typing in an input
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-        e.preventDefault();
-        deleteSelectedNodes();
-      }
-
-      if (e.key === "Escape") {
-        // Cancel active connection drag
-        if (connectionDragRef.current) {
-          endConnectionDrag(0, 0);
-          return;
+    for (const id of deleteConfirmItems) {
+      try {
+        if (xyflowNodes.find((n) => n.id === id)) {
+          await safeInvoke("delete_canvas_node", { id });
+        } else if (xyflowEdges.find((e) => e.id === id)) {
+          await safeInvoke("delete_canvas_edge", { id });
+        } else {
+          await safeInvoke("delete_canvas_group", { id });
         }
-        // Cancel placement mode if active
-        if (placementMode) {
-          setPlacementMode(null);
-          setCursorCanvasPos(null);
-          return;
-        }
-        setSelectedNodeIds(new Set());
-        setEditingNodeId(null);
-        setEditingValue("");
-      }
-    };
+      } catch (err) { console.error(err); }
+    }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+    // Push undo state before removing from local state
+    pushUndo(preDeleteState);
+
+    // Remove from local state
+    setXYFlowNodes((nds) => nds.filter((n) => !deleteConfirmItems.includes(n.id)));
+    setXYFlowEdges((eds) => eds.filter((e) => !deleteConfirmItems.includes(e.id)));
+    setXYFlowGroups((gs) => gs.filter((g) => !deleteConfirmItems.includes(g.id)));
+    setDeleteConfirmOpen(false);
+    setDeleteConfirmItems([]);
+  }, [deleteConfirmItems, xyflowNodes, xyflowEdges, xyflowGroups, setXYFlowNodes, setXYFlowEdges, setXYFlowGroups, captureState, pushUndo]);
+
+  // ── Node modal helpers ──────────────────────────────────────────────────
+
+  const getNodeModalData = useCallback(() => {
+    if (!nodeModalNodeId) return { title: "", description: "", sources: [], tags: [] };
+    const node = xyflowNodes.find((n) => n.id === nodeModalNodeId);
+    if (!node) return { title: "", description: "", sources: [], tags: [] };
+    const nodeData = node.data as Record<string, unknown>;
+    return {
+      title: (nodeData.title as string) || "",
+      description: (nodeData.description as string) || "",
+      sources: (nodeData.sources as { id: string; url: string; source_type: string }[]) || [],
+      tags: (nodeData.tags as string[]) || [],
     };
-  }, [deleteSelectedNodes, handleUndo, handleRedo, placementMode, setSelectedNodeIds, setEditingNodeId, setEditingValue]);
+  }, [nodeModalNodeId, xyflowNodes]);
+
+  const handleNodeSave = useCallback(async (nodeData: { title: string; description: string }) => {
+    if (!nodeModalNodeId) return;
+    try {
+      await safeInvoke("update_canvas_node", {
+        id: nodeModalNodeId,
+        title: nodeData.title,
+        description: nodeData.description,
+      });
+      setXYFlowNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeModalNodeId
+            ? { ...n, data: { ...n.data, title: nodeData.title, description: nodeData.description } }
+            : n
+        )
+      );
+    } catch (err) { console.error(err); }
+  }, [nodeModalNodeId, setXYFlowNodes]);
+
+  const handleAddTag = useCallback(async (tag: string) => {
+    if (!nodeModalNodeId) return;
+    try {
+      await safeInvoke("add_canvas_tag", { nodeId: nodeModalNodeId, tag });
+    } catch (err) { console.error(err); }
+  }, [nodeModalNodeId]);
+
+  const handleRemoveTag = useCallback(async (tag: string) => {
+    if (!nodeModalNodeId) return;
+    try {
+      await safeInvoke("remove_canvas_tag", { nodeId: nodeModalNodeId, tag });
+    } catch (err) { console.error(err); }
+  }, [nodeModalNodeId]);
+
+  const handleAddSource = useCallback(async (url: string, sourceType: "file" | "link") => {
+    if (!nodeModalNodeId) return;
+    try {
+      await safeInvoke("create_canvas_node_source", {
+        nodeId: nodeModalNodeId,
+        url,
+        sourceType,
+        sortOrder: 0,
+      });
+    } catch (err) { console.error(err); }
+  }, [nodeModalNodeId]);
+
+  const handleRemoveSource = useCallback(async (sourceId: string) => {
+    if (!sourceId) return;
+    try {
+      await safeInvoke("delete_canvas_node_source", { id: sourceId });
+    } catch (err) { console.error(err); }
+  }, []);
+
+  // ── Edge modal helpers ──────────────────────────────────────────────────
+
+  const getEdgeModalData = useCallback(() => {
+    if (!edgeModalEdgeId) return { label: "", metadataJson: null as string | null };
+    const edge = xyflowEdges.find((e) => e.id === edgeModalEdgeId);
+    if (!edge) return { label: "", metadataJson: null };
+    return {
+      label: (edge.label as string) || "",
+      metadataJson: (edge.data as any)?.metadata_json || null,
+    };
+  }, [edgeModalEdgeId, xyflowEdges]);
+
+  const handleEdgeSave = useCallback(async (label: string, metadataJson: string | null) => {
+    if (!edgeModalEdgeId) return;
+    try {
+      await safeInvoke("update_canvas_edge", {
+        id: edgeModalEdgeId,
+        label: label || undefined,
+        metadataJson: metadataJson || undefined,
+      });
+      setXYFlowEdges((eds) =>
+        eds.map((e) =>
+          e.id === edgeModalEdgeId
+            ? { ...e, label, data: { ...e.data, metadata_json: metadataJson } }
+            : e
+        )
+      );
+    } catch (err) { console.error(err); }
+  }, [edgeModalEdgeId, setXYFlowEdges]);
 
   // ── Effects ────────────────────────────────────────────────────────────
 
@@ -713,36 +469,34 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
     fetchGroups();
   }, [fetchGroups]);
 
+  // Recompute group bounds whenever nodes change
+  useEffect(() => {
+    setXYFlowGroups((groups) =>
+      groups.map((g) => {
+        const memberIds: string[] = (g.data as any).memberIds || [];
+        const memberNodes = xyflowNodes.filter((n) => memberIds.includes(n.id));
+        if (memberNodes.length === 0) return { ...g, data: { ...g.data, width: 200, height: 120 }, position: g.position };
+        const minX = Math.min(...memberNodes.map((n) => n.position.x));
+        const minY = Math.min(...memberNodes.map((n) => n.position.y));
+        const maxX = Math.max(...memberNodes.map((n) => n.position.x + (n.width || 200)));
+        const maxY = Math.max(...memberNodes.map((n) => n.position.y + (n.height || 100)));
+        const padding = 40;
+        return {
+          ...g,
+          position: { x: minX - padding, y: minY - padding },
+          data: {
+            ...g.data,
+            width: Math.max(200, maxX - minX + padding * 2),
+            height: Math.max(120, maxY - minY + padding * 2),
+          },
+        };
+      })
+    );
+  }, [xyflowNodes, setXYFlowGroups]);
+
   useEffect(() => {
     fetchTags();
   }, [fetchTags]);
-
-  // Global mouse up handler to clear drag/pan/select state
-  useEffect(() => {
-    const handleGlobalMouseUp = () => {
-      if (dragThrottleRef.current) {
-        clearTimeout(dragThrottleRef.current);
-      }
-      if (batchUpdatePositionsRef.current) {
-        clearTimeout(batchUpdatePositionsRef.current);
-      }
-      if (boxSelect) {
-        handleBoxSelectEnd();
-      }
-      handleDragEnd();
-    };
-
-    window.addEventListener("mouseup", handleGlobalMouseUp);
-    return () => {
-      window.removeEventListener("mouseup", handleGlobalMouseUp);
-      if (dragThrottleRef.current) {
-        clearTimeout(dragThrottleRef.current);
-      }
-      if (batchUpdatePositionsRef.current) {
-        clearTimeout(batchUpdatePositionsRef.current);
-      }
-    };
-  }, [boxSelect, handleBoxSelectEnd, handleDragEnd]);
 
   useTauriEvent<{ session_id: string }>(
     "visual-canvases-changed",
@@ -799,6 +553,87 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
       fetchTags();
     }, [fetchCanvases, fetchNodes, fetchEdges, fetchGroups, fetchTags]),
   );
+
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!selectedCanvasId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Undo: Cmd/Ctrl + Z
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        const entry = undo();
+        if (entry) {
+          setXYFlowNodes(entry.nodes);
+          setXYFlowEdges(entry.edges);
+          setXYFlowGroups(entry.groupNodes);
+        }
+        return;
+      }
+
+      // Redo: Cmd/Ctrl + Shift + Z
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && e.shiftKey) {
+        e.preventDefault();
+        const entry = redo();
+        if (entry) {
+          setXYFlowNodes(entry.nodes);
+          setXYFlowEdges(entry.edges);
+          setXYFlowGroups(entry.groupNodes);
+        }
+        return;
+      }
+
+      // Delete / Backspace
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // Don't fire if user is typing in an input
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+        e.preventDefault();
+
+        // Determine what's selected
+        const items: string[] = [];
+        let entityType: "nodes" | "edges" | "groups" | "mixed" = "nodes";
+
+        const selectedNodes = xyflowNodes.filter((n) => n.selected);
+        const selectedEdges = xyflowEdges.filter((e) => e.selected);
+        const selectedGroups = xyflowGroups.filter((g) => g.selected);
+
+        const totalSelected = selectedNodes.length + selectedEdges.length + selectedGroups.length;
+        if (totalSelected === 0) return;
+
+        if (selectedNodes.length > 0 && selectedEdges.length === 0 && selectedGroups.length === 0) {
+          items.push(...selectedNodes.map((n) => n.id));
+          entityType = "nodes";
+        } else if (selectedEdges.length > 0 && selectedNodes.length === 0 && selectedGroups.length === 0) {
+          items.push(...selectedEdges.map((e) => e.id));
+          entityType = "edges";
+        } else if (selectedGroups.length > 0 && selectedNodes.length === 0 && selectedEdges.length === 0) {
+          items.push(...selectedGroups.map((g) => g.id));
+          entityType = "groups";
+        } else {
+          items.push(
+            ...selectedNodes.map((n) => n.id),
+            ...selectedEdges.map((e) => e.id),
+            ...selectedGroups.map((g) => g.id),
+          );
+          entityType = "mixed";
+        }
+
+        setDeleteConfirmItems(items);
+        setDeleteConfirmEntityType(entityType);
+        setDeleteConfirmOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedCanvasId, xyflowNodes, xyflowEdges, xyflowGroups, undo, redo, setXYFlowNodes, setXYFlowEdges, setXYFlowGroups]);
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  const getUniqueTagLabels = (tags: CanvasTag[]) => [...new Set(tags.map(t => t.tag))].sort();
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -923,25 +758,12 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
   // Show the canvas with nodes
   const selectedCanvas = canvases.find(c => c.id === selectedCanvasId);
 
-  // Get unique tags for the filter bar
-  const uniqueTags = [...new Set(tags.map(t => t.tag))].sort();
-
-  // Filter nodes by active tag
-  const filteredNodes = activeTagFilter
-    ? nodes.filter(node => tags.some(t => t.node_id === node.id && t.tag === activeTagFilter))
-    : nodes;
-
-  // Filter edges to only show edges between filtered nodes
-  const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-  const filteredEdges = activeTagFilter
-    ? edges.filter(e => filteredNodeIds.has(e.source_node_id) && filteredNodeIds.has(e.target_node_id))
-    : edges;
+  const allNodes = useMemo(() => [...xyflowGroups, ...xyflowNodes], [xyflowGroups, xyflowNodes]);
 
   return (
     <div className="visual-canvas-panel">
 
-
-      {/* Header with back button */}
+      {/* Header with back button and toolbar */}
       <div className="canvas-header">
         <Button
           variant="ghost"
@@ -953,248 +775,230 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         <div className="canvas-header__title">
           {selectedCanvas?.name || "Canvas"}
         </div>
-        {/* Zoom indicator and reset */}
-        <div className="canvas-header__zoom">
-          <span>{Math.round(zoom * 100)}%</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setOffsetX(0);
-              setOffsetY(0);
-              setZoom(1);
-              if (selectedCanvasId) {
-                safeInvoke("update_canvas_view_state", {
-                  canvasId: selectedCanvasId,
-                  offsetX: 0,
-                  offsetY: 0,
-                  zoom: 1,
-                }).catch((err) => {
-                  console.error("Failed to reset view state:", err);
-                });
-              }
-            }}
-          >
-            Reset
+        <div style={{ display: "flex", gap: "4px", marginLeft: "auto" }}>
+          <Button variant="ghost" size="sm" onClick={async () => {
+            if (!selectedCanvasId) return;
+            try {
+              const group = await safeInvoke("create_canvas_group", {
+                canvasId: selectedCanvasId,
+                label: "New Group",
+                nodeIdsJson: "[]",
+              }) as any;
+              setXYFlowGroups((gs) => [...gs, {
+                id: group.id,
+                type: "canvasGroup",
+                position: { x: 100, y: 100 },
+                data: { label: group.label, memberIds: [], width: 200, height: 120 },
+                draggable: false,
+                selectable: true,
+                style: { zIndex: -1 },
+              }]);
+            } catch (err) { console.error(err); }
+          }}>
+            + Group
+          </Button>
+          <Button variant="ghost" size="sm" onClick={async () => {
+            if (!selectedCanvasId) return;
+            try {
+              const node = await safeInvoke("create_canvas_node", {
+                canvasId: selectedCanvasId,
+                title: "New Node",
+                description: "",
+                x: 200,
+                y: 200,
+                width: 200,
+                height: 100,
+              }) as any;
+              const xyflowNode = backendNodeToXYFlowNode({ ...node, tags: [], sources: [] });
+              setXYFlowNodes((nds) => [...nds, xyflowNode]);
+            } catch (err) { console.error(err); }
+          }}>
+            + Node
           </Button>
         </div>
       </div>
 
       {/* Tag filter bar */}
-      {uniqueTags.length > 0 && (
+      {tags.length > 0 && (
         <div className="canvas-tag-bar">
-          <span className="canvas-tag-bar__label">
-            Filter:
-          </span>
-          <Button
-            variant={!activeTagFilter ? "primary" : "ghost"}
-            size="sm"
+          <button
+            className={`canvas-tag-pill ${!activeTagFilter ? 'canvas-tag-pill--active' : ''}`}
             onClick={() => setActiveTagFilter(null)}
           >
             All
-          </Button>
-          {uniqueTags.map(tag => (
-            <Button
+          </button>
+          {getUniqueTagLabels(tags).map(tag => (
+            <button
               key={tag}
-              variant={activeTagFilter === tag ? "primary" : "ghost"}
-              size="sm"
+              className={`canvas-tag-pill ${activeTagFilter === tag ? 'canvas-tag-pill--active' : ''}`}
               onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
             >
               {tag}
-            </Button>
+            </button>
           ))}
         </div>
       )}
 
       {/* Canvas */}
-      <CanvasRenderer
-        nodes={filteredNodes}
-        edges={filteredEdges}
-        groups={groups}
-        mode="editable"
-        offsetX={offsetX}
-        offsetY={offsetY}
-        zoom={zoom}
-        onOffsetChange={(x, y) => {
-          setOffsetX(x);
-          setOffsetY(y);
-          saveViewState(x, y, zoom);
-        }}
-        onZoomChange={(z) => {
-          setZoom(z);
-          saveViewState(offsetX, offsetY, z);
-        }}
-        onNodeClick={handleNodeClick}
-        onNodeMouseDown={handleNodeMouseDown}
-        onNodeDoubleClick={(nodeId, e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          handleNodeDoubleClick(nodeId);
-        }}
-        onNodeHover={setHoveredNodeId}
-        onNodeContextMenu={(nodeId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, nodeId })}
-        onEdgeClick={() => {}}
-        onEdgeContextMenu={(edgeId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, edgeId })}
-        onGroupContextMenu={(groupId, x, y) => setContextMenu({ x, y, canvasX: 0, canvasY: 0, groupId })}
-        onCanvasClick={handleCanvasClick}
-        onCanvasMouseMove={handleCanvasMouseMove}
-        onCanvasMouseUp={handleMouseUp}
-        onCanvasContextMenu={(canvasX, canvasY, screenX, screenY) => setContextMenu({ x: screenX, y: screenY, canvasX, canvasY })}
-        selectedNodeIds={selectedNodeIds}
-        deletingNodeIds={deletingNodeIds}
-        tags={tags}
-        renderTags={(nodeId) => {
-          const nodeTags = tags.filter(t => t.node_id === nodeId);
-          if (nodeTags.length === 0) return null;
-          const node = filteredNodes.find(n => n.id === nodeId);
-          if (!node) return null;
-          return (
-            <foreignObject
-              x={node.x + 8}
-              y={node.y + node.height - 22}
-              width={node.width - 16}
-              height={18}
-            >
-              <div className="canvas-tags-row">
-                {nodeTags.slice(0, 3).map((t) => {
-                  const isNew = newlyAddedTagIds.has(t.id);
-                  if (isNew) {
-                    return (
-                      <motion.span
-                        key={t.id}
-                        initial={{ scale: 0.5, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-                      >
-                        <Badge size="sm" variant="default">{t.tag}</Badge>
-                      </motion.span>
-                    );
-                  }
-                  return <Badge key={t.id} size="sm" variant="default">{t.tag}</Badge>;
-                })}
-                {nodeTags.length > 3 && (
-                  <span className="canvas-tag-overflow">
-                    +{nodeTags.length - 3}
-                  </span>
-                )}
-              </div>
-            </foreignObject>
-          );
+      <div className="canvas-wrapper">
+        <ReactFlow
+          nodes={allNodes}
+          edges={xyflowEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onSelectionChange={onSelectionChange}
+          onNodeDragStart={() => {
+            const state = captureState(xyflowNodes, xyflowEdges, xyflowGroups);
+            dragStartStateRef.current = state;
           }}
-        hoveredNodeId={hoveredNodeId}
-        draggedNodeId={draggedNodeId}
-        editingNodeId={editingNodeId}
-        editingValue={editingValue}
-        onEditingValueChange={setEditingValue}
-        onEditKeyDown={handleEditKeyDown}
-        onEditBlur={confirmEdit}
-        editInputRef={editInputRef}
-        boxSelect={boxSelect}
-        onHandleMouseDown={(nodeId, side) => startConnectionDrag(nodeId, side)}
-        connectionDragActive={!!connectionDrag}
-        ropePoints={ropePoints}
-        dragOverNodeId={dragOverNodeId}
-        onArrowheadGrab={(edgeId, endX, endY) => startRewire(edgeId, endX, endY)}
-        rewireRopePoints={rewireRopePoints}
-        rewireDragOverNodeId={rewireDragOverNodeId}
-        rewireActive={!!rewire}
-        snappedMidpoint={snappedMidpoint}
-        rewireSnappedMidpoint={rewireSnappedMidpoint}
-      >
-        {/* Ghost preview for node placement */}
-        {placementMode && placementMode.type === 'node' && cursorCanvasPos && (
-          <g transform={`translate(${cursorCanvasPos.x - 100}, ${cursorCanvasPos.y - 30})`} className="node-ghost">
-            <rect
-              width={200}
-              height={60}
-              rx={10}
-              ry={10}
-              fill="var(--canvas-node-bg)"
-              fillOpacity={0.5}
-              stroke="var(--canvas-accent)"
-              strokeWidth={2}
-              strokeDasharray="6 3"
-            />
-            <text
-              x={100}
-              y={35}
-              textAnchor="middle"
-              fill="var(--canvas-accent-bright)"
-              fillOpacity={0.7}
-              fontSize={14}
-            >
-              Click to place
-            </text>
-          </g>
-        )}
-        {/* Ghost preview for group placement */}
-        {placementMode && placementMode.type === 'group' && cursorCanvasPos && (
-          <g transform={`translate(${cursorCanvasPos.x - getGroupGhostSize().width / 2}, ${cursorCanvasPos.y - getGroupGhostSize().height / 2})`} className="node-ghost">
-            <rect
-              width={getGroupGhostSize().width}
-              height={getGroupGhostSize().height}
-              rx={12}
-              ry={12}
-              fill="var(--canvas-accent)"
-              fillOpacity={0.1}
-              stroke="var(--canvas-accent)"
-              strokeWidth={1.5}
-              strokeDasharray="6 3"
-            />
-            <text
-              x={getGroupGhostSize().width / 2}
-              y={getGroupGhostSize().height / 2 + 5}
-              textAnchor="middle"
-              fill="var(--canvas-accent-bright)"
-              fillOpacity={0.7}
-              fontSize={14}
-            >
-              Click to place group
-            </text>
-          </g>
-        )}
-      </CanvasRenderer>
+          nodeTypes={{ canvasNode: CanvasNodeComponent, canvasGroup: CanvasGroupNodeComponent }}
+          edgeTypes={{ canvasEdge: CanvasEdge }}
+          defaultEdgeOptions={{ type: "canvasEdge" }}
+          connectionLineComponent={CanvasConnectionLine}
+          onConnectStart={handleConnectStart}
+          onConnectEnd={handleConnectEnd}
+          onNodeDoubleClick={(_event, node) => {
+            if (node.type === "canvasGroup") {
+              setGroupRenameId(node.id);
+              setGroupRenameValue((node.data as any).label || "");
+            } else {
+              setNodeModalNodeId(node.id);
+              setNodeModalOpen(true);
+            }
+          }}
+          onEdgeDoubleClick={(_event, edge) => {
+            setEdgeModalEdgeId(edge.id);
+            setEdgeModalOpen(true);
+          }}
+          fitView
+          deleteKeyCode={null}
+          onNodeDragStop={(_event, node) => {
+            // Push undo after drag completes
+            if (dragStartStateRef.current) {
+              pushUndo(dragStartStateRef.current);
+              dragStartStateRef.current = null;
+            }
 
-      {/* Selection count indicator */}
-      {selectedNodeIds.size > 1 && (
-        <div className="canvas-selection-count">
-          {selectedNodeIds.size} selected
+            persistNodePosition(node.id, node.position.x, node.position.y);
+
+            // Check if this node is now inside a group's bounds
+            const nodeRect = {
+              x: node.position.x,
+              y: node.position.y,
+              w: node.width || 200,
+              h: node.height || 100,
+            };
+
+            xyflowGroups.forEach(async (group) => {
+              const groupRect = {
+                x: group.position.x,
+                y: group.position.y,
+                w: (group.data as any).width || 200,
+                h: (group.data as any).height || 120,
+              };
+              const memberIds: string[] = (group.data as any).memberIds || [];
+              const overlaps =
+                nodeRect.x + nodeRect.w > groupRect.x &&
+                nodeRect.x < groupRect.x + groupRect.w &&
+                nodeRect.y + nodeRect.h > groupRect.y &&
+                nodeRect.y < groupRect.y + groupRect.h;
+              const isMember = memberIds.includes(node.id);
+
+              if (overlaps && !isMember) {
+                const newIds = [...memberIds, node.id];
+                try {
+                  await safeInvoke("update_canvas_group", {
+                    id: group.id,
+                    nodeIdsJson: JSON.stringify(newIds),
+                  });
+                  setXYFlowGroups((gs) =>
+                    gs.map((g) => (g.id === group.id ? { ...g, data: { ...g.data, memberIds: newIds } } : g))
+                  );
+                } catch (err) { console.error(err); }
+              } else if (!overlaps && isMember) {
+                const newIds = memberIds.filter((id: string) => id !== node.id);
+                try {
+                  await safeInvoke("update_canvas_group", {
+                    id: group.id,
+                    nodeIdsJson: JSON.stringify(newIds),
+                  });
+                  setXYFlowGroups((gs) =>
+                    gs.map((g) => (g.id === group.id ? { ...g, data: { ...g.data, memberIds: newIds } } : g))
+                  );
+                } catch (err) { console.error(err); }
+              }
+            });
+          }}
+          onMoveEnd={(_event, viewport) => {
+            if (selectedCanvasId) {
+              safeInvoke("update_canvas_view_state", {
+                canvasId: selectedCanvasId,
+                offsetX: viewport.x,
+                offsetY: viewport.y,
+                zoom: viewport.zoom,
+              }).catch(() => {});
+            }
+          }}
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+
+        {/* Keyboard hints bar */}
+        <div className="canvas-hints-bar">
+          <kbd>Space</kbd> + drag pan
+          <span className="canvas-hints-sep" />
+          <kbd>⌘</kbd><kbd>Z</kbd> undo
+          <span className="canvas-hints-sep" />
+          <kbd>⌫</kbd> delete
+          <span className="canvas-hints-sep" />
+          <kbd>⌘</kbd><kbd>E</kbd> edit
         </div>
-      )}
 
-      {/* Undo/Redo badge */}
-      {(undoStack.length > 0 || redoStack.length > 0) && (
+        {/* Undo / Redo bar */}
         <div className="canvas-undo-bar">
-          <Button
-            as={motion.button as React.ElementType}
+          <button
             className="canvas-undo-btn"
-            onClick={handleUndo}
-            disabled={undoStack.length === 0}
-            {...({
-              initial: false,
-              animate: { scale: 1, opacity: 1 },
-              transition: { type: "spring", stiffness: 400, damping: 25 },
-            } as Record<string, unknown>)}
+            disabled={!canUndo}
+            onClick={() => {
+              const entry = undo();
+              if (entry) {
+                setXYFlowNodes(entry.nodes);
+                setXYFlowEdges(entry.edges);
+                setXYFlowGroups(entry.groupNodes);
+              }
+            }}
+            title="Undo (Ctrl+Z)"
           >
-            <span className="canvas-undo-btn__icon">&#8630;</span>
-            <span className="canvas-undo-btn__count">{undoStack.length}</span>
-          </Button>
-          <Button
-            as={motion.button as React.ElementType}
+            <span className="canvas-undo-btn__icon">↩</span>
+            <span className="canvas-undo-btn__count">Undo</span>
+          </button>
+          <button
             className="canvas-undo-btn"
-            onClick={handleRedo}
-            disabled={redoStack.length === 0}
-            {...({
-              initial: false,
-              animate: { scale: 1, opacity: 1 },
-              transition: { type: "spring", stiffness: 400, damping: 25 },
-            } as Record<string, unknown>)}
+            disabled={!canRedo}
+            onClick={() => {
+              const entry = redo();
+              if (entry) {
+                setXYFlowNodes(entry.nodes);
+                setXYFlowEdges(entry.edges);
+                setXYFlowGroups(entry.groupNodes);
+              }
+            }}
+            title="Redo (Ctrl+Shift+Z)"
           >
-            <span className="canvas-undo-btn__icon">&#8631;</span>
-            <span className="canvas-undo-btn__count">{redoStack.length}</span>
-          </Button>
+            <span className="canvas-undo-btn__icon">↪</span>
+            <span className="canvas-undo-btn__count">Redo</span>
+          </button>
         </div>
-      )}
+
+        {/* Selection count badge */}
+        {selectedNodeCount > 0 && (
+          <div className="canvas-selection-count">
+            {selectedNodeCount} node{selectedNodeCount !== 1 ? "s" : ""} selected
+          </div>
+        )}
+      </div>
 
       {/* Toast notification */}
       <AnimatePresence>
@@ -1211,14 +1015,81 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         )}
       </AnimatePresence>
 
-      {/* Context menu (right-click on empty canvas, node, edge, or group) */}
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={contextMenu.nodeId ? nodeMenuItems : contextMenu.edgeId ? edgeMenuItems : contextMenu.groupId ? groupMenuItems : canvasMenuItems}
-          onClose={() => setContextMenu(null)}
-        />
+      {/* Node edit modal */}
+      <NodeEditModal
+        open={nodeModalOpen}
+        onClose={() => { setNodeModalOpen(false); setNodeModalNodeId(null); }}
+        data={getNodeModalData()}
+        onSave={handleNodeSave}
+        onAddTag={handleAddTag}
+        onRemoveTag={handleRemoveTag}
+        onAddSource={handleAddSource}
+        onRemoveSource={handleRemoveSource}
+      />
+
+      {/* Edge edit modal */}
+      <EdgeEditModal
+        open={edgeModalOpen}
+        onClose={() => { setEdgeModalOpen(false); setEdgeModalEdgeId(null); }}
+        label={getEdgeModalData().label}
+        metadataJson={getEdgeModalData().metadataJson}
+        onSave={handleEdgeSave}
+      />
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        title={`Delete ${deleteConfirmItems.length} ${deleteConfirmEntityType}`}
+        message={`Are you sure you want to delete ${deleteConfirmItems.length > 1 ? "these" : "this"} ${deleteConfirmEntityType.slice(0, -1)}${deleteConfirmItems.length > 1 ? "s" : ""}? This action cannot be undone via the undo stack.`}
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        destructive
+      />
+
+      {/* Group rename dialog */}
+      {groupRenameId && (
+        <Dialog
+          open={true}
+          onClose={() => setGroupRenameId(null)}
+          title="Rename Group"
+          width={360}
+        >
+          <Input
+            label="Group name"
+            value={groupRenameValue}
+            onChange={setGroupRenameValue}
+            placeholder="Group name"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                safeInvoke("update_canvas_group", {
+                  id: groupRenameId,
+                  label: groupRenameValue,
+                }).then(() => {
+                  setXYFlowGroups((gs) =>
+                    gs.map((g) => (g.id === groupRenameId ? { ...g, data: { ...g.data, label: groupRenameValue } } : g))
+                  );
+                }).catch(console.error);
+                setGroupRenameId(null);
+              }
+              if (e.key === "Escape") setGroupRenameId(null);
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+            <Button variant="ghost" onClick={() => setGroupRenameId(null)}>Cancel</Button>
+            <Button variant="primary" onClick={async () => {
+              try {
+                await safeInvoke("update_canvas_group", { id: groupRenameId, label: groupRenameValue });
+                setXYFlowGroups((gs) =>
+                  gs.map((g) => (g.id === groupRenameId ? { ...g, data: { ...g.data, label: groupRenameValue } } : g))
+                );
+              } catch (err) { console.error(err); }
+              setGroupRenameId(null);
+            }}>Save</Button>
+          </div>
+        </Dialog>
       )}
     </div>
   );

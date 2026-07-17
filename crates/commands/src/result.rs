@@ -1,4 +1,4 @@
-use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent};
+use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasNodeSource, CanvasTag, CanvasViewState, C4Diagram, DomainEvent};
 use serde::Serialize;
 
 #[derive(Debug)]
@@ -21,6 +21,8 @@ pub enum CommandResult {
     CanvasEdges(Vec<CanvasEdge>),
     CanvasGroup(CanvasGroup),
     CanvasGroups(Vec<CanvasGroup>),
+    CanvasNodeSource(CanvasNodeSource),
+    CanvasNodeSources(Vec<CanvasNodeSource>),
     CanvasTag(CanvasTag),
     CanvasTags(Vec<CanvasTag>),
     CanvasViewState(CanvasViewState),
@@ -50,6 +52,8 @@ impl Serialize for CommandResult {
             CommandResult::CanvasEdges(v) => v.serialize(serializer),
             CommandResult::CanvasGroup(v) => v.serialize(serializer),
             CommandResult::CanvasGroups(v) => v.serialize(serializer),
+            CommandResult::CanvasNodeSource(v) => v.serialize(serializer),
+            CommandResult::CanvasNodeSources(v) => v.serialize(serializer),
             CommandResult::CanvasTag(v) => v.serialize(serializer),
             CommandResult::CanvasTags(v) => v.serialize(serializer),
             CommandResult::CanvasViewState(v) => v.serialize(serializer),

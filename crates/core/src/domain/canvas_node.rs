@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct CanvasNode {
     pub id: String,
     pub canvas_id: String,
-    pub content: String,
+    pub title: String,
+    pub description: String,
     pub x: f64,
     pub y: f64,
     pub width: f64,

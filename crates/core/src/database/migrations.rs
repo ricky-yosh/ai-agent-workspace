@@ -141,6 +141,51 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch("DROP TABLE IF EXISTS code_vectors;")?;
     }
 
+    if current_version < 20 {
+        // v19 -> v20: rename canvas_nodes.content to title, add description column, add canvas_node_sources table
+        let has_title: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"title".to_string())
+            })
+            .unwrap_or(false);
+        if !has_title {
+            conn.execute_batch(
+                "ALTER TABLE canvas_nodes RENAME COLUMN content TO title;
+                 ALTER TABLE canvas_nodes ADD COLUMN description TEXT NOT NULL DEFAULT '';
+                 CREATE TABLE IF NOT EXISTS canvas_node_sources (
+                    id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                    url TEXT NOT NULL,
+                    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
+            )?;
+        }
+
+        // Also handle the case where canvas_node_sources table might already exist
+        let has_sources: bool = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='canvas_node_sources'")
+            .map(|mut stmt| stmt.query_map([], |_| Ok(())).is_ok())
+            .unwrap_or(false);
+        if !has_sources {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS canvas_node_sources (
+                    id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                    url TEXT NOT NULL,
+                    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
+            )?;
+        }
+    }
+
     Ok(())
 }
 

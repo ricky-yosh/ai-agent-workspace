@@ -182,6 +182,15 @@ pub fn emit_domain_event(app: &tauri::AppHandle, event: &ai_agent_workspace_core
                 serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }),
             );
         }
+        DomainEvent::CanvasNodeSourcesChanged {
+            session_id,
+            canvas_id,
+        } => {
+            let _ = app.emit(
+                "canvas-node-sources-changed",
+                serde_json::json!({ "session_id": session_id, "canvas_id": canvas_id }),
+            );
+        }
         DomainEvent::C4DiagramsChanged { repo_path } => {
             let _ = app.emit(
                 "c4-diagrams-changed",

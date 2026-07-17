@@ -21,7 +21,8 @@ impl<'a> CanvasNodeRepository<'a> {
     pub fn create(
         &self,
         canvas_id: &str,
-        content: &str,
+        title: &str,
+        description: &str,
         x: f64,
         y: f64,
         width: f64,
@@ -31,14 +32,15 @@ impl<'a> CanvasNodeRepository<'a> {
         let id = Uuid::new_v4().to_string();
         let now = now_epoch_millis();
         self.conn.execute(
-            "INSERT INTO canvas_nodes (id, canvas_id, content, x, y, width, height, metadata_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![id, canvas_id, content, x, y, width, height, metadata_json, now, now],
+            "INSERT INTO canvas_nodes (id, canvas_id, title, description, x, y, width, height, metadata_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![id, canvas_id, title, description, x, y, width, height, metadata_json, now, now],
         )?;
         Ok(CanvasNode {
             id,
             canvas_id: canvas_id.to_string(),
-            content: content.to_string(),
+            title: title.to_string(),
+            description: description.to_string(),
             x,
             y,
             width,
@@ -51,22 +53,23 @@ impl<'a> CanvasNodeRepository<'a> {
 
     pub fn list_by_canvas(&self, canvas_id: &str) -> Result<Vec<CanvasNode>, rusqlite::Error> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, canvas_id, content, x, y, width, height, metadata_json, created_at, updated_at
+            "SELECT id, canvas_id, title, description, x, y, width, height, metadata_json, created_at, updated_at
              FROM canvas_nodes WHERE canvas_id = ?1
              ORDER BY created_at ASC"
         )?;
         let rows = stmt.query_map(params![canvas_id], |row| {
-            let created: i64 = row.get(8)?;
-            let updated: i64 = row.get(9)?;
+            let created: i64 = row.get(9)?;
+            let updated: i64 = row.get(10)?;
             Ok(CanvasNode {
                 id: row.get(0)?,
                 canvas_id: row.get(1)?,
-                content: row.get(2)?,
-                x: row.get(3)?,
-                y: row.get(4)?,
-                width: row.get(5)?,
-                height: row.get(6)?,
-                metadata_json: row.get(7)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                x: row.get(4)?,
+                y: row.get(5)?,
+                width: row.get(6)?,
+                height: row.get(7)?,
+                metadata_json: row.get(8)?,
                 created_at: epoch_millis_to_iso(created),
                 updated_at: epoch_millis_to_iso(updated),
             })
@@ -76,21 +79,22 @@ impl<'a> CanvasNodeRepository<'a> {
 
     pub fn get(&self, id: &str) -> Result<CanvasNode, rusqlite::Error> {
         self.conn.query_row(
-            "SELECT id, canvas_id, content, x, y, width, height, metadata_json, created_at, updated_at
+            "SELECT id, canvas_id, title, description, x, y, width, height, metadata_json, created_at, updated_at
              FROM canvas_nodes WHERE id = ?1",
             params![id],
             |row| {
-                let created: i64 = row.get(8)?;
-                let updated: i64 = row.get(9)?;
+                let created: i64 = row.get(9)?;
+                let updated: i64 = row.get(10)?;
                 Ok(CanvasNode {
                     id: row.get(0)?,
                     canvas_id: row.get(1)?,
-                    content: row.get(2)?,
-                    x: row.get(3)?,
-                    y: row.get(4)?,
-                    width: row.get(5)?,
-                    height: row.get(6)?,
-                    metadata_json: row.get(7)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    x: row.get(4)?,
+                    y: row.get(5)?,
+                    width: row.get(6)?,
+                    height: row.get(7)?,
+                    metadata_json: row.get(8)?,
                     created_at: epoch_millis_to_iso(created),
                     updated_at: epoch_millis_to_iso(updated),
                 })
@@ -101,7 +105,8 @@ impl<'a> CanvasNodeRepository<'a> {
     pub fn update(
         &self,
         id: &str,
-        content: Option<&str>,
+        title: Option<&str>,
+        description: Option<&str>,
         x: Option<f64>,
         y: Option<f64>,
         width: Option<f64>,
@@ -111,7 +116,8 @@ impl<'a> CanvasNodeRepository<'a> {
         let existing = self.get(id)?;
         let now = now_epoch_millis();
         
-        let new_content = content.unwrap_or(&existing.content);
+        let new_title = title.unwrap_or(&existing.title);
+        let new_description = description.unwrap_or(&existing.description);
         let new_x = x.unwrap_or(existing.x);
         let new_y = y.unwrap_or(existing.y);
         let new_width = width.unwrap_or(existing.width);
@@ -119,9 +125,9 @@ impl<'a> CanvasNodeRepository<'a> {
         let new_metadata = metadata_json.or(existing.metadata_json.as_deref());
         
         self.conn.execute(
-            "UPDATE canvas_nodes SET content = ?1, x = ?2, y = ?3, width = ?4, height = ?5, metadata_json = ?6, updated_at = ?7
-             WHERE id = ?8",
-            params![new_content, new_x, new_y, new_width, new_height, new_metadata, now, id],
+            "UPDATE canvas_nodes SET title = ?1, description = ?2, x = ?3, y = ?4, width = ?5, height = ?6, metadata_json = ?7, updated_at = ?8
+             WHERE id = ?9",
+            params![new_title, new_description, new_x, new_y, new_width, new_height, new_metadata, now, id],
         )?;
         self.get(id)
     }
@@ -136,15 +142,18 @@ impl<'a> CanvasNodeRepository<'a> {
 mod tests {
     use crate::repositories::test_helpers::*;
 
+    fn default_desc() -> &'static str { "" }
+
     #[test]
-    fn test_create_node_with_content_and_position() {
+    fn test_create_node_with_title_and_position() {
         let db = setup_db();
         let (_, canvas_id) = create_test_canvas(&db);
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let node = repo.create(&canvas_id, "Hello World", 100.0, 200.0, 200.0, 100.0, None).unwrap();
-        assert_eq!(node.content, "Hello World");
+        let node = repo.create(&canvas_id, "Hello World", default_desc(), 100.0, 200.0, 200.0, 100.0, None).unwrap();
+        assert_eq!(node.title, "Hello World");
+        assert_eq!(node.description, "");
         assert_eq!(node.canvas_id, canvas_id);
         assert_eq!(node.x, 100.0);
         assert_eq!(node.y, 200.0);
@@ -163,7 +172,7 @@ mod tests {
         let repo = db.canvas_nodes(&conn);
 
         let metadata = r#"{"color": "blue", "type": "note"}"#;
-        let node = repo.create(&canvas_id, "Note", 50.0, 50.0, 150.0, 80.0, Some(metadata)).unwrap();
+        let node = repo.create(&canvas_id, "Note", default_desc(), 50.0, 50.0, 150.0, 80.0, Some(metadata)).unwrap();
         assert_eq!(node.metadata_json, Some(metadata.to_string()));
     }
 
@@ -174,8 +183,8 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        repo.create(&canvas_id, "Node 1", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        repo.create(&canvas_id, "Node 2", 100.0, 100.0, 150.0, 75.0, None).unwrap();
+        repo.create(&canvas_id, "Node 1", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
+        repo.create(&canvas_id, "Node 2", default_desc(), 100.0, 100.0, 150.0, 75.0, None).unwrap();
 
         let list = repo.list_by_canvas(&canvas_id).unwrap();
         assert_eq!(list.len(), 2);
@@ -190,16 +199,16 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        repo.create(&canvas_id1, "Node 1", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        repo.create(&canvas_id2, "Node 2", 100.0, 100.0, 150.0, 75.0, None).unwrap();
+        repo.create(&canvas_id1, "Node 1", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
+        repo.create(&canvas_id2, "Node 2", default_desc(), 100.0, 100.0, 150.0, 75.0, None).unwrap();
 
         let list1 = repo.list_by_canvas(&canvas_id1).unwrap();
         assert_eq!(list1.len(), 1);
-        assert_eq!(list1[0].content, "Node 1");
+        assert_eq!(list1[0].title, "Node 1");
 
         let list2 = repo.list_by_canvas(&canvas_id2).unwrap();
         assert_eq!(list2.len(), 1);
-        assert_eq!(list2[0].content, "Node 2");
+        assert_eq!(list2[0].title, "Node 2");
     }
 
     #[test]
@@ -209,10 +218,10 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let node = repo.create(&canvas_id, "Test Node", 10.0, 20.0, 100.0, 50.0, None).unwrap();
+        let node = repo.create(&canvas_id, "Test Node", default_desc(), 10.0, 20.0, 100.0, 50.0, None).unwrap();
         let fetched = repo.get(&node.id).unwrap();
         assert_eq!(fetched.id, node.id);
-        assert_eq!(fetched.content, "Test Node");
+        assert_eq!(fetched.title, "Test Node");
         assert_eq!(fetched.x, 10.0);
         assert_eq!(fetched.y, 20.0);
     }
@@ -224,23 +233,23 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let node = repo.create(&canvas_id, "Node", 10.0, 20.0, 100.0, 50.0, None).unwrap();
-        let updated = repo.update(&node.id, None, Some(300.0), Some(400.0), None, None, None).unwrap();
+        let node = repo.create(&canvas_id, "Node", default_desc(), 10.0, 20.0, 100.0, 50.0, None).unwrap();
+        let updated = repo.update(&node.id, None, None, Some(300.0), Some(400.0), None, None, None).unwrap();
         assert_eq!(updated.x, 300.0);
         assert_eq!(updated.y, 400.0);
-        assert_eq!(updated.content, "Node"); // unchanged
+        assert_eq!(updated.title, "Node"); // unchanged
     }
 
     #[test]
-    fn test_update_content() {
+    fn test_update_title() {
         let db = setup_db();
         let (_, canvas_id) = create_test_canvas(&db);
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let node = repo.create(&canvas_id, "Old Content", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        let updated = repo.update(&node.id, Some("New Content"), None, None, None, None, None).unwrap();
-        assert_eq!(updated.content, "New Content");
+        let node = repo.create(&canvas_id, "Old Title", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
+        let updated = repo.update(&node.id, Some("New Title"), None, None, None, None, None, None).unwrap();
+        assert_eq!(updated.title, "New Title");
         assert_eq!(updated.x, 0.0); // unchanged
     }
 
@@ -251,7 +260,7 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let node = repo.create(&canvas_id, "Node", 0.0, 0.0, 100.0, 50.0, None).unwrap();
+        let node = repo.create(&canvas_id, "Node", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
         repo.delete(&node.id).unwrap();
         let result = repo.get(&node.id);
         assert!(result.is_err());
@@ -265,8 +274,8 @@ mod tests {
         
         {
             let repo = db.canvas_nodes(&conn);
-            repo.create(&canvas_id, "Node 1", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-            repo.create(&canvas_id, "Node 2", 100.0, 100.0, 150.0, 75.0, None).unwrap();
+            repo.create(&canvas_id, "Node 1", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
+            repo.create(&canvas_id, "Node 2", default_desc(), 100.0, 100.0, 150.0, 75.0, None).unwrap();
         }
         
         // Delete the canvas
@@ -286,8 +295,8 @@ mod tests {
         let conn = db.connection().unwrap();
         let repo = db.canvas_nodes(&conn);
 
-        let n1 = repo.create(&canvas_id, "First", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-        let n2 = repo.create(&canvas_id, "Second", 100.0, 100.0, 150.0, 75.0, None).unwrap();
+        let n1 = repo.create(&canvas_id, "First", default_desc(), 0.0, 0.0, 100.0, 50.0, None).unwrap();
+        let n2 = repo.create(&canvas_id, "Second", default_desc(), 100.0, 100.0, 150.0, 75.0, None).unwrap();
 
         let list = repo.list_by_canvas(&canvas_id).unwrap();
         assert_eq!(list.len(), 2);

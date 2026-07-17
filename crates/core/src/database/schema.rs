@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 19;
+pub const SCHEMA_VERSION: i32 = 20;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -79,7 +79,8 @@ CREATE INDEX IF NOT EXISTS idx_visual_canvases_session_id ON visual_canvases(ses
 CREATE TABLE IF NOT EXISTS canvas_nodes (
     id TEXT PRIMARY KEY,
     canvas_id TEXT NOT NULL REFERENCES visual_canvases(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     x REAL NOT NULL DEFAULT 0,
     y REAL NOT NULL DEFAULT 0,
     width REAL NOT NULL DEFAULT 200,
@@ -127,6 +128,16 @@ CREATE TABLE IF NOT EXISTS canvas_tags (
 
 CREATE INDEX IF NOT EXISTS idx_canvas_tags_node_id ON canvas_tags(node_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_canvas_tags_node_id_tag ON canvas_tags(node_id, tag);
+
+CREATE TABLE IF NOT EXISTS canvas_node_sources (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);
 
 CREATE TABLE IF NOT EXISTS canvas_view_states (
     id TEXT PRIMARY KEY,
@@ -207,6 +218,11 @@ mod tests {
     }
 
     #[test]
+    fn test_create_tables_includes_canvas_node_sources() {
+        assert!(CREATE_TABLES.contains("canvas_node_sources"));
+    }
+
+    #[test]
     fn test_create_tables_includes_canvas_view_states() {
         assert!(CREATE_TABLES.contains("canvas_view_states"));
     }
@@ -227,8 +243,8 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_version_is_nineteen() {
-        assert_eq!(SCHEMA_VERSION, 19);
+    fn test_schema_version_is_twenty() {
+        assert_eq!(SCHEMA_VERSION, 20);
     }
 
     #[test]

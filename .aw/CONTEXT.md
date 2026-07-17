@@ -118,6 +118,7 @@
 - Token Foundation: expand beyond color to a full spacing scale (8 steps), typography scale (5 sizes, 4 weights), radius scale (4 sizes), shadow scale (3 levels), and duration scale (3 speeds). Tokens are defined once in `src/themes/tokens.ts` and given values per theme. No just-in-time token growth.
 - Component Library: all Primitive CSS class names use a `.ui-` prefix (`.ui-button`, `.ui-input`, `.ui-badge`) to avoid collisions with existing global class names (`.dialog-btn`, `.tag-pill`, `.context-menu-item`).
 - Component Library: every Primitive imports its own co-located `.css` file. Do not follow the Dialog pattern where consumers import the CSS file separately.
+- Canvas overhaul adopts `@xyflow/react` as the canvas engine (HTML-div nodes, SVG edges, smooth-step routing, pan/zoom, drag, selection, groups). See [ADR 0018](adr/0018-canvas-adopt-xyflow.md) which supersedes [ADR 0017](adr/0017-canvas-hybrid-html-svg-rendering.md).
 
 ## Open Questions
 

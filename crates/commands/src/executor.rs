@@ -4,6 +4,7 @@ use crate::error::CommandError;
 use crate::state::AppState;
 use ai_agent_workspace_core::{DomainEvent, Screen};
 use ai_agent_workspace_core::graph;
+use rusqlite::params;
 
 pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, CommandError> {
     let mut conn = state.db.connection().map_err(|e| CommandError::internal(&e.to_string()))?;
@@ -452,13 +453,13 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let canvas = canvases.rename(&id, &name)?;
             Ok(ExecutionOutcome::with_event(CommandResult::VisualCanvas(canvas), DomainEvent::VisualCanvasesChanged { session_id }))
         }
-        Command::CanvasNodeCreate { canvas_id, content, x, y, width, height, metadata_json } => {
+        Command::CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json } => {
             let canvases = state.db.visual_canvases(&conn);
             let canvas = canvases.get(&canvas_id)
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
             let session_id = canvas.session_id.clone();
             let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.create(&canvas_id, &content, x, y, width, height, metadata_json.as_deref())
+            let node = nodes.create(&canvas_id, &title, &description, x, y, width, height, metadata_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -474,7 +475,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasNode(node)))
         }
-        Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json } => {
+        Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json } => {
             let nodes = state.db.canvas_nodes(&conn);
             let existing = nodes.get(&id)
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
@@ -484,7 +485,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
             let session_id = canvas.session_id.clone();
             let canvas_id = existing.canvas_id.clone();
-            let node = nodes.update(&id, content.as_deref(), x, y, width, height, metadata_json.as_deref())
+            let node = nodes.update(&id, title.as_deref(), description.as_deref(), x, y, width, height, metadata_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -511,6 +512,42 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 DomainEvent::CanvasEdgesChanged { session_id, canvas_id },
             ];
             Ok(ExecutionOutcome::new(CommandResult::Unit(()), events))
+        }
+        Command::CanvasNodeSourceCreate { node_id, url, source_type, sort_order } => {
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.get(&node_id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
+            let canvas_id = node.canvas_id.clone();
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let sources = state.db.canvas_node_sources(&conn);
+            let source = sources.create(&node_id, &url, &source_type, sort_order)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::CanvasNodeSource(source), DomainEvent::CanvasNodeSourcesChanged { session_id, canvas_id }))
+        }
+        Command::CanvasNodeSourceList { node_id } => {
+            let sources = state.db.canvas_node_sources(&conn);
+            let list = sources.list_by_node(&node_id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::none(CommandResult::CanvasNodeSources(list)))
+        }
+        Command::CanvasNodeSourceDelete { id } => {
+            let sources = state.db.canvas_node_sources(&conn);
+            let source = sources.get(&id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node_source", &id, e))?;
+            let nodes = state.db.canvas_nodes(&conn);
+            let node = nodes.get(&source.node_id)
+                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &source.node_id, e))?;
+            let canvases = state.db.visual_canvases(&conn);
+            let canvas = canvases.get(&node.canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &node.canvas_id, e))?;
+            let session_id = canvas.session_id.clone();
+            let canvas_id = node.canvas_id.clone();
+            sources.delete(&id)
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasNodeSourcesChanged { session_id, canvas_id }))
         }
         Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json } => {
             let canvases = state.db.visual_canvases(&conn);
@@ -1787,7 +1824,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "Node A".to_string(),
+                title: "Node A".to_string(),
+                description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -1801,7 +1839,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "Node B".to_string(),
+                title: "Node B".to_string(),
+                description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -1908,7 +1947,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "Node A".to_string(),
+                title: "Node A".to_string(),
+                description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -1922,7 +1962,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "Node B".to_string(),
+                title: "Node B".to_string(),
+                description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -2026,7 +2067,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "Node".to_string(),
+                title: "Node".to_string(),
+                description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -2084,7 +2126,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "A".to_string(),
+                title: "A".to_string(),
+                description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -2098,7 +2141,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "B".to_string(),
+                title: "B".to_string(),
+                description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -2109,6 +2153,7 @@ mod tests {
             _ => panic!("Expected CanvasNode"),
         };
 
+        // Create an edge from A to B
         let outcome = execute(
             Command::CanvasEdgeCreate {
                 canvas_id: canvas.id.clone(),
@@ -2187,7 +2232,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "A".to_string(),
+                title: "A".to_string(),
+                description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },
@@ -2201,7 +2247,8 @@ mod tests {
         let outcome = execute(
             Command::CanvasNodeCreate {
                 canvas_id: canvas.id.clone(),
-                content: "B".to_string(),
+                title: "B".to_string(),
+                description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
             },

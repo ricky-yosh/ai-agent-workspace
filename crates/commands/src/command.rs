@@ -162,7 +162,8 @@ pub enum Command {
     },
     CanvasNodeCreate {
         canvas_id: String,
-        content: String,
+        title: String,
+        description: String,
         x: f64,
         y: f64,
         width: f64,
@@ -177,7 +178,8 @@ pub enum Command {
     },
     CanvasNodeUpdate {
         id: String,
-        content: Option<String>,
+        title: Option<String>,
+        description: Option<String>,
         x: Option<f64>,
         y: Option<f64>,
         width: Option<f64>,
@@ -185,6 +187,18 @@ pub enum Command {
         metadata_json: Option<String>,
     },
     CanvasNodeDelete {
+        id: String,
+    },
+    CanvasNodeSourceCreate {
+        node_id: String,
+        url: String,
+        source_type: String,
+        sort_order: i32,
+    },
+    CanvasNodeSourceList {
+        node_id: String,
+    },
+    CanvasNodeSourceDelete {
         id: String,
     },
     CanvasEdgeCreate {

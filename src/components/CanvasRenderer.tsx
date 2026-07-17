@@ -15,6 +15,7 @@ import {
   findNearestEdge as geometryFindNearestEdge,
 } from "../canvas/geometry";
 import { DragRope } from "../canvas/DragRope";
+import { computeEdgeSagPoints } from "../canvas/ropePhysics";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ interface CanvasRendererProps {
   rewireRopePoints?: Array<{ x: number; y: number }> | null;
   rewireDragOverNodeId?: string | null;
   rewireActive?: boolean;
+  rewireEdgeId?: string | null;
   snappedMidpoint?: { x: number; y: number } | null;
   rewireSnappedMidpoint?: { x: number; y: number } | null;
 }
@@ -217,6 +219,7 @@ export function CanvasRenderer({
   rewireRopePoints: rewireRopePointsProp = null,
   rewireDragOverNodeId: rewireDragOverNodeIdProp = null,
   rewireActive = false,
+  rewireEdgeId = null,
   snappedMidpoint = null,
   rewireSnappedMidpoint: rewireSnappedMidpointProp = null,
 }: CanvasRendererProps) {
@@ -516,40 +519,62 @@ export function CanvasRenderer({
     const srcL = sideLaunch(sourceNode, srcSide);
     const tgtL = sideLaunch(targetNode, tgtSide);
 
-    // Compute control point for the quadratic bezier: midpoint of the two launch anchors
-    const cpX = (srcL.x + tgtL.x) / 2;
-    const cpY = (srcL.y + tgtL.y) / 2;
+    // This edge specifically is the one currently being rewired — the DragRope
+    // preview takes over visually, so the static path/arrow beneath it hides
+    // rather than staying drawn to the (soon to change) original target.
+    const isBeingRewired = rewireActive && rewireEdgeId === edge.id;
 
-    // Launch tangents: short segments from endpoint to launch point
-    const path = `M ${start.x} ${start.y} L ${srcL.x} ${srcL.y} Q ${cpX} ${cpY} ${tgtL.x} ${tgtL.y} L ${end.x} ${end.y}`;
+    // Sine-sag curve between the launch anchors, matching clapet.app's edge
+    // geometry (their `bn` function): a settled edge sags at scale 1, and the
+    // sag deepens (scale ~1.32) while its endpoint is actively being dragged —
+    // there is no spring/physics simulation once connected, just this curve
+    // recomputed from current positions.
+    const sagPoints = computeEdgeSagPoints(srcL, tgtL, { sagScale: isBeingRewired ? 1.32 : 1 });
+    let curveD = "";
+    for (let i = 1; i < sagPoints.length - 1; i++) {
+      const cur = sagPoints[i];
+      const next = sagPoints[i + 1];
+      curveD += ` Q ${cur.x} ${cur.y} ${(cur.x + next.x) / 2} ${(cur.y + next.y) / 2}`;
+    }
+    curveD += ` T ${tgtL.x} ${tgtL.y}`;
+    // Launch tangents: short straight segments from the node handle to the launch point
+    const path = `M ${start.x} ${start.y} L ${srcL.x} ${srcL.y}${curveD} L ${end.x} ${end.y}`;
 
     const arrowSize = 10;
     // Arrow angle derived from launch anchor direction
     const arrowAngle = Math.atan2(end.y - tgtL.y, end.x - tgtL.x);
 
+    const isConnectedToSelection =
+      selectedNodeIds.has(edge.source_node_id) || selectedNodeIds.has(edge.target_node_id);
+    // Only an active drag/rewire gets the amber marching-ants flow; a selected
+    // node's edges just get a thicker resting stroke (clapet.app never tints
+    // or animates edges purely from selection, only from an in-progress drag).
+    const showFlow = connectionDragActive || isBeingRewired;
+    // Pincer only invites a grab when nothing else is already being dragged/rewired.
+    const isPickable = !connectionDragActive && !rewireActive;
+
     return (
       <motion.g
         key={edge.id}
         initial={false}
-        animate={{ pathLength: 1, opacity: 1 }}
+        animate={{ pathLength: 1, opacity: isBeingRewired ? 0 : 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.26, ease: "linear" }}
         onClick={() => onEdgeClick?.(edge.id)}
-        style={{ cursor: "pointer" }}
+        style={{ cursor: "pointer", pointerEvents: isBeingRewired ? "none" : undefined }}
       >
         {/* Base path (solid resting stroke) */}
         <motion.path
           d={path}
           fill="none"
           stroke="var(--canvas-edge)"
-          strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
           initial={false}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.42, ease: "easeOut" }}
+          animate={{ pathLength: 1, strokeWidth: isConnectedToSelection ? 4.2 : 2 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         />
-        {/* Flow path (dashed, marching ants) — revealed via data attribute */}
+        {/* Flow path (dashed, marching ants) — revealed while dragging, rewiring, or connected to a selected node */}
         <path
           d={path}
           fill="none"
@@ -559,7 +584,7 @@ export function CanvasRenderer({
           strokeLinejoin="round"
           strokeDasharray="12 10"
           className="ef-flow"
-          data-diagram-edge-dragging={connectionDragActive || rewireActive ? "true" : undefined}
+          data-diagram-edge-dragging={showFlow ? "true" : undefined}
           pointerEvents="none"
         />
         {/* Source dot */}
@@ -571,7 +596,7 @@ export function CanvasRenderer({
           className="edge-handle"
         />
         {/* Arrowhead + rewire grab target */}
-        <g style={{ cursor: "grab" }}>
+        <g style={{ cursor: isBeingRewired ? "grabbing" : "grab" }}>
           <circle
             cx={end.x}
             cy={end.y}
@@ -595,11 +620,41 @@ export function CanvasRenderer({
             transition={{ duration: 0.52, delay: 0.42, ease: "easeOut" }}
             style={{ pointerEvents: "none" }}
           />
+          {/* Pincer jaws: a discoverable "grab me to rewire" affordance on hover */}
+          {isPickable && (
+            <g
+              transform={`translate(${end.x}, ${end.y}) rotate(${(arrowAngle * 180) / Math.PI})`}
+              style={{ pointerEvents: "none" }}
+            >
+              <line
+                x1={-arrowSize - 3}
+                y1={0}
+                x2={-arrowSize - 9}
+                y2={-5}
+                stroke="var(--canvas-edge)"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                className="pincer-upper"
+                style={{ transformOrigin: `${-arrowSize - 3}px 0px` }}
+              />
+              <line
+                x1={-arrowSize - 3}
+                y1={0}
+                x2={-arrowSize - 9}
+                y2={5}
+                stroke="var(--canvas-edge)"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                className="pincer-lower"
+                style={{ transformOrigin: `${-arrowSize - 3}px 0px` }}
+              />
+            </g>
+          )}
         </g>
         {edge.label && (
           <text
-            x={cpX}
-            y={cpY - 8}
+            x={sagPoints[Math.floor(sagPoints.length / 2)].x}
+            y={sagPoints[Math.floor(sagPoints.length / 2)].y - 8}
             textAnchor="middle"
             fill="var(--text-muted)"
             fontSize={12}

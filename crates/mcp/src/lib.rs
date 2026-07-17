@@ -138,6 +138,9 @@ impl McpHandler {
         node_get,
         node_update,
         node_delete,
+        node_source_add,
+        node_source_list,
+        node_source_remove,
         edge_create,
         edge_list,
         edge_get,
@@ -455,12 +458,12 @@ impl McpHandler {
         respond(&state, execute(Command::VisualCanvasRename { id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Create a node on a visual canvas with content, position, and optional metadata")]
-    async fn node_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] content: String, #[tool(param)] x: f64, #[tool(param)] y: f64, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Create a node on a visual canvas with title, description, position, and optional metadata")]
+    async fn node_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] title: String, #[tool(param)] description: String, #[tool(param)] x: f64, #[tool(param)] y: f64, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         let w = width.unwrap_or(200.0);
         let h = height.unwrap_or(100.0);
-        respond(&state, execute(Command::CanvasNodeCreate { canvas_id, content, x, y, width: w, height: h, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+        respond(&state, execute(Command::CanvasNodeCreate { canvas_id, title, description, x, y, width: w, height: h, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all nodes on a visual canvas")]
@@ -475,16 +478,34 @@ impl McpHandler {
         respond(&state, execute(Command::CanvasNodeGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Update a canvas node's content, position, size, or metadata")]
-    async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] content: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Update a canvas node's title, description, position, size, or metadata")]
+    async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] description: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasNodeUpdate { id, content, x, y, width, height, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+        respond(&state, execute(Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a canvas node. Cascades to remove connected edges and remove the node from any groups.")]
     async fn node_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         respond(&state, execute(Command::CanvasNodeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+    }
+
+    #[tool(description = "Add a source reference (file or link) to a canvas node")]
+    async fn node_source_add(&self, #[tool(param)] node_id: String, #[tool(param)] url: String, #[tool(param)] source_type: String, #[tool(param)] sort_order: i32) -> Result<CallToolResult, rmcp::Error> {
+        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
+        respond(&state, execute(Command::CanvasNodeSourceCreate { node_id, url, source_type, sort_order }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+    }
+
+    #[tool(description = "List all source references for a canvas node")]
+    async fn node_source_list(&self, #[tool(param)] node_id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
+        respond(&state, execute(Command::CanvasNodeSourceList { node_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+    }
+
+    #[tool(description = "Remove a source reference from a canvas node")]
+    async fn node_source_remove(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
+        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
+        respond(&state, execute(Command::CanvasNodeSourceDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
     #[tool(description = "Create a directional edge between two canvas nodes with optional label and metadata")]
@@ -1767,6 +1788,12 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                             DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
                                 let _ = h.emit("canvas-tags-changed", serde_json::json!({
+                                    "session_id": session_id,
+                                    "canvas_id": canvas_id,
+                                }));
+                            }
+                            DomainEvent::CanvasNodeSourcesChanged { session_id, canvas_id } => {
+                                let _ = h.emit("canvas-node-sources-changed", serde_json::json!({
                                     "session_id": session_id,
                                     "canvas_id": canvas_id,
                                 }));

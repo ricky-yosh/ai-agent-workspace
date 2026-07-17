@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use thiserror::Error;
 
-use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasTagRepository, CanvasViewStateRepository, C4DiagramRepository};
+use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasNodeSourceRepository, CanvasTagRepository, CanvasViewStateRepository, C4DiagramRepository};
 use migrations::{migrate, MigrationError};
 
 #[derive(Debug, Error)]
@@ -138,6 +138,10 @@ impl Database {
         CanvasNodeRepository::new(&self.db_path, conn)
     }
 
+    pub fn canvas_node_sources<'a>(&self, conn: &'a Connection) -> CanvasNodeSourceRepository<'a> {
+        CanvasNodeSourceRepository::new(&self.db_path, conn)
+    }
+
     pub fn canvas_edges<'a>(&self, conn: &'a Connection) -> CanvasEdgeRepository<'a> {
         CanvasEdgeRepository::new(&self.db_path, conn)
     }
@@ -231,6 +235,13 @@ mod tests {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
         let _repo = db.canvas_nodes(&conn);
+    }
+
+    #[test]
+    fn test_canvas_node_sources_repository_stub() {
+        let db = Database::new(":memory:".into());
+        let conn = db.connection().unwrap();
+        let _repo = db.canvas_node_sources(&conn);
     }
 
     #[test]

@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { CanvasNode, CanvasEdge } from "../../components/CanvasRenderer";
 import { safeInvoke } from "../../safeInvoke";
-import { createRope, stepRope, DEFAULT_ROPE_CONFIG, type RopePoint } from "../../canvas/ropePhysics";
+import { computeDragRope, type RopePoint } from "../../canvas/ropePhysics";
 import { findNearestHandle } from "../../canvas/snapping";
 import {
   type Side,
@@ -49,51 +49,9 @@ export function useCanvasRewire(params: {
   const [rewireTargetDir, setRewireTargetDir] = useState<{ x: number; y: number } | null>(null);
 
   const rewireSourceRef = useRef<{ x: number; y: number } | null>(null);
-  const rewireRopeRef = useRef<RopePoint[] | null>(null);
-  const rewireTargetRef = useRef<{ x: number; y: number } | null>(null);
   const rewireSourceDirRef = useRef<{ x: number; y: number } | null>(null);
-  const rewireTargetDirRef = useRef<{ x: number; y: number } | null>(null);
-  const rewireRestLengthRef = useRef(0);
-  const rewireRafRef = useRef<number | null>(null);
-  const rewireLastTimeRef = useRef<number>(0);
   const rewireRef = useRef<RewireState | null>(null);
   const rewireDragOverNodeIdRef = useRef<string | null>(null);
-
-  const startAnimationLoop = useCallback(() => {
-    const animate = (time: number) => {
-      if (!rewireLastTimeRef.current) {
-        rewireLastTimeRef.current = time;
-      }
-      const dt = Math.min((time - rewireLastTimeRef.current) / 1000, 0.033);
-      rewireLastTimeRef.current = time;
-
-      const rope = rewireRopeRef.current;
-      const source = rewireSourceRef.current;
-      const target = rewireTargetRef.current;
-      if (rope && source && target) {
-        stepRope(rope, source, target, dt, {
-          sourceDir: rewireSourceDirRef.current,
-          targetDir: rewireTargetDirRef.current,
-          sagScale: 1.32,
-          restLengthRef: rewireRestLengthRef,
-        });
-        setRewireRopePoints([...rope]);
-      }
-
-      rewireRafRef.current = requestAnimationFrame(animate);
-    };
-
-    rewireLastTimeRef.current = 0;
-    rewireRafRef.current = requestAnimationFrame(animate);
-  }, []);
-
-  const stopAnimationLoop = useCallback(() => {
-    if (rewireRafRef.current !== null) {
-      cancelAnimationFrame(rewireRafRef.current);
-      rewireRafRef.current = null;
-    }
-    rewireLastTimeRef.current = 0;
-  }, []);
 
   const startRewire = useCallback(
     (edgeId: string, endX: number, endY: number) => {
@@ -125,15 +83,8 @@ export function useCanvasRewire(params: {
         : endY;
       const sourceEnd = getEdgePoint(sourceNode, cpX, cpY);
 
-      const rope = createRope(sourceEnd, { x: endX, y: endY });
-      const segCount = DEFAULT_ROPE_CONFIG.points - 1;
-      rewireRestLengthRef.current = DEFAULT_ROPE_CONFIG.slackOffset / segCount;
-
       rewireSourceRef.current = sourceEnd;
       rewireSourceDirRef.current = srcNormal;
-      rewireTargetDirRef.current = null;
-      rewireRopeRef.current = rope;
-      rewireTargetRef.current = { x: endX, y: endY };
 
       setRewire({
         edgeId,
@@ -151,19 +102,20 @@ export function useCanvasRewire(params: {
       };
       setRewireSourceDir(srcNormal);
       setRewireTargetDir(null);
-      setRewireRopePoints([...rope]);
+      setRewireRopePoints(
+        computeDragRope(sourceEnd, { x: endX, y: endY }, { sourceDir: srcNormal, targetDir: null }),
+      );
       setRewireDragOverNodeId(null);
       setRewireSnappedMidpoint(null);
-
-      startAnimationLoop();
     },
-    [nodes, edges, startAnimationLoop],
+    [nodes, edges],
   );
 
   const updateRewire = useCallback(
     (canvasX: number, canvasY: number) => {
       let snapped: { x: number; y: number } | null = null;
       let tgtDir: { x: number; y: number } | null = null;
+      let target = { x: canvasX, y: canvasY };
 
       if (hoveredNodeId) {
         const hoveredNode = nodes.find((n) => n.id === hoveredNodeId);
@@ -174,25 +126,29 @@ export function useCanvasRewire(params: {
           );
           snapped = result.midpoint;
           tgtDir = SIDE_NORMAL[result.side];
-          rewireTargetRef.current = { x: snapped.x, y: snapped.y };
+          target = snapped;
         }
-      } else {
-        rewireTargetRef.current = { x: canvasX, y: canvasY };
       }
 
-      rewireTargetDirRef.current = tgtDir;
       setRewireTargetDir(tgtDir);
       setRewireSnappedMidpoint(snapped);
       setRewireDragOverNodeId(hoveredNodeId);
       rewireDragOverNodeIdRef.current = hoveredNodeId;
+
+      if (rewireSourceRef.current) {
+        setRewireRopePoints(
+          computeDragRope(rewireSourceRef.current, target, {
+            sourceDir: rewireSourceDirRef.current,
+            targetDir: tgtDir,
+          }),
+        );
+      }
     },
     [hoveredNodeId, nodes],
   );
 
   const endRewire = useCallback(
     (_canvasX: number, _canvasY: number) => {
-      stopAnimationLoop();
-
       const state = rewireRef.current;
       const targetNodeId = rewireDragOverNodeIdRef.current;
 
@@ -205,11 +161,8 @@ export function useCanvasRewire(params: {
         setRewireSnappedMidpoint(null);
         setRewireSourceDir(null);
         setRewireTargetDir(null);
-        rewireRopeRef.current = null;
-        rewireTargetRef.current = null;
         rewireSourceRef.current = null;
         rewireSourceDirRef.current = null;
-        rewireTargetDirRef.current = null;
       };
 
       if (state && targetNodeId && targetNodeId !== state.sourceNodeId && selectedCanvasId) {
@@ -255,15 +208,8 @@ export function useCanvasRewire(params: {
       selectedCanvasId,
       showToast,
       setEdges,
-      stopAnimationLoop,
     ],
   );
-
-  useEffect(() => {
-    return () => {
-      stopAnimationLoop();
-    };
-  }, [stopAnimationLoop]);
 
   return {
     rewire,

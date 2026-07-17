@@ -1,16 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { createRope, stepRope, DEFAULT_ROPE_CONFIG } from "./ropePhysics";
+import { computeDragRope } from "./ropePhysics";
 
 const SIDE = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } } as const;
 
-describe("createRope", () => {
-  it("creates correct number of points", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 }, { points: 18 });
+describe("computeDragRope", () => {
+  it("creates the default number of points", () => {
+    const r = computeDragRope({ x: 0, y: 0 }, { x: 100, y: 0 });
     expect(r).toHaveLength(18);
   });
 
   it("first point at source, last at target", () => {
-    const r = createRope({ x: 10, y: 20 }, { x: 100, y: 200 });
+    const r = computeDragRope({ x: 10, y: 20 }, { x: 100, y: 200 });
     expect(r[0].x).toBe(10);
     expect(r[0].y).toBe(20);
     const last = r[r.length - 1];
@@ -18,63 +18,26 @@ describe("createRope", () => {
     expect(last.y).toBe(200);
   });
 
-  it("uses default config when none provided", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 });
-    expect(r).toHaveLength(DEFAULT_ROPE_CONFIG.points);
-  });
-});
-
-describe("stepRope", () => {
-  it("applies gravity (points fall)", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 });
-    const before = r.map((p) => p.y);
-    stepRope(r, { x: 0, y: 0 }, { x: 100, y: 0 }, 0.016);
-    const after = r.map((p) => p.y);
-    expect(after.some((y, i) => y > before[i])).toBe(true);
+  it("is a pure function of its inputs (no state, no lag)", () => {
+    const a = computeDragRope({ x: 0, y: 0 }, { x: 200, y: 100 }, { sourceDir: SIDE.right });
+    const b = computeDragRope({ x: 0, y: 0 }, { x: 200, y: 100 }, { sourceDir: SIDE.right });
+    expect(a).toEqual(b);
   });
 
-  it("last point stays anchored at target", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 });
-    for (let i = 0; i < 10; i++) {
-      stepRope(r, { x: 0, y: 0 }, { x: 200, y: 100 }, 0.016);
-    }
-    expect(r[r.length - 1].x).toBe(200);
-    expect(r[r.length - 1].y).toBe(100);
+  it("collapses to source when source and target coincide", () => {
+    const r = computeDragRope({ x: 50, y: 50 }, { x: 50, y: 50 });
+    expect(r.every((p) => p.x === 50 && p.y === 50)).toBe(true);
   });
 
-  it("first point stays anchored at source", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 });
-    for (let i = 0; i < 10; i++) {
-      stepRope(r, { x: 0, y: 0 }, { x: 200, y: 100 }, 0.016);
-    }
-    expect(r[0].x).toBe(0);
-    expect(r[0].y).toBe(0);
+  it("bows interior points away from the straight line when there is distance", () => {
+    const r = computeDragRope({ x: 0, y: 0 }, { x: 200, y: 0 });
+    const mid = r[Math.floor(r.length / 2)];
+    expect(Math.abs(mid.y)).toBeGreaterThan(0);
   });
 
-  it("does not mutate config", () => {
-    const r = createRope({ x: 0, y: 0 }, { x: 100, y: 0 });
-    const p = { ...DEFAULT_ROPE_CONFIG };
-    stepRope(r, { x: 0, y: 0 }, { x: 100, y: 0 }, 0.016, { damping: 0.9 });
-    expect(DEFAULT_ROPE_CONFIG.damping).toBe(p.damping);
-  });
-
-  it("pins launch anchors when sourceDir/targetDir provided", () => {
-    const r = createRope({ x: 100, y: 100 }, { x: 300, y: 100 });
-    stepRope(r, { x: 100, y: 100 }, { x: 300, y: 100 }, 0.016, {
-      sourceDir: SIDE.right,
-      targetDir: SIDE.left,
-    });
-    // Point 0 is at source (100, 100)
-    expect(r[0].x).toBe(100);
-    expect(r[0].y).toBe(100);
-    // Point 1 is at launch position: source + sourceDir * launch (30px right)
-    expect(r[1].x).toBe(130);
-    expect(r[1].y).toBe(100);
-    // Point n-2 is at target + targetDir * launch (30px left from target)
-    expect(r[r.length - 2].x).toBe(270);
-    expect(r[r.length - 2].y).toBe(100);
-    // Last point at target
-    expect(r[r.length - 1].x).toBe(300);
-    expect(r[r.length - 1].y).toBe(100);
+  it("caps sag at maxSag regardless of distance", () => {
+    const r = computeDragRope({ x: 0, y: 0 }, { x: 5000, y: 0 }, { maxSag: 60 });
+    const mid = r[Math.floor(r.length / 2)];
+    expect(Math.abs(mid.y)).toBeLessThanOrEqual(60 + 1e-6);
   });
 });
