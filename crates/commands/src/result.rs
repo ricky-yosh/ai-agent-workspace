@@ -1,6 +1,24 @@
 use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasNodeSource, CanvasTag, CanvasViewState, C4Diagram, DomainEvent};
 use serde::Serialize;
 
+/// A single node result from a canvas_import batch, pairing the created
+/// CanvasNode with its caller-supplied `ref` (if any).
+#[derive(Debug, Serialize)]
+pub struct ImportNodeResult {
+    #[serde(flatten)]
+    pub node: CanvasNode,
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub ref_: Option<String>,
+}
+
+/// Result of a canvas_import batch.
+#[derive(Debug, Serialize)]
+pub struct ImportResult {
+    pub nodes: Vec<ImportNodeResult>,
+    pub edges: Vec<CanvasEdge>,
+    pub groups: Vec<CanvasGroup>,
+}
+
 #[derive(Debug)]
 pub enum CommandResult {
     Session(Session),
@@ -28,6 +46,7 @@ pub enum CommandResult {
     CanvasViewState(CanvasViewState),
     C4Diagram(C4Diagram),
     C4Diagrams(Vec<C4Diagram>),
+    CanvasImport(ImportResult),
     Unit(()),
 }
 
@@ -59,6 +78,7 @@ impl Serialize for CommandResult {
             CommandResult::CanvasViewState(v) => v.serialize(serializer),
             CommandResult::C4Diagram(v) => v.serialize(serializer),
             CommandResult::C4Diagrams(v) => v.serialize(serializer),
+            CommandResult::CanvasImport(v) => v.serialize(serializer),
             CommandResult::Unit(()) => serializer.serialize_none(),
         }
     }

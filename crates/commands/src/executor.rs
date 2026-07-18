@@ -1,5 +1,6 @@
-use crate::command::Command;
-use crate::result::{CommandResult, ExecutionOutcome};
+use std::collections::{HashMap, HashSet};
+use crate::command::{Command, NodeImportSpec, EdgeImportSpec, GroupImportSpec};
+use crate::result::{CommandResult, ExecutionOutcome, ImportNodeResult, ImportResult};
 use crate::error::CommandError;
 use crate::state::AppState;
 use ai_agent_workspace_core::{DomainEvent, Screen};
@@ -699,6 +700,149 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let state = view_states.upsert(&canvas_id, offset_x, offset_y, zoom)
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasViewState(state)))
+        }
+        Command::CanvasImport { canvas_id, nodes_json, edges_json, groups_json } => {
+            // Parse input arrays
+            let import_nodes: Vec<NodeImportSpec> = serde_json::from_str(&nodes_json)
+                .map_err(|e| CommandError::invalid_input(&format!("Invalid nodes JSON: {}", e)))?;
+            let import_edges: Vec<EdgeImportSpec> = match edges_json {
+                Some(ref json) => serde_json::from_str(json)
+                    .map_err(|e| CommandError::invalid_input(&format!("Invalid edges JSON: {}", e)))?,
+                None => vec![],
+            };
+            let import_groups: Vec<GroupImportSpec> = match groups_json {
+                Some(ref json) => serde_json::from_str(json)
+                    .map_err(|e| CommandError::invalid_input(&format!("Invalid groups JSON: {}", e)))?,
+                None => vec![],
+            };
+
+            // Start a transaction so we can roll back on any failure
+            let tx = conn.transaction()
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+
+            // Validate canvas exists
+            let canvases = state.db.visual_canvases(&tx);
+            let canvas = canvases.get(&canvas_id)
+                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
+            let session_id = canvas.session_id;
+
+            // Validate no duplicate refs
+            let mut ref_seen = HashSet::new();
+            for spec in &import_nodes {
+                if let Some(ref r) = spec.r#ref {
+                    if !ref_seen.insert(r.clone()) {
+                        return Err(CommandError::invalid_input(&format!("Duplicate ref: {}", r)));
+                    }
+                }
+            }
+
+            // Load existing node UUIDs on this canvas for resolution of existing UUIDs
+            let nodes_repo = state.db.canvas_nodes(&tx);
+            let existing_uuids: HashSet<String> = nodes_repo.list_by_canvas(&canvas_id)?
+                .into_iter().map(|n| n.id).collect();
+
+            // Phase 1: create all nodes, building ref -> UUID map
+            let mut ref_to_uuid: HashMap<String, String> = HashMap::new();
+            let mut created_nodes: Vec<ai_agent_workspace_core::CanvasNode> = Vec::new();
+            let mut ordered_refs: Vec<Option<String>> = Vec::new();
+
+            for spec in &import_nodes {
+                let desc = spec.description.as_deref().unwrap_or("");
+                let x = spec.x.unwrap_or(0.0);
+                let y = spec.y.unwrap_or(0.0);
+                let w = spec.width.unwrap_or(200.0);
+                let h = spec.height.unwrap_or(100.0);
+                let node = nodes_repo.create(
+                    &canvas_id, &spec.title, desc, x, y, w, h,
+                    spec.metadata_json.as_deref(),
+                )?;
+                let ref_val = spec.r#ref.clone();
+                if let Some(ref r) = ref_val {
+                    ref_to_uuid.insert(r.clone(), node.id.clone());
+                }
+                ordered_refs.push(ref_val);
+                created_nodes.push(node);
+            }
+
+            // Helper to resolve a value that may be a payload ref or an existing UUID.
+            let resolve = |value: &str| -> Result<String, CommandError> {
+                if let Some(uuid) = ref_to_uuid.get(value) {
+                    return Ok(uuid.clone());
+                }
+                if existing_uuids.contains(value) || nodes_repo.get(value).is_ok() {
+                    return Ok(value.to_string());
+                }
+                Err(CommandError::invalid_input(&format!(
+                    "Could not resolve to a node: {}", value
+                )))
+            };
+
+            // Phase 2: create edges
+            let edges_repo = state.db.canvas_edges(&tx);
+            let mut created_edges = Vec::new();
+            for spec in &import_edges {
+                let source = resolve(&spec.source)?;
+                let target = resolve(&spec.target)?;
+                created_edges.push(
+                    edges_repo.create(&canvas_id, &source, &target,
+                        spec.label.as_deref(), spec.metadata_json.as_deref())?
+                );
+            }
+
+            // Phase 3: create groups
+            let groups_repo = state.db.canvas_groups(&tx);
+            let mut created_groups = Vec::new();
+            for spec in &import_groups {
+                let resolved_ids: Vec<String> = spec.node_refs.iter()
+                    .map(|nr| resolve(nr))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let node_ids_json = serde_json::to_string(&resolved_ids)
+                    .map_err(|e| CommandError::internal(&e.to_string()))?;
+                created_groups.push(
+                    groups_repo.create(&canvas_id, &spec.label, &node_ids_json,
+                        spec.metadata_json.as_deref())?
+                );
+            }
+
+            // Commit — all-or-nothing
+            tx.commit()
+                .map_err(|e| CommandError::internal(&e.to_string()))?;
+
+            // Build result
+            let result_nodes: Vec<ImportNodeResult> = created_nodes.into_iter()
+                .zip(ordered_refs)
+                .map(|(node, ref_)| ImportNodeResult { node, ref_ })
+                .collect();
+
+            // Emit change events (one per entity type, not per entity)
+            let mut events = Vec::new();
+            if !result_nodes.is_empty() {
+                events.push(DomainEvent::CanvasNodesChanged {
+                    session_id: session_id.clone(),
+                    canvas_id: canvas_id.clone(),
+                });
+            }
+            if !created_edges.is_empty() {
+                events.push(DomainEvent::CanvasEdgesChanged {
+                    session_id: session_id.clone(),
+                    canvas_id: canvas_id.clone(),
+                });
+            }
+            if !created_groups.is_empty() {
+                events.push(DomainEvent::CanvasGroupsChanged {
+                    session_id,
+                    canvas_id,
+                });
+            }
+
+            Ok(ExecutionOutcome::new(
+                CommandResult::CanvasImport(ImportResult {
+                    nodes: result_nodes,
+                    edges: created_edges,
+                    groups: created_groups,
+                }),
+                events,
+            ))
         }
         Command::C4DiagramCreate { repo_path, name, diagram_json } => {
             let diagrams = state.db.c4_diagrams(&conn);

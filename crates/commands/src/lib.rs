@@ -5,7 +5,7 @@ pub mod state;
 pub mod executor;
 
 pub use error::CommandError;
-pub use result::{CommandResult, ExecutionOutcome};
-pub use command::Command;
+pub use result::{CommandResult, ExecutionOutcome, ImportNodeResult, ImportResult};
+pub use command::{Command, NodeImportSpec, EdgeImportSpec, GroupImportSpec};
 pub use state::AppState;
 pub use executor::execute;

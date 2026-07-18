@@ -1,4 +1,44 @@
 use ai_agent_workspace_core::Screen;
+use serde::Deserialize;
+
+/// Spec for a node to create in a canvas_import batch.
+#[derive(Debug, Deserialize)]
+pub struct NodeImportSpec {
+    pub r#ref: Option<String>,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub x: Option<f64>,
+    #[serde(default)]
+    pub y: Option<f64>,
+    #[serde(default)]
+    pub width: Option<f64>,
+    #[serde(default)]
+    pub height: Option<f64>,
+    #[serde(default)]
+    pub metadata_json: Option<String>,
+}
+
+/// Spec for an edge to create in a canvas_import batch.
+#[derive(Debug, Deserialize)]
+pub struct EdgeImportSpec {
+    pub source: String,
+    pub target: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub metadata_json: Option<String>,
+}
+
+/// Spec for a group to create in a canvas_import batch.
+#[derive(Debug, Deserialize)]
+pub struct GroupImportSpec {
+    pub label: String,
+    pub node_refs: Vec<String>,
+    #[serde(default)]
+    pub metadata_json: Option<String>,
+}
 
 pub enum Command {
     SessionCreate {
@@ -267,6 +307,12 @@ pub enum Command {
         offset_x: f64,
         offset_y: f64,
         zoom: f64,
+    },
+    CanvasImport {
+        canvas_id: String,
+        nodes_json: String,
+        edges_json: Option<String>,
+        groups_json: Option<String>,
     },
     C4DiagramCreate {
         repo_path: String,
