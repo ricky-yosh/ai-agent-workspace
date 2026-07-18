@@ -69,6 +69,53 @@ export interface IndexResult {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+const VALID_LEVELS = new Set(["context", "container", "component", "code"]);
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    || "unnamed";
+}
+
+function normalizeNode(raw: Record<string, unknown>, usedIds: Set<string>): C4Node {
+  // Derive id from label if missing
+  let id: string;
+  if (raw.id && typeof raw.id === "string" && raw.id.trim().length > 0) {
+    id = raw.id as string;
+  } else {
+    const base = slugify(String(raw.label ?? "unnamed"));
+    id = base;
+    let counter = 1;
+    while (usedIds.has(id)) {
+      id = `${base}-${counter}`;
+      counter++;
+    }
+  }
+  usedIds.add(id);
+
+  const level = (raw.level as string) ?? "context";
+
+  return {
+    id,
+    label: String(raw.label ?? ""),
+    level: (VALID_LEVELS.has(level) ? level : "context") as C4Node["level"],
+    type: (raw.type as string) ?? "",
+    parent: raw.parent as string | undefined,
+    file_path: raw.file_path as string | undefined,
+    line_start: raw.line_start as number | undefined,
+    line_end: raw.line_end as number | undefined,
+    children_count: raw.children_count as number | undefined,
+    code_snippet: raw.code_snippet as string | undefined,
+    metadata: raw.metadata as Record<string, unknown> | undefined,
+    x: typeof raw.x === "number" ? raw.x : 0,
+    y: typeof raw.y === "number" ? raw.y : 0,
+    width: typeof raw.width === "number" ? raw.width : 200,
+    height: typeof raw.height === "number" ? raw.height : 100,
+  };
+}
+
 export function assignGridPositions(
   nodes: C4Node[],
   containerWidth: number,
@@ -90,8 +137,11 @@ export function assignGridPositions(
 export function parseDiagramJson(json: string): C4DiagramData | null {
   try {
     const parsed = JSON.parse(json);
+    const rawNodes: Record<string, unknown>[] = parsed.nodes ?? [];
+    const usedIds = new Set<string>();
+    const nodes = rawNodes.map((raw) => normalizeNode(raw, usedIds));
     return {
-      nodes: parsed.nodes ?? [],
+      nodes,
       edges: parsed.edges ?? [],
       groups: parsed.groups ?? [],
     };

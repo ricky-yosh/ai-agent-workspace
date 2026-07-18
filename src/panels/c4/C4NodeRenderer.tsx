@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { nextLevel, type C4DiagramData, type C4Node } from "./types";
 
 interface C4NodeRendererProps {
@@ -55,13 +56,15 @@ export function C4NodeRenderer({ node, diagramData }: C4NodeRendererProps) {
   }
 
   const nl = nextLevel(c4Node.level);
-  const hasDrillableChildren =
-    nl &&
-    diagramData.nodes.some(
-      (n) =>
-        n.level === nl &&
-        (n.parent === c4Node.label || n.parent === c4Node.id),
-    );
+  const drillChildren = nl
+    ? diagramData.nodes.filter(
+        (n) =>
+          n.level === nl &&
+          (n.parent === c4Node.label || n.parent === c4Node.id),
+      )
+    : [];
+  const hasDrillableChildren = drillChildren.length > 0;
+  const childCount = drillChildren.length;
 
   return (
     <div
@@ -97,14 +100,9 @@ export function C4NodeRenderer({ node, diagramData }: C4NodeRendererProps) {
         {c4Node.type || c4Node.level}
       </div>
       {hasDrillableChildren && (
-        <div
-          style={{
-            fontSize: 9,
-            color: "var(--canvas-accent)",
-            marginTop: 2,
-          }}
-        >
-          Click to drill down
+        <div className="c4-node-drill-chip">
+          <ChevronDown size={10} />
+          <span>{childCount} {childCount === 1 ? "child" : "children"}</span>
         </div>
       )}
     </div>

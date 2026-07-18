@@ -151,6 +151,7 @@ impl McpHandler {
         group_get,
         group_update,
         group_delete,
+        canvas_import,
         tag_add,
         tag_remove,
         tag_list,
@@ -570,6 +571,38 @@ impl McpHandler {
         respond(&state, execute(Command::CanvasGroupDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
     }
 
+    #[tool(
+        description = "Batch-create nodes, edges, and optionally groups on a canvas in a single call. \
+            This is the PREFERRED way to populate a canvas with multiple elements — it is more \
+            efficient and coherent than making individual create calls. \
+            Params: nodes (required, JSON array), edges (optional, JSON array), groups (optional, JSON array). \
+            Each node: { ref?: string, title: string, description?: string, x?: number, y?: number, \
+            width?: number, height?: number, metadata_json?: string }. \
+            Each edge: { source: string, target: string, label?: string, metadata_json?: string }. \
+            source/target accept EITHER a ref from this call's nodes OR an existing node UUID. \
+            Each group: { label: string, node_refs: string[], metadata_json?: string }. \
+            node_refs accept refs from this call's nodes OR existing node UUIDs. \
+            Refs are temporary — they only exist within this call and are returned in the response \
+            so the AI can reference newly-created nodes in edges/groups. Duplicate refs are an error. \
+            The entire import is all-or-nothing: if any validation fails, nothing is created. \
+            Returns the created nodes (with real UUIDs and their refs), edges, and groups."
+    )]
+    async fn canvas_import(
+        &self,
+        #[tool(param)] canvas_id: String,
+        #[tool(param)] nodes: String,
+        #[tool(param)] edges: Option<String>,
+        #[tool(param)] groups: Option<String>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
+        respond(&state, execute(Command::CanvasImport {
+            canvas_id,
+            nodes_json: nodes,
+            edges_json: edges,
+            groups_json: groups,
+        }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+    }
+
     #[tool(description = "Add a tag to a canvas node for categorization")]
     async fn tag_add(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
@@ -594,7 +627,11 @@ impl McpHandler {
         }
     }
 
-    #[tool(description = "Create a C4 diagram for a repository")]
+    #[tool(description = "Create a C4 diagram for a repository. The diagram_json must be a JSON object with nodes[], edges[], and groups[]. \
+        Minimal node shape: {\"label\":\"...\", \"level\":\"context|container|component|code\"}. \
+        Other optional fields: type, parent (match a node's label or id), file_path, code_snippet, line_start, line_end, metadata. \
+        Fields id, x, y, width, height are OPTIONAL — positions are auto-assigned by the UI and ids default from the label. \
+        Unknown fields are tolerated by the frontend parser.")]
     async fn c4_diagram_create(&self, #[tool(param)] repo_path: String, #[tool(param)] name: String, #[tool(param)] diagram_json: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         respond(&state, execute(Command::C4DiagramCreate { repo_path, name, diagram_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
@@ -1024,7 +1061,7 @@ fn build_c4_structure(
         "nodes": nodes,
         "edges": edges,
         "groups": groups,
-        "instructions": "This is a raw structural map of the codebase. Please interpret the components, assign meaningful labels, and classify each node into the appropriate C4 level (context, container, component, code). Then call c4_diagram_create to persist the diagram."
+        "instructions": "This is a raw structural map of the codebase. Please interpret the components, assign meaningful labels, and classify each node into the appropriate C4 level (context, container, component, code). Then call c4_diagram_create to persist the diagram. For the diagram JSON you author, the minimal node shape is: label (required), level (required: context|container|component|code). Fields id, x, y, width, height are OPTIONAL — the UI auto-assigns positions and derives ids from labels. Other optional node fields: type, parent (matches a node's label or derived id), file_path, code_snippet, line_start, line_end, metadata."
     })
 }
 
@@ -1729,6 +1766,171 @@ mod tests {
         let result = handler.generate_c4_diagram(None, None).await.unwrap();
         let text = extract_text(result);
         assert!(text.contains("No code index found") || text.contains("instructions"));
+    }
+
+    // --- canvas_import tool tests ---
+
+    fn setup_canvas(handler: &McpHandler) -> (String, String) {
+        let conn = handler.db.connection().unwrap();
+        let sessions = handler.db.sessions(&conn);
+        let session = sessions.create("/tmp/import_test", "Import Test").unwrap();
+        let canvases = handler.db.visual_canvases(&conn);
+        let canvas = canvases.create(&session.id, "Import Canvas").unwrap();
+        (session.id, canvas.id)
+    }
+
+    fn setup_with_session_and_canvas() -> (McpHandler, TempDir, String) {
+        let (mut handler, dir) = setup();
+        let (session_id, canvas_id) = setup_canvas(&handler);
+        handler.resolved_session_id = Some(session_id);
+        (handler, dir, canvas_id)
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_basic() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"ref": "a", "title": "Login", "x": 100, "y": 100},
+            {"ref": "b", "title": "Dashboard", "x": 300, "y": 100}
+        ]"#;
+        let edges = r#"[
+            {"source": "a", "target": "b", "label": "navigates to"}
+        ]"#;
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), Some(edges.into()), None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        // Check nodes
+        let nodes_arr = data["nodes"].as_array().unwrap();
+        assert_eq!(nodes_arr.len(), 2);
+        assert_eq!(nodes_arr[0]["title"], "Login");
+        assert_eq!(nodes_arr[0]["ref"], "a");
+        assert!(nodes_arr[0]["id"].as_str().unwrap().len() > 10);
+        assert_eq!(nodes_arr[1]["title"], "Dashboard");
+        assert_eq!(nodes_arr[1]["ref"], "b");
+
+        // Check edges
+        let edges_arr = data["edges"].as_array().unwrap();
+        assert_eq!(edges_arr.len(), 1);
+        assert_eq!(edges_arr[0]["label"], "navigates to");
+
+        // Verify persisted to DB
+        let conn = handler.db.connection().unwrap();
+        let nodes_repo = handler.db.canvas_nodes(&conn);
+        let persisted = nodes_repo.list_by_canvas(&canvas_id).unwrap();
+        assert_eq!(persisted.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_with_groups() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"ref": "n1", "title": "Auth Module"},
+            {"ref": "n2", "title": "UI Module"},
+            {"ref": "n3", "title": "DB Module"}
+        ]"#;
+        let groups = r#"[
+            {"label": "Backend", "node_refs": ["n1", "n3"]},
+            {"label": "Frontend", "node_refs": ["n2"]}
+        ]"#;
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), None, Some(groups.into())).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(data["nodes"].as_array().unwrap().len(), 3);
+        assert_eq!(data["groups"].as_array().unwrap().len(), 2);
+        assert_eq!(data["groups"][0]["label"], "Backend");
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_duplicate_ref() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"ref": "dup", "title": "First"},
+            {"ref": "dup", "title": "Second"}
+        ]"#;
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), None, None).await;
+        assert!(result.is_err(), "Expected error for duplicate refs");
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Duplicate ref") || err.message.contains("dup"));
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_bad_canvas() {
+        let (handler, _dir, _) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"title": "Node"}
+        ]"#;
+        let result = handler.canvas_import("nonexistent-canvas-id".into(), nodes.into(), None, None).await;
+        assert!(result.is_err(), "Expected error for nonexistent canvas");
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_unresolvable_edge() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"ref": "a", "title": "Source"}
+        ]"#;
+        let edges = r#"[
+            {"source": "a", "target": "nonexistent-ref"}
+        ]"#;
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), Some(edges.into()), None).await;
+        assert!(result.is_err(), "Expected error for unresolvable edge target");
+        // Nothing should have been created
+        let conn = handler.db.connection().unwrap();
+        let nodes_repo = handler.db.canvas_nodes(&conn);
+        let persisted = nodes_repo.list_by_canvas(&canvas_id).unwrap();
+        assert!(persisted.is_empty(), "All-or-nothing: no nodes should persist on error");
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_append_to_existing() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        // First, create an existing node
+        let existing_node_id = {
+            let conn = handler.db.connection().unwrap();
+            let nodes_repo = handler.db.canvas_nodes(&conn);
+            nodes_repo.create(&canvas_id, "Existing Node", "", 0.0, 0.0, 100.0, 50.0, None).unwrap().id
+        };
+
+        // Now import using the existing UUID as an edge endpoint
+        let nodes = r#"[
+            {"ref": "x", "title": "New Node"}
+        ]"#;
+        let edges_json = format!(r#"[
+            {{"source": "{}", "target": "x", "label": "connects"}}
+        ]"#, existing_node_id);
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), Some(edges_json), None).await.unwrap();
+        let text = extract_text(result);
+        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(data["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(data["edges"].as_array().unwrap().len(), 1);
+
+        // Verify both nodes exist
+        let conn = handler.db.connection().unwrap();
+        let nodes_repo = handler.db.canvas_nodes(&conn);
+        let persisted = nodes_repo.list_by_canvas(&canvas_id).unwrap();
+        assert_eq!(persisted.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_edges_only_use_new_refs_and_existing_uuids() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        // Create existing node
+        let existing_id = {
+            let conn = handler.db.connection().unwrap();
+            handler.db.canvas_nodes(&conn).create(&canvas_id, "Existing", "", 0.0, 0.0, 100.0, 50.0, None).unwrap().id
+        };
+
+        let nodes = r#"[
+            {"ref": "new_node", "title": "New Node"}
+        ]"#;
+        let edges = format!(r#"[
+            {{"source": "new_node", "target": "{}"}}
+        ]"#, existing_id);
+        let result = handler.canvas_import(canvas_id.clone(), nodes.into(), Some(edges), None).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["edges"].as_array().unwrap().len(), 1);
     }
 }
 

@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { C4NodeRenderer } from "./C4NodeRenderer";
-import type { C4DiagramData, C4Node } from "./types";
+import { nextLevel, type C4DiagramData, type C4Node } from "./types";
 
 interface C4FlowNodeData extends Record<string, unknown> {
   node: C4Node;
@@ -16,9 +16,18 @@ const hiddenHandle = { visibility: "hidden" as const };
 function C4FlowNode({ data, selected }: NodeProps) {
   const { node, diagramData } = data as unknown as C4FlowNodeData;
 
+  const nl = nextLevel(node.level);
+  const hasDrillableChildren =
+    nl != null &&
+    (diagramData?.nodes ?? []).some(
+      (n) =>
+        n.level === nl &&
+        (n.parent === node.label || n.parent === node.id),
+    );
+
   return (
     <div
-      className={`c4-flow-node ${selected ? "c4-flow-node--selected" : ""}`}
+      className={`c4-flow-node ${selected ? "c4-flow-node--selected" : ""} ${hasDrillableChildren ? "c4-flow-node--drillable" : ""}`}
       style={{
         width: "100%",
         height: "100%",
