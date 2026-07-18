@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] `read_file_range`, `blame`, `search_history`, `get_owners` removed from the `McpHandler` tool set and its registry
-- [ ] The MCP crate no longer references `ai_agent_workspace_git_operations`
-- [ ] `crates/git-operations` still builds and the Git Graph panel path is untouched
-- [ ] A test asserts the four tools are absent from the advertised tool set
-- [ ] C4 authoring is unaffected (agent reads code with its own tools before writing `diagram_json`)
+- [x] `read_file_range`, `blame`, `search_history`, `get_owners` removed from the `McpHandler` tool set and its registry
+- [x] The MCP crate no longer references `ai_agent_workspace_git_operations`
+- [x] `crates/git-operations` still builds and the Git Graph panel path is untouched
+- [x] A test asserts the four tools are absent from the advertised tool set
+- [x] C4 authoring is unaffected (agent reads code with its own tools before writing `diagram_json`)

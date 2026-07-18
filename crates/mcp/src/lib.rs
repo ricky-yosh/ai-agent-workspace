@@ -218,11 +218,7 @@ impl McpHandler {
         c4_diagram_list,
         c4_diagram_get,
         c4_diagram_delete,
-        c4_diagram_rename,
-        read_file_range,
-        search_history,
-        blame,
-        get_owners
+        c4_diagram_rename
     });
 
     fn require_session_id(&self) -> Result<String, rmcp::Error> {
@@ -545,73 +541,6 @@ impl McpHandler {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         respond(&state, execute(Command::C4DiagramRename { id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
-
-    #[tool(description = "Read a specific range of lines from a file in the working directory")]
-    async fn read_file_range(&self, #[tool(param)] file_path: String, #[tool(param)] start_line: i32, #[tool(param)] end_line: i32) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let full_path = std::path::PathBuf::from(&repo_path).join(&file_path);
-        let content = std::fs::read_to_string(&full_path).map_err(|e| rmcp::Error::internal_error(format!("Failed to read {}: {}", file_path, e), None))?;
-        let lines: Vec<&str> = content.lines().collect();
-        let start = (start_line - 1).max(0) as usize;
-        let end = (end_line as usize).min(lines.len());
-        if start >= lines.len() {
-            return Ok(CallToolResult::success(vec![Content::text("")]));
-        }
-        let slice: String = lines[start..end].join("\n");
-        Ok(CallToolResult::success(vec![Content::text(slice)]))
-    }
-
-    #[tool(description = "Search git commit history by keyword, author, and date range")]
-    async fn search_history(
-        &self,
-        #[tool(param)] keyword: Option<String>,
-        #[tool(param)] author: Option<String>,
-        #[tool(param)] after: Option<String>,
-        #[tool(param)] before: Option<String>,
-        #[tool(param)] max_results: Option<u32>,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let commits = ai_agent_workspace_git_operations::search_history(
-            &repo_path,
-            keyword.as_deref(),
-            author.as_deref(),
-            after.as_deref(),
-            before.as_deref(),
-            max_results,
-        )
-        .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&commits)?]))
-    }
-
-    #[tool(description = "Run git blame on a file to see per-line ownership")]
-    async fn blame(
-        &self,
-        #[tool(param)] file_path: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let entries = ai_agent_workspace_git_operations::blame(&repo_path, &file_path)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&entries)?]))
-    }
-
-    #[tool(description = "Parse CODEOWNERS file to find owners for a given path")]
-    async fn get_owners(
-        &self,
-        #[tool(param)] path: Option<String>,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let repo_path = self.db.get_working_directory(&session_id)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        let result = ai_agent_workspace_git_operations::get_owners(&repo_path, path.as_deref())
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&result)?]))
-    }
-
 }
 
 #[cfg(test)]
@@ -619,6 +548,14 @@ mod tests {
     use super::*;
     use rmcp::model::RawContent;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_scoped_out_git_file_tools_are_absent_from_tool_set() {
+        let names: Vec<String> = McpHandler::tool_box().list().into_iter().map(|t| t.name.to_string()).collect();
+        for removed in ["read_file_range", "blame", "search_history", "get_owners"] {
+            assert!(!names.contains(&removed.to_string()), "{removed} should have been removed from the advertised tool set");
+        }
+    }
 
     fn setup() -> (McpHandler, TempDir) {
         let dir = TempDir::new().unwrap();
@@ -810,188 +747,6 @@ mod tests {
         assert_eq!(summary["open"], 2);
         assert_eq!(summary["closed"], 1);
         assert_eq!(summary["by_label"]["needs-triage"], 3);
-    }
-
-    // --- Git history & ownership tool tests ---
-
-    fn setup_git_repo() -> (TempDir, String) {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().to_str().unwrap().to_string();
-        std::process::Command::new("git")
-            .args(["init"])
-            .current_dir(&path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test Author"])
-            .current_dir(&path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(&path)
-            .output()
-            .unwrap();
-        std::fs::write(dir.path().join("hello.txt"), "line one\nline two\n").unwrap();
-        std::process::Command::new("git")
-            .args(["add", "."])
-            .current_dir(&path)
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["-c", "user.name=Test Author", "-c", "user.email=test@example.com", "commit", "-m", "Initial commit"])
-            .current_dir(&path)
-            .output()
-            .unwrap();
-        (dir, path)
-    }
-
-    fn setup_handler_with_repo(repo_path: &str) -> (McpHandler, TempDir) {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("workspace.db");
-        let db = Database::new(db_path);
-        let session_id = {
-            let conn = db.connection().unwrap();
-            let sessions = db.sessions(&conn);
-            let session = sessions.create(repo_path, "Git Test").unwrap();
-            session.id
-        };
-        let handler = McpHandler {
-            db,
-            on_events: None,
-            resolved_session_id: Some(session_id),
-            resolution_source: "test".to_string(),
-        };
-        (handler, dir)
-    }
-
-    #[tokio::test]
-    async fn test_search_history() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.search_history(None, None, None, None, None).await.unwrap();
-        let text = extract_text(result);
-        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let arr = commits.as_array().unwrap();
-        assert!(!arr.is_empty());
-        assert_eq!(arr[0]["author_name"], "Test Author");
-        assert_eq!(arr[0]["message"], "Initial commit");
-        assert!(arr[0]["hash"].as_str().unwrap().len() == 40);
-    }
-
-    #[tokio::test]
-    async fn test_search_history_keyword_filter() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.search_history(Some("Initial".into()), None, None, None, None).await.unwrap();
-        let text = extract_text(result);
-        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let arr = commits.as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["message"], "Initial commit");
-    }
-
-    #[tokio::test]
-    async fn test_search_history_no_results() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.search_history(Some("nonexistent".into()), None, None, None, None).await.unwrap();
-        let text = extract_text(result);
-        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(commits.as_array().unwrap().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_search_history_author_filter() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.search_history(None, Some("Test Author".into()), None, None, None).await.unwrap();
-        let text = extract_text(result);
-        let commits: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(commits.as_array().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_blame() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.blame("hello.txt".into()).await.unwrap();
-        let text = extract_text(result);
-        let entries: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let arr = entries.as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert_eq!(arr[0]["author"], "Test Author");
-        assert_eq!(arr[0]["commit_hash"].as_str().unwrap().len(), 40);
-        assert_eq!(arr[0]["line_number"], 1);
-        assert_eq!(arr[1]["line_number"], 2);
-    }
-
-    #[tokio::test]
-    async fn test_blame_not_git_repo() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().to_str().unwrap().to_string();
-        let (handler, _handler_dir) = setup_handler_with_repo(&path);
-        let result = handler.blame("foo.txt".into()).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.message.contains("Not a git repository"));
-    }
-
-    #[tokio::test]
-    async fn test_get_owners_no_file() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.get_owners(None).await.unwrap();
-        let text = extract_text(result);
-        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert!(data["file"].is_null());
-        assert_eq!(data["rules"].as_array().unwrap().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_get_owners_with_file() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        std::fs::write(
-            std::path::PathBuf::from(&repo_path).join("CODEOWNERS"),
-            "# Comments are ignored\n*.rs @rust-team\nsrc/auth/ @auth-team @security-team\n",
-        ).unwrap();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.get_owners(None).await.unwrap();
-        let text = extract_text(result);
-        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(data["file"], "CODEOWNERS");
-        let rules = data["rules"].as_array().unwrap();
-        assert_eq!(rules.len(), 2);
-        assert_eq!(rules[0]["pattern"], "*.rs");
-        assert_eq!(rules[0]["owners"][0], "@rust-team");
-        assert_eq!(rules[1]["pattern"], "src/auth/");
-    }
-
-    #[tokio::test]
-    async fn test_get_owners_filter_by_path() {
-        let (_repo_dir, repo_path) = setup_git_repo();
-        std::fs::write(
-            std::path::PathBuf::from(&repo_path).join("CODEOWNERS"),
-            "*.rs @rust-team\n*.ts @frontend-team\n",
-        ).unwrap();
-        let (handler, _dir) = setup_handler_with_repo(&repo_path);
-        let result = handler.get_owners(Some("src/main.rs".into())).await.unwrap();
-        let text = extract_text(result);
-        let data: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let rules = data["rules"].as_array().unwrap();
-        assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0]["pattern"], "*.rs");
-    }
-
-    #[tokio::test]
-    async fn test_get_owners_not_git_repo() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().to_str().unwrap().to_string();
-        let (handler, _handler_dir) = setup_handler_with_repo(&path);
-        let result = handler.get_owners(None).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.message.contains("Not a git repository"));
     }
 
     // --- canvas_import tool tests ---

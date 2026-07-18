@@ -83,7 +83,6 @@ version = "0.1.1"
 dependencies = [
  "ai-agent-workspace-commands",
  "ai-agent-workspace-core",
- "ai-agent-workspace-git-operations",
  "rmcp",
  "rusqlite",
  "serde",
