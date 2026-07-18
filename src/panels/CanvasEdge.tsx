@@ -1,6 +1,6 @@
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { BaseEdge, useInternalNode, useStore, type EdgeProps } from "@xyflow/react";
-import { resolveNearestFacingSides, sideHandleCenter, SIDE_NORMAL } from "../canvas/geometry";
+import { resolveNearestFacingSides, sideHandleCenter, SIDE_NORMAL, type Side } from "../canvas/geometry";
 import { computeDragRope, type RopePoint } from "../canvas/ropePhysics";
 
 // Buffer between a card border and where its edge visually attaches.
@@ -68,6 +68,10 @@ function ropePath(pts: RopePoint[]): string {
 function CanvasEdge({ id, source, target, selected, label }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  // While either endpoint is being dragged, hold the resolved attach sides constant
+  // so the endpoint slides along a frozen side instead of popping to a new face
+  // mid-drag; re-resolved once the drag ends.
+  const sidesRef = useRef<{ srcSide: Side; tgtSide: Side } | null>(null);
   // The reverse edge (target→source), if one exists, makes this a bidirectional
   // pair. We draw such a pair once — the smaller id wins — so two overlapping
   // curves collapse into a single double-headed edge.
@@ -93,8 +97,13 @@ function CanvasEdge({ id, source, target, selected, label }: EdgeProps) {
 
   // Each endpoint resolves to the side facing the other node — the connection
   // dot that visually faces the peer — recomputed every render so the edge
-  // re-picks its dots as the nodes move.
-  const { srcSide, tgtSide } = resolveNearestFacingSides(sourceBounds, targetBounds);
+  // re-picks its dots as the nodes move. During a drag the sides are frozen
+  // (see sidesRef) so the attach face doesn't pop as the node passes its peer.
+  const isDragging = Boolean(sourceNode.dragging || targetNode.dragging);
+  const { srcSide, tgtSide } =
+    isDragging && sidesRef.current
+      ? sidesRef.current
+      : (sidesRef.current = resolveNearestFacingSides(sourceBounds, targetBounds));
   const srcDir = SIDE_NORMAL[srcSide];
   const tgtDir = SIDE_NORMAL[tgtSide];
   const srcCenter = sideHandleCenter(sourceBounds, srcSide);
