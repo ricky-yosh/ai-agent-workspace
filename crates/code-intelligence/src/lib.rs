@@ -399,6 +399,23 @@ impl<'a> IndexStore<'a> {
             .ok()
     }
 
+    /// Returns the number of distinct indexed files and the most recent
+    /// `updated_at` timestamp for a repo, or `None` if nothing is indexed.
+    pub fn index_status(
+        &self,
+        repo_path: &str,
+    ) -> Result<Option<(i64, i64)>, rusqlite::Error> {
+        let (file_count, updated_at): (i64, Option<i64>) = self.conn.query_row(
+            "SELECT COUNT(DISTINCT file_path), MAX(updated_at) FROM code_index WHERE repo_path = ?1",
+            params![repo_path],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        Ok(match updated_at {
+            Some(updated_at) if file_count > 0 => Some((file_count, updated_at)),
+            _ => None,
+        })
+    }
+
     pub fn clear_file(&self, repo_path: &str, file_path: &str) -> Result<(), rusqlite::Error> {
         self.conn.execute(
             "DELETE FROM code_index WHERE repo_path = ?1 AND file_path = ?2",
