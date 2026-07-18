@@ -1,5 +1,7 @@
 # Canvas nodes: richer data model (title, description, sources)
 
+**Status:** Accepted
+
 Canvas nodes carry more structured information than the original free-text `content` field allowed. We are extending the schema:
 
 - `canvas_nodes.content` → `canvas_nodes.title` (rename, plus add `description TEXT`)

@@ -27,19 +27,6 @@ Rationale:
 - Symbol keys (like `\`, `[`, `]`, Tab) have no layout-dependent character remapping in common alternative layouts (Colemak, Dvorak, etc.) — `e.code` is fine for those.
 - Users think of shortcuts by the label on the key, not the physical QWERTY position — especially non-QWERTY typists who may use blank keycaps or have muscle memory for their layout's positions.
 
-### Implementation
-
-```ts
-// Letter-based — use e.key (layout-aware)
-if (e.key === "n") { /* ⌘N */ }
-if (e.key === "w") { /* ⌘W */ }
-
-// Symbol/position-based — use e.code (physical position)
-if (e.code === "Backslash")    { /* ⌘\ */ }
-if (e.code === "BracketLeft")  { /* [ key */ }
-if (e.code === "BracketRight") { /* ] key */ }
-```
-
 ## Consequences
 
 ### Positive

@@ -1,4 +1,4 @@
-# ADR 0004: Remove Semantic (Vector) Search
+# ADR 0023: Remove Semantic (Vector) Search
 
 ## Status
 

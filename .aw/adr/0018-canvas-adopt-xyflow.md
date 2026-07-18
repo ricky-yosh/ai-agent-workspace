@@ -1,6 +1,6 @@
 # Canvas overhaul: adopt @xyflow/react as the canvas engine
 
-**Status:** supersedes [ADR 0017](0017-canvas-hybrid-html-svg-rendering.md)
+**Status:** Accepted
 
 The Visual Canvas Panel is being overhauled (frontend only — no schema, command, CDC, or MCP tool changes). Rather than building a custom hybrid HTML+SVG renderer from scratch, we are adopting `@xyflow/react` (already in `package.json` at `^12.11.2`, MIT licensed) as the canvas engine.
 

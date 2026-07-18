@@ -12,7 +12,7 @@ The project already has a developer-facing convention (`AGENTS.md`): planning is
 
 We rejected that. The in-app tracker holds ephemeral, run-time application state — the AI's working notes about a session — not source artifacts that belong in version control. It needs stable IDs, an open/closed lifecycle, per-session numbering, and live updates as the AI writes. Markdown files in the working directory serve those poorly: parsing overhead, file-watching, git noise, and the risk of accidental commits.
 
-The app's persistence is already `rusqlite` (ADR 0001) with concrete Repositories, a `Command` enum, and MCP tools. Issues fit that grain exactly.
+The app's persistence is already `rusqlite` (ADR 0022) with concrete Repositories, a `Command` enum, and MCP tools. Issues fit that grain exactly.
 
 ## Decision
 

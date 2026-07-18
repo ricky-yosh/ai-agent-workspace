@@ -14,28 +14,7 @@ A reliable exit animation requires the deleted item's data to still be available
 
 ## Decision
 
-Use a **Change Data Capture (CDC)** pattern: SQLite triggers write mutation events into a generic `change_events` table. The frontend reads unprocessed events after each `db-changed` notification and drives animations from the event payload, which includes the full entity snapshot.
-
-The `change_events` table:
-
-```sql
-CREATE TABLE change_events (
-  id TEXT PRIMARY KEY,
-  entity_type TEXT NOT NULL,
-  entity_id TEXT NOT NULL,
-  event_type TEXT NOT NULL,
-  session_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  processed_at INTEGER
-);
-```
-
-Entity-specific triggers fire on INSERT, UPDATE, and DELETE, writing the old and/or new row state as JSON into `payload_json`. For deletes, the `OLD` row is captured via `AFTER DELETE` triggers, ensuring the full entity data is preserved even though the source row no longer exists.
-
-The frontend processes events in order after each `db-changed` notification: for `deleted` events it renders the entity from `payload_json` and plays an exit animation before marking the event as processed; for `created` and `updated` events it plays enter and highlight animations respectively.
-
-This replaces the reactive state-diffing approach in `fetchIssues` for exit animations and provides a general pattern for any MCP-mutated entity that needs UI animations.
+Use a **Change Data Capture (CDC)** pattern: SQLite triggers write mutation events into a generic `change_events` table (keyed by `entity_type`/`entity_id`/`event_type` with a `payload_json` snapshot and a `processed_at` marker). Entity-specific `AFTER INSERT/UPDATE/DELETE` triggers capture the old and/or new row as JSON — crucially, the `AFTER DELETE` trigger preserves the full entity *after* its row is gone. The frontend reads unprocessed events after each `db-changed` notification and drives animations declaratively from the payload: enter/highlight for created/updated, and a reliable exit animation for deleted (rendered from the snapshot before marking the event processed). This replaces the fragile state-diffing approach and generalizes to any MCP-mutated entity.
 
 ## Consequences
 

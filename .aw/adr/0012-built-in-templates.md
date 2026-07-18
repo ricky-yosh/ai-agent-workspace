@@ -2,36 +2,18 @@
 
 ## Status
 
-Accepted (amended: "Default" template removed as redundant; "General" now seeds with `"terminal"` panel type)
+Accepted (amended: "Default" template removed as redundant; "General" now seeds with a `"terminal"` panel)
 
 ## Context
 
-The app auto-seeds a "General" layout template when a session is opened for the first time (no templates exist in `layouts.json`). Prior to this ADR, that "General" template was indistinguishable from user-created templates — it could be deleted or renamed, leaving sessions with no templates to bootstrap from.
-
-Additionally, `session_open` resolved the first template in the list (`layouts.first()`) rather than looking for "General" by name. If a user had created a custom template before opening their first session, that unrelated template would become the fallback, which was surprising.
-
-The Tauri app previously seeded a "Default" template on first launch with the same vulnerability — this was later removed as redundant (amendment).
+The app auto-seeds a "General" template when a session is first opened with no templates. That seed was indistinguishable from user-created templates — it could be deleted or renamed, leaving sessions with nothing to bootstrap from. Worse, `session_open` fell back to `layouts.first()` rather than "General" by name, so a user's unrelated custom template could surprisingly become the bootstrap. (A separate "Default" template seeded by the Tauri app had the same flaw and was removed as redundant.)
 
 ## Decision
 
-1. **Add a `built_in: bool` field to the `Layout` struct**. `#[serde(default)]` ensures backward compatibility with existing `layouts.json` files that lack the field (deserializes to `false`).
-
-2. **Protect built-in templates from deletion and renaming**. `LayoutStore::delete_layout` and `rename_layout` reject built-in templates with a `LayoutError::BuiltIn(name)` error, mapped to MCP error code `-32602` (invalid input).
-
-3. **Seed "General" as the sole built-in template during `session_open` autobootstrap**. When a session is opened with no workspaces:
-   - Look for a template named `"General"` by name (not `layouts.first()`).
-   - If found, use it as-is.
-   - If not found, create it with `built_in: true` and a single `"terminal"` panel as its root.
-   - The former "Default" template (seeded by the Tauri app) is removed — "General" is the single built-in template.
-
-4. **User-created templates are always `built_in: false`**. The `TemplateSave` command passes `built_in: false` unconditionally.
-
-5. **No auto-delete cascade**. Deleting a template does not walk sessions to clean up workspace instances referencing it. This is deferred until workspace validation is implemented.
+Mark the seed template as built-in and protect it. A `built_in: bool` field is added to `Layout` (`#[serde(default)]` keeps legacy `layouts.json` readable, defaulting to `false`, so all pre-existing templates remain user-owned and deletable). `delete_layout`/`rename_layout` reject built-in templates (`LayoutError::BuiltIn`, MCP `-32602`). `session_open` resolves "General" *by name* — using it if present, otherwise creating it with `built_in: true` and a single `"terminal"` root — so bootstrap is idempotent and never grabs a random user template. User-created templates are always `built_in: false`. Deleting a template does not cascade-clean workspace instances referencing it (deferred to workspace validation).
 
 ## Consequences
 
-- "General" is the sole built-in template — a permanent seed layout that survives all user cleanup. It now seeds with a `"terminal"` panel root.
-- User-created templates remain freely deleteable and renamable.
-- `session_open` is idempotent: opening any session always finds or creates the same "General" template, never a random user template.
-- Existing `layouts.json` files without `built_in` fields deserialize with `built_in: false` — effectively treating all legacy templates as user-created (deletable).
-- The `Layout` struct gains one serialized field, increasing `layouts.json` footprint by ~15 bytes per entry.
+- "General" is a permanent seed that survives all user cleanup; `session_open` is idempotent.
+- User templates stay freely deletable/renamable; legacy templates are treated as user-created.
+- `Layout` gains one small serialized field.
