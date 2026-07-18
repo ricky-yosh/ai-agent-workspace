@@ -298,6 +298,13 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
   const onConnect: OnConnect = useCallback(async (connection: Connection) => {
     if (!selectedCanvasId || !connection.source || !connection.target) return;
 
+    // One edge per direction: silently ignore a repeat of an existing A→B.
+    // The reverse (B→A) is intentionally still allowed — it renders bidirectional.
+    const isDuplicate = xyflowEdges.some(
+      (e) => e.source === connection.source && e.target === connection.target,
+    );
+    if (isDuplicate) return;
+
     // Capture state before creating edge for undo
     const preConnectState = captureState(xyflowNodes, xyflowEdges, xyflowGroups);
 
@@ -327,7 +334,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     } catch (err) {
       console.error("Failed to create edge:", err);
     }
-  }, [selectedCanvasId, setXYFlowEdges, setXYFlowNodes]);
+  }, [selectedCanvasId, xyflowEdges, setXYFlowEdges, setXYFlowNodes]);
 
   // ── Delete handler ──────────────────────────────────────────────────────
 
