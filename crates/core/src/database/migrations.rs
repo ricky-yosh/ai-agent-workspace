@@ -141,8 +141,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch("DROP TABLE IF EXISTS code_vectors;")?;
     }
 
-    if current_version < 20 {
-        // v19 -> v20: rename canvas_nodes.content to title, add description column, add canvas_node_sources table
+    // v19 -> v20: canvas_nodes.content -> title + description, add sources table.
+    // Gated on table shape, not `current_version`, so a DB stamped at v20 with the
+    // old columns (possible from a mid-development dev build) still self-heals.
+    {
         let has_title: bool = conn
             .prepare("PRAGMA table_info(canvas_nodes)")
             .map(|mut stmt| {
@@ -153,37 +155,24 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if !has_title {
             conn.execute_batch(
                 "ALTER TABLE canvas_nodes RENAME COLUMN content TO title;
-                 ALTER TABLE canvas_nodes ADD COLUMN description TEXT NOT NULL DEFAULT '';
-                 CREATE TABLE IF NOT EXISTS canvas_node_sources (
-                    id TEXT PRIMARY KEY,
-                    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
-                    url TEXT NOT NULL,
-                    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
-                    sort_order INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
+                 ALTER TABLE canvas_nodes ADD COLUMN description TEXT NOT NULL DEFAULT '';",
             )?;
         }
 
-        // Also handle the case where canvas_node_sources table might already exist
-        let has_sources: bool = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='canvas_node_sources'")
-            .map(|mut stmt| stmt.query_map([], |_| Ok(())).is_ok())
-            .unwrap_or(false);
-        if !has_sources {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS canvas_node_sources (
-                    id TEXT PRIMARY KEY,
-                    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
-                    url TEXT NOT NULL,
-                    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
-                    sort_order INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
-            )?;
-        }
+        // Create the sources table unconditionally — `IF NOT EXISTS` makes this
+        // a no-op when it already exists, and it covers both the fresh-repair
+        // path above and a DB that has `title` but somehow lacks the table.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS canvas_node_sources (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
+        )?;
     }
 
     Ok(())
