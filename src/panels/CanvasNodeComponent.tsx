@@ -9,6 +9,7 @@ interface CanvasNodeData extends Record<string, unknown> {
   isConnectSource?: boolean;
   isConnectTarget?: boolean;
   isConnected?: boolean;
+  isConnecting?: boolean;
 }
 
 function CanvasNodeComponent({ data, selected }: NodeProps) {
@@ -64,6 +65,34 @@ function CanvasNodeComponent({ data, selected }: NodeProps) {
           }}
         />
       ))}
+
+      {/* Full-node drop target: lets a dragged connection land anywhere on the
+          node body instead of only on a side handle. Only accepts pointer
+          events while a connection is in flight, so it never blocks node
+          dragging. isConnectableStart is false so a drag on the body moves the
+          node rather than starting a new connection. */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        isConnectableStart={false}
+        className="canvas-node-drop-target"
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          transform: "none",
+          borderRadius: "inherit",
+          border: "none",
+          background: "transparent",
+          minWidth: 0,
+          minHeight: 0,
+          opacity: 0,
+          zIndex: 5,
+          pointerEvents: nodeData.isConnecting ? "all" : "none",
+        }}
+      />
       <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{nodeData.title || "Untitled"}</div>
 
       {/* Tags */}

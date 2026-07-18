@@ -279,7 +279,9 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     if (!nodeId) return;
     setXYFlowNodes((nds) =>
       nds.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, isConnectSource: true } } : n
+        n.type === "canvasGroup"
+          ? n
+          : { ...n, data: { ...n.data, isConnecting: true, isConnectSource: n.id === nodeId } }
       )
     );
   }, [setXYFlowNodes]);
@@ -288,7 +290,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     setXYFlowNodes((nds) =>
       nds.map((n) => ({
         ...n,
-        data: { ...n.data, isConnectSource: false, isConnectTarget: false },
+        data: { ...n.data, isConnecting: false, isConnectSource: false, isConnectTarget: false },
       }))
     );
   }, [setXYFlowNodes]);
