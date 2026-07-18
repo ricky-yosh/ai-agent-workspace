@@ -71,8 +71,6 @@ async fn main() {
     let handler = McpHandler {
         db,
         on_events,
-        on_open_file_request: None,
-        on_show_diff_request: None,
         resolved_session_id,
         resolution_source,
     };

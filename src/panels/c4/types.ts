@@ -54,19 +54,6 @@ export interface DrillEntry {
   level: string;
 }
 
-export interface IndexProgress {
-  phase: string;
-  current: number;
-  total: number;
-  file_path: string;
-}
-
-export interface IndexResult {
-  indexed: number;
-  skipped: number;
-  total: number;
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const VALID_LEVELS = new Set(["context", "container", "component", "code"]);

@@ -20,7 +20,6 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { nextLevel, assignGridPositions, parseDiagramJson, type C4Diagram, type C4DiagramData, type C4Node, type C4Edge, type C4Group, type DrillEntry } from "./c4/types";
-import { useCodeIndexing } from "./c4/useCodeIndexing";
 import C4FlowNode from "./c4/C4FlowNode";
 import CanvasEdge from "./CanvasEdge";
 import CanvasGroupNodeComponent from "./CanvasGroupNodeComponent";
@@ -216,8 +215,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   // "current" one; older rows read as archived reference history.
   const currentDiagramId = diagrams[0]?.id;
 
-  const { indexing, progress, error, lastResult, lastIndexedAt, startIndex, cancelIndex } = useCodeIndexing(repoPath);
-
   const relativeTime = useCallback((date: Date): string => {
     const diffMs = Date.now() - date.getTime();
     const diffSec = Math.round(diffMs / 1000);
@@ -234,7 +231,7 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   // ── Copy prompt ───────────────────────────────────────────────────────
 
   const zeroStatePrompt =
-    'Use the aiaw generate_c4_diagram tool to create a C4 diagram of the codebase';
+    "Explore this codebase (e.g. run `tree` and read the key entry points), then call the aiaw c4_diagram_create tool to author a C4 architecture diagram. Link each node to its real source file via file_path.";
 
   const buildDiagramPrompt = useCallback((): string => {
     if (!diagramData) return "";
@@ -498,71 +495,21 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       <div id="c4-diagram-panel-container" className="c4-empty-state">
         <div className="c4-empty-state__icon">{"\u25C8"}</div>
 
-        {error && <div className="c4-error-banner">{error}</div>}
+        <div>
+          <div className="c4-empty-state__title">No C4 snapshots yet</div>
+          <div className="c4-empty-state__desc">
+            Ask the AI to explore the codebase and author a C4 architecture
+            snapshot. Each node links back to its real source file.
+          </div>
+        </div>
 
-        {indexing ? (
-          <>
-            <div>
-              <div className="c4-indexing__title">Indexing codebase</div>
-              <div className="c4-indexing__text">
-                {progress && progress.total > 0
-                  ? `${progress.current} of ${progress.total} files`
-                  : "Scanning files..."}
-              </div>
-            </div>
-
-            <div className="c4-indexing__progress-track">
-              <div
-                className="c4-indexing__progress-fill"
-                style={{
-                  width:
-                    progress && progress.total > 0
-                      ? `${(progress.current / progress.total) * 100}%`
-                      : "0%",
-                }}
-              />
-            </div>
-
-            <div className="c4-indexing__file-path">
-              {progress?.file_path || ""}
-            </div>
-
-            <Button variant="secondary" size="sm" onClick={cancelIndex}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <>
-            <div>
-              <div className="c4-empty-state__title">No C4 snapshots yet</div>
-              <div className="c4-empty-state__desc">
-                Index your codebase, then generate point-in-time C4 architecture snapshots with the AI
-              </div>
-            </div>
-
-            {lastResult && lastIndexedAt && (
-              <div className="c4-index-status">
-                <span className="c4-index-status__dot" />
-                Indexed {lastResult.indexed} files{lastResult.skipped > 0 ? ` (${lastResult.skipped} skipped)` : ""} &middot; {relativeTime(lastIndexedAt)}
-              </div>
-            )}
-
-            <Button variant="primary" size="md" onClick={startIndex}>
-              Index Codebase
-            </Button>
-
-            <div className="c4-empty-state__snippet-wrap">
-              <SnippetCard
-                hint="After indexing, ask the AI:"
-                copyText={zeroStatePrompt}
-              >
-                Use the aiaw{" "}
-                <span className="c4-accent">generate_c4_diagram</span>{" "}
-                tool to create a C4 diagram of the codebase
-              </SnippetCard>
-            </div>
-          </>
-        )}
+        <div className="c4-empty-state__snippet-wrap">
+          <SnippetCard hint="Ask the AI:" copyText={zeroStatePrompt}>
+            Explore this codebase and call the aiaw{" "}
+            <span className="c4-accent">c4_diagram_create</span> tool to author a
+            C4 diagram, linking each node to its real source file.
+          </SnippetCard>
+        </div>
       </div>
     );
   }
@@ -571,12 +518,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   if (!selectedDiagram) {
     return (
       <div id="c4-diagram-panel-container" className="c4-list">
-        {lastResult && lastIndexedAt && (
-          <div className="c4-index-status c4-index-status--list">
-            <span className="c4-index-status__dot" />
-            Indexed {lastResult.indexed} files{lastResult.skipped > 0 ? ` (${lastResult.skipped} skipped)` : ""} &middot; {relativeTime(lastIndexedAt)}
-          </div>
-        )}
         <FilterableList
           items={filteredDiagrams}
           focusedIndex={focusedIndex}

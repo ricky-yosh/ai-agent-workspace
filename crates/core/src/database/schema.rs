@@ -162,25 +162,6 @@ CREATE TABLE IF NOT EXISTS c4_diagrams (
 
 CREATE INDEX IF NOT EXISTS idx_c4_diagrams_repo_path ON c4_diagrams(repo_path);
 
-CREATE TABLE IF NOT EXISTS code_index (
-    id TEXT PRIMARY KEY,
-    repo_path TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    symbol_name TEXT NOT NULL,
-    symbol_type TEXT NOT NULL,
-    line_number INTEGER NOT NULL,
-    end_line_number INTEGER,
-    content_fingerprint TEXT NOT NULL,
-    data_json TEXT,
-    containing_symbol TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_code_index_repo_path ON code_index(repo_path);
-CREATE INDEX IF NOT EXISTS idx_code_index_repo_file ON code_index(repo_path, file_path);
-CREATE INDEX IF NOT EXISTS idx_code_index_symbol ON code_index(repo_path, symbol_name);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_code_index_repo_file_symbol_line ON code_index(repo_path, file_path, symbol_name, line_number);
 "#;
 
 #[cfg(test)]
@@ -233,8 +214,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_tables_includes_code_index() {
-        assert!(CREATE_TABLES.contains("code_index"));
+    fn test_create_tables_excludes_code_index() {
+        assert!(!CREATE_TABLES.contains("code_index"));
     }
 
     #[test]
