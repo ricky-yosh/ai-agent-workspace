@@ -1,8 +1,7 @@
-import { nextLevel, type C4DiagramData } from "./types";
-import type { CanvasNode } from "../../components/CanvasRenderer";
+import { nextLevel, type C4DiagramData, type C4Node } from "./types";
 
 interface C4NodeRendererProps {
-  node: CanvasNode;
+  node: Pick<C4Node, "id">;
   diagramData: C4DiagramData | null;
 }
 

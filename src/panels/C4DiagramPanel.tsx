@@ -9,14 +9,185 @@ import { useSessions } from "../SessionContext";
 import { useTauriEvent } from "../hooks/useTauriEvent";
 import { safeInvoke } from "../safeInvoke";
 import {
-  CanvasRenderer,
-  type CanvasNode,
-} from "../components/CanvasRenderer";
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  useReactFlow,
+  type Node,
+  type Edge,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
-import { nextLevel, assignGridPositions, parseDiagramJson, type C4Diagram, type C4DiagramData, type DrillEntry } from "./c4/types";
+import { nextLevel, assignGridPositions, parseDiagramJson, type C4Diagram, type C4DiagramData, type C4Node, type C4Edge, type C4Group, type DrillEntry } from "./c4/types";
 import { useCodeIndexing } from "./c4/useCodeIndexing";
-import { C4NodeRenderer } from "./c4/C4NodeRenderer";
+import C4FlowNode from "./c4/C4FlowNode";
+import CanvasEdge from "./CanvasEdge";
+import CanvasGroupNodeComponent from "./CanvasGroupNodeComponent";
 import "./C4DiagramPanel.css";
+
+const nodeTypes = { c4Node: C4FlowNode, canvasGroup: CanvasGroupNodeComponent };
+const edgeTypes = { canvasEdge: CanvasEdge };
+
+const GROUP_PADDING = 40;
+
+interface C4DiagramViewProps {
+  diagramName: string;
+  onExit: () => void;
+  copyText: string;
+  drillPath: DrillEntry[];
+  currentLevel: string;
+  nodes: C4Node[];
+  edges: C4Edge[];
+  groups: C4Group[];
+  diagramData: C4DiagramData | null;
+  onNodeClick: (nodeId: string) => void;
+  onBack: () => void;
+  onNavigateRoot: () => void;
+  onNavigateLevel: (index: number) => void;
+}
+
+function C4DiagramCanvas({
+  diagramName,
+  onExit,
+  copyText,
+  drillPath,
+  currentLevel,
+  nodes,
+  edges,
+  groups,
+  diagramData,
+  onNodeClick,
+  onBack,
+  onNavigateRoot,
+  onNavigateLevel,
+}: C4DiagramViewProps) {
+  const reactFlow = useReactFlow();
+  const [zoom, setZoom] = useState(1);
+
+  const flowNodes = useMemo<Node[]>(() => {
+    const groupNodes: Node[] = groups.map((g) => {
+      const members = nodes.filter((n) => g.node_ids.includes(n.id));
+      const minX = Math.min(...members.map((n) => n.x));
+      const minY = Math.min(...members.map((n) => n.y));
+      const maxX = Math.max(...members.map((n) => n.x + n.width));
+      const maxY = Math.max(...members.map((n) => n.y + n.height));
+      const hasMembers = members.length > 0;
+      return {
+        id: g.id,
+        type: "canvasGroup",
+        position: hasMembers
+          ? { x: minX - GROUP_PADDING, y: minY - GROUP_PADDING }
+          : { x: 0, y: 0 },
+        data: {
+          label: g.label,
+          memberIds: g.node_ids,
+          width: hasMembers ? maxX - minX + GROUP_PADDING * 2 : 200,
+          height: hasMembers ? maxY - minY + GROUP_PADDING * 2 : 120,
+        },
+        draggable: false,
+        selectable: false,
+        style: { zIndex: -1 },
+      };
+    });
+
+    const cardNodes: Node[] = nodes.map((n) => ({
+      id: n.id,
+      type: "c4Node",
+      position: { x: n.x, y: n.y },
+      width: n.width,
+      height: n.height,
+      data: { node: n, diagramData },
+      draggable: false,
+      connectable: false,
+    }));
+
+    return [...groupNodes, ...cardNodes];
+  }, [nodes, groups, diagramData]);
+
+  const flowEdges = useMemo<Edge[]>(
+    () =>
+      edges.map((e) => ({
+        id: e.id,
+        source: e.source_id,
+        target: e.target_id,
+        type: "canvasEdge",
+        label: e.label ?? "",
+      })),
+    [edges],
+  );
+
+  // Re-frame the view whenever the visible level changes (initial load + each drill).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => reactFlow.fitView({ duration: 200 }));
+    return () => cancelAnimationFrame(id);
+  }, [currentLevel, drillPath.length, reactFlow]);
+
+  return (
+    <div id="c4-diagram-panel-container" className="c4-view">
+      {/* ── Header ── */}
+      <div className="c4-header">
+        <Button variant="ghost" size="sm" onClick={onExit} title="Back to list">
+          &larr;
+        </Button>
+        <div className="c4-header__title">{diagramName}</div>
+        <div className="c4-header__zoom">
+          <span>{Math.round(zoom * 100)}%</span>
+          <CopyButton text={copyText} label="Copy" size="sm" />
+          <Button variant="ghost" size="sm" onClick={() => reactFlow.fitView({ duration: 200 })}>
+            Reset
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Breadcrumb + Back ── */}
+      {drillPath.length > 0 && (
+        <div className="c4-breadcrumb">
+          <Button variant="ghost" size="sm" onClick={onBack} className="c4-breadcrumb__back">
+            &larr; Back
+          </Button>
+          <span onClick={onNavigateRoot} className="c4-breadcrumb__link">
+            System
+          </span>
+          {drillPath.map((crumb, i) => (
+            <span key={i} className="c4-breadcrumb__item-wrap">
+              <span className="c4-breadcrumb__sep"> &gt; </span>
+              <span
+                onClick={() => onNavigateLevel(i + 1)}
+                className={
+                  i === drillPath.length - 1
+                    ? "c4-breadcrumb__item c4-breadcrumb__item--active"
+                    : "c4-breadcrumb__item c4-breadcrumb__item--inactive"
+                }
+              >
+                {crumb.label}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── Canvas ── */}
+      <div className="c4-canvas-wrapper">
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          fitView
+          onNodeClick={(_e, node) => onNodeClick(node.id)}
+          onMove={(_e, viewport) => setZoom(viewport.zoom)}
+        >
+          <Background />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
 
 function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
@@ -57,11 +228,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     if (diffHr < 24) return `${diffHr} hr ago`;
     return date.toLocaleDateString();
   }, []);
-
-  // Viewport
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
-  const [zoom, setZoom] = useState(1);
 
   const [containerWidth, setContainerWidth] = useState(800);
 
@@ -159,9 +325,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
       setDiagramData(data);
       setCurrentLevel("context");
       setDrillPath([]);
-      setOffsetX(0);
-      setOffsetY(0);
-      setZoom(1);
     } else {
       setDiagramData(null);
     }
@@ -280,11 +443,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     });
   }, []);
 
-  const renderNodeContent = useCallback(
-    (node: CanvasNode) => <C4NodeRenderer node={node} diagramData={diagramData} />,
-    [diagramData],
-  );
-
   // ── Diagram list actions ───────────────────────────────────────────────
 
   const handleDeleteDiagram = useCallback(
@@ -325,14 +483,6 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
     },
     [selectedDiagram],
   );
-
-  // ── Reset view on drill ────────────────────────────────────────────────
-
-  const resetView = useCallback(() => {
-    setOffsetX(0);
-    setOffsetY(0);
-    setZoom(1);
-  }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -528,107 +678,23 @@ function C4DiagramPanel({ panelType: _panelType }: PanelProps) {
   // ── Diagram view ───────────────────────────────────────────────────────
 
   return (
-    <div id="c4-diagram-panel-container" className="c4-view">
-      {/* ── Header ── */}
-      <div className="c4-header">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setSelectedDiagram(null)}
-          title="Back to list"
-        >
-          &larr;
-        </Button>
-        <div className="c4-header__title">{selectedDiagram.name}</div>
-        <div className="c4-header__zoom">
-          <span>{Math.round(zoom * 100)}%</span>
-          <CopyButton
-            text={buildDiagramPrompt()}
-            label="Copy"
-            size="sm"
-          />
-          <Button variant="ghost" size="sm" onClick={resetView}>
-            Reset
-          </Button>
-        </div>
-      </div>
-
-      {/* ── Breadcrumb + Back ── */}
-      {drillPath.length > 0 && (
-        <div className="c4-breadcrumb">
-          <Button variant="ghost" size="sm" onClick={handleBack} className="c4-breadcrumb__back">
-            &larr; Back
-          </Button>
-          <span
-            onClick={navigateToRoot}
-            className="c4-breadcrumb__link"
-          >
-            System
-          </span>
-          {drillPath.map((crumb, i) => (
-            <span key={i} className="c4-breadcrumb__item-wrap">
-              <span className="c4-breadcrumb__sep"> &gt; </span>
-              <span
-                onClick={() => navigateToLevel(i + 1)}
-                className={
-                  i === drillPath.length - 1
-                    ? "c4-breadcrumb__item c4-breadcrumb__item--active"
-                    : "c4-breadcrumb__item c4-breadcrumb__item--inactive"
-                }
-              >
-                {crumb.label}
-              </span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── Canvas ── */}
-      <CanvasRenderer
-        nodes={filteredNodes.map((n) => ({
-          id: n.id,
-          canvas_id: "",
-          content: n.label,
-          x: n.x,
-          y: n.y,
-          width: n.width,
-          height: n.height,
-          metadata_json: null,
-          created_at: "",
-          updated_at: "",
-        }))}
-        edges={filteredEdges.map((e) => ({
-          id: e.id,
-          canvas_id: "",
-          source_node_id: e.source_id,
-          target_node_id: e.target_id,
-          label: e.label ?? null,
-          metadata_json: null,
-          created_at: "",
-          updated_at: "",
-        }))}
-        groups={filteredGroups.map((g) => ({
-          id: g.id,
-          canvas_id: "",
-          label: g.label,
-          node_ids_json: JSON.stringify(g.node_ids),
-          metadata_json: null,
-          created_at: "",
-          updated_at: "",
-        }))}
-        mode="read-only"
-        offsetX={offsetX}
-        offsetY={offsetY}
-        zoom={zoom}
-        onOffsetChange={(x, y) => {
-          setOffsetX(x);
-          setOffsetY(y);
-        }}
-        onZoomChange={setZoom}
+    <ReactFlowProvider>
+      <C4DiagramCanvas
+        diagramName={selectedDiagram.name}
+        onExit={() => setSelectedDiagram(null)}
+        copyText={buildDiagramPrompt()}
+        drillPath={drillPath}
+        currentLevel={currentLevel}
+        nodes={filteredNodes}
+        edges={filteredEdges}
+        groups={filteredGroups}
+        diagramData={diagramData}
         onNodeClick={handleNodeClick}
-        renderNodeContent={renderNodeContent}
+        onBack={handleBack}
+        onNavigateRoot={navigateToRoot}
+        onNavigateLevel={navigateToLevel}
       />
-    </div>
+    </ReactFlowProvider>
   );
 }
 

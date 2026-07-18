@@ -6,6 +6,12 @@
   position: relative;
 }
 
+.c4-canvas-wrapper {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
 /* ── Loading / Error / Empty states ───────────────────────── */
 .c4-loading {
   padding: var(--space-4);
