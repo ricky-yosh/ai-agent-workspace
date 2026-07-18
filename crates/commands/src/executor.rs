@@ -5,7 +5,12 @@ use crate::error::CommandError;
 use crate::state::AppState;
 use ai_agent_workspace_core::{DomainEvent, Screen};
 use ai_agent_workspace_core::graph;
-use rusqlite::params;
+
+/// Serialize an optional list into the JSON-text form stored in a node's array
+/// columns (`tags_json`, `sources_json`). `None` leaves the column untouched.
+fn to_json_column<T: serde::Serialize>(value: Option<&T>) -> Option<String> {
+    value.map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()))
+}
 
 pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, CommandError> {
     let mut conn = state.db.connection().map_err(|e| CommandError::internal(&e.to_string()))?;
@@ -454,13 +459,14 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let canvas = canvases.rename(&id, &name)?;
             Ok(ExecutionOutcome::with_event(CommandResult::VisualCanvas(canvas), DomainEvent::VisualCanvasesChanged { session_id }))
         }
-        Command::CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json } => {
+        Command::CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json, tags } => {
             let canvases = state.db.visual_canvases(&conn);
             let canvas = canvases.get(&canvas_id)
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
             let session_id = canvas.session_id.clone();
+            let tags_json = to_json_column(tags.as_ref());
             let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.create(&canvas_id, &title, &description, x, y, width, height, metadata_json.as_deref())
+            let node = nodes.create(&canvas_id, &title, &description, x, y, width, height, metadata_json.as_deref(), tags_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -476,7 +482,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasNode(node)))
         }
-        Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json } => {
+        Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json, tags } => {
             let nodes = state.db.canvas_nodes(&conn);
             let existing = nodes.get(&id)
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
@@ -486,7 +492,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &existing.canvas_id, e))?;
             let session_id = canvas.session_id.clone();
             let canvas_id = existing.canvas_id.clone();
-            let node = nodes.update(&id, title.as_deref(), description.as_deref(), x, y, width, height, metadata_json.as_deref())
+            let tags_json = to_json_column(tags.as_ref());
+            let node = nodes.update(&id, title.as_deref(), description.as_deref(), x, y, width, height, metadata_json.as_deref(), tags_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -647,46 +654,6 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             groups.delete(&id)?;
             Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasGroupsChanged { session_id, canvas_id }))
         }
-        Command::CanvasTagAdd { node_id, tag } => {
-            let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.get(&node_id)
-                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
-            let canvas_id = node.canvas_id.clone();
-            let canvases = state.db.visual_canvases(&conn);
-            let canvas = canvases.get(&canvas_id)
-                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
-            let session_id = canvas.session_id.clone();
-            let tags = state.db.canvas_tags(&conn);
-            let tag_result = tags.add(&node_id, &tag)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::CanvasTag(tag_result), DomainEvent::CanvasTagsChanged { session_id, canvas_id }))
-        }
-        Command::CanvasTagRemove { node_id, tag } => {
-            let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.get(&node_id)
-                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
-            let canvas_id = node.canvas_id.clone();
-            let canvases = state.db.visual_canvases(&conn);
-            let canvas = canvases.get(&canvas_id)
-                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
-            let session_id = canvas.session_id.clone();
-            let tags = state.db.canvas_tags(&conn);
-            tags.remove(&node_id, &tag)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasTagsChanged { session_id, canvas_id }))
-        }
-        Command::CanvasTagListByNode { node_id } => {
-            let tags = state.db.canvas_tags(&conn);
-            let list = tags.list_by_node(&node_id)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::none(CommandResult::CanvasTags(list)))
-        }
-        Command::CanvasTagListByCanvas { canvas_id } => {
-            let tags = state.db.canvas_tags(&conn);
-            let list = tags.list_by_canvas(&canvas_id)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::none(CommandResult::CanvasTags(list)))
-        }
         Command::CanvasViewStateGet { canvas_id } => {
             let view_states = state.db.canvas_view_states(&conn);
             match view_states.get_by_canvas(&canvas_id)
@@ -752,9 +719,11 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 let y = spec.y.unwrap_or(0.0);
                 let w = spec.width.unwrap_or(200.0);
                 let h = spec.height.unwrap_or(100.0);
+                let tags_json = to_json_column(spec.tags.as_ref());
                 let node = nodes_repo.create(
                     &canvas_id, &spec.title, desc, x, y, w, h,
                     spec.metadata_json.as_deref(),
+                    tags_json.as_deref(),
                 )?;
                 let ref_val = spec.r#ref.clone();
                 if let Some(ref r) = ref_val {
@@ -1972,6 +1941,7 @@ mod tests {
                 description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -1987,6 +1957,7 @@ mod tests {
                 description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2095,6 +2066,7 @@ mod tests {
                 description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2110,6 +2082,7 @@ mod tests {
                 description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2215,6 +2188,7 @@ mod tests {
                 description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2274,6 +2248,7 @@ mod tests {
                 description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2289,6 +2264,7 @@ mod tests {
                 description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2380,6 +2356,7 @@ mod tests {
                 description: "".to_string(),
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();
@@ -2395,6 +2372,7 @@ mod tests {
                 description: "".to_string(),
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
+                tags: None,
             },
             &state,
         ).unwrap();

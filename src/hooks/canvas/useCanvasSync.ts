@@ -12,6 +12,7 @@ export interface CanvasNode {
   width: number;
   height: number;
   metadata_json: string | null;
+  tags_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,11 +37,14 @@ export interface CanvasNodeSource {
   created_at: string;
 }
 
-export interface CanvasTag {
-  id: string;
-  node_id: string;
-  tag: string;
-  created_at: string;
+function parseTags(tagsJson: string | null): string[] {
+  if (!tagsJson) return [];
+  try {
+    const parsed = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 export function backendNodeToXYFlowNode(node: CanvasNode): Node {
@@ -51,7 +55,7 @@ export function backendNodeToXYFlowNode(node: CanvasNode): Node {
     data: {
       title: node.title,
       description: node.description,
-      tags: [] as string[],
+      tags: parseTags(node.tags_json),
       sources: [] as { id: string; url: string; source_type: string }[],
     },
     width: node.width,
@@ -81,18 +85,10 @@ export function useCanvasSync({ canvasId, sessionId: _sessionId, setNodes, setEd
   const pendingNodeIds = useRef<Set<string>>(new Set());
 
   const fetchNodes = useCallback(async (id: string) => {
-    const [backendNodes, backendTags, backendSources] = await Promise.all([
+    const [backendNodes, backendSources] = await Promise.all([
       safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: id }),
-      safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: id }),
       safeInvoke<CanvasNodeSource[]>("list_canvas_node_sources", { nodeId: "__all__" }).catch(() => [] as CanvasNodeSource[]),
     ]);
-
-    // Group tags and sources by node_id
-    const tagsByNode = new Map<string, string[]>();
-    for (const t of backendTags) {
-      if (!tagsByNode.has(t.node_id)) tagsByNode.set(t.node_id, []);
-      tagsByNode.get(t.node_id)!.push(t.tag);
-    }
 
     const sourcesByNode = new Map<string, { id: string; url: string; source_type: string }[]>();
     for (const s of backendSources) {
@@ -106,7 +102,6 @@ export function useCanvasSync({ canvasId, sessionId: _sessionId, setNodes, setEd
         ...base,
         data: {
           ...base.data,
-          tags: tagsByNode.get(n.id) || [],
           sources: sourcesByNode.get(n.id) || [],
         },
       };
@@ -147,9 +142,5 @@ export function useCanvasSync({ canvasId, sessionId: _sessionId, setNodes, setEd
     }
   }, []);
 
-  const fetchTags = useCallback(async (id: string) => {
-    return safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: id });
-  }, []);
-
-  return { persistNodePosition, pendingNodeIds, fetchTags };
+  return { persistNodePosition, pendingNodeIds };
 }

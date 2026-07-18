@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use thiserror::Error;
 
-use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasNodeSourceRepository, CanvasTagRepository, CanvasViewStateRepository, C4DiagramRepository};
+use crate::repositories::{SessionRepository, WorkspaceRepository, LayoutRepository, IssueRepository, ChangeEventRepository, VisualCanvasRepository, CanvasNodeRepository, CanvasEdgeRepository, CanvasGroupRepository, CanvasNodeSourceRepository, CanvasViewStateRepository, C4DiagramRepository};
 use migrations::{migrate, MigrationError};
 
 #[derive(Debug, Error)]
@@ -150,10 +150,6 @@ impl Database {
         CanvasGroupRepository::new(&self.db_path, conn)
     }
 
-    pub fn canvas_tags<'a>(&self, conn: &'a Connection) -> CanvasTagRepository<'a> {
-        CanvasTagRepository::new(&self.db_path, conn)
-    }
-
     pub fn canvas_view_states<'a>(&self, conn: &'a Connection) -> CanvasViewStateRepository<'a> {
         CanvasViewStateRepository::new(&self.db_path, conn)
     }
@@ -256,13 +252,6 @@ mod tests {
         let db = Database::new(":memory:".into());
         let conn = db.connection().unwrap();
         let _repo = db.canvas_groups(&conn);
-    }
-
-    #[test]
-    fn test_canvas_tags_repository_stub() {
-        let db = Database::new(":memory:".into());
-        let conn = db.connection().unwrap();
-        let _repo = db.canvas_tags(&conn);
     }
 
     #[test]

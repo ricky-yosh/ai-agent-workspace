@@ -5,7 +5,7 @@ use ai_agent_workspace_commands::{
 };
 use ai_agent_workspace_core::{
     Session, SessionSummary, WorkspaceInstance,
-    Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasNodeSource, CanvasEdge, CanvasGroup, CanvasTag, CanvasViewState, C4Diagram, DomainEvent,
+    Layout, Screen, Issue, ChangeEvent, VisualCanvas, CanvasNode, CanvasNodeSource, CanvasEdge, CanvasGroup, CanvasViewState, C4Diagram, DomainEvent,
 };
 use ai_agent_workspace_git_operations;
 
@@ -224,10 +224,10 @@ command_handler!(rename_visual_canvas, VisualCanvasRename { id, name }, VisualCa
 
 // ── Canvas Node commands ────────────────────────────────────────────
 
-command_handler!(create_canvas_node, CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json }, CanvasNode, CanvasNode, canvas_id: String, title: String, description: String, x: f64, y: f64, width: f64, height: f64, metadata_json: Option<String>);
+command_handler!(create_canvas_node, CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json, tags }, CanvasNode, CanvasNode, canvas_id: String, title: String, description: String, x: f64, y: f64, width: f64, height: f64, metadata_json: Option<String>, tags: Option<Vec<String>>);
 command_handler!(list_canvas_nodes, CanvasNodeList { canvas_id }, CanvasNodes, Vec<CanvasNode>, canvas_id: String);
 command_handler!(get_canvas_node, CanvasNodeGet { id }, CanvasNode, CanvasNode, id: String);
-command_handler!(update_canvas_node, CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json }, CanvasNode, CanvasNode, id: String, title: Option<String>, description: Option<String>, x: Option<f64>, y: Option<f64>, width: Option<f64>, height: Option<f64>, metadata_json: Option<String>);
+command_handler!(update_canvas_node, CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json, tags }, CanvasNode, CanvasNode, id: String, title: Option<String>, description: Option<String>, x: Option<f64>, y: Option<f64>, width: Option<f64>, height: Option<f64>, metadata_json: Option<String>, tags: Option<Vec<String>>);
 unit_return!(delete_canvas_node, CanvasNodeDelete { id }, id: String);
 
 // ── Canvas Edge commands ────────────────────────────────────────
@@ -245,13 +245,6 @@ command_handler!(list_canvas_groups, CanvasGroupList { canvas_id }, CanvasGroups
 command_handler!(get_canvas_group, CanvasGroupGet { id }, CanvasGroup, CanvasGroup, id: String);
 command_handler!(update_canvas_group, CanvasGroupUpdate { id, label, node_ids_json, metadata_json }, CanvasGroup, CanvasGroup, id: String, label: Option<String>, node_ids_json: Option<String>, metadata_json: Option<String>);
 unit_return!(delete_canvas_group, CanvasGroupDelete { id }, id: String);
-
-// ── Canvas Tag commands ────────────────────────────────────────
-
-command_handler!(list_canvas_tags_by_node, CanvasTagListByNode { node_id }, CanvasTags, Vec<CanvasTag>, node_id: String);
-command_handler!(list_canvas_tags_by_canvas, CanvasTagListByCanvas { canvas_id }, CanvasTags, Vec<CanvasTag>, canvas_id: String);
-command_handler!(add_canvas_tag, CanvasTagAdd { node_id, tag }, CanvasTag, CanvasTag, node_id: String, tag: String);
-unit_return!(remove_canvas_tag, CanvasTagRemove { node_id, tag }, node_id: String, tag: String);
 
 // ── Canvas Node Source commands ────────────────────────────────
 
@@ -967,10 +960,6 @@ pub fn run() {
             create_canvas_node_source,
             list_canvas_node_sources,
             delete_canvas_node_source,
-            list_canvas_tags_by_node,
-            list_canvas_tags_by_canvas,
-            add_canvas_tag,
-            remove_canvas_tag,
             get_canvas_view_state,
             update_canvas_view_state,
             list_change_events,

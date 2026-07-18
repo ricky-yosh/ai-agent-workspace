@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::schema::{CREATE_TABLES, SCHEMA_VERSION};
 
@@ -155,13 +155,50 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // v20 -> v21: fold tags into a `canvas_nodes.tags_json` field, dropping
+    // the `canvas_tags` table (ADR 0025 / .aw/adr/0025). Gated on table
+    // shape, matching the v19->v20 pattern, so a DB stamped at v21 that
+    // somehow still lacks the column self-heals.
+    {
+        let has_tags_json: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"tags_json".to_string())
+            })
+            .unwrap_or(false);
+        if !has_tags_json {
+            conn.execute_batch("ALTER TABLE canvas_nodes ADD COLUMN tags_json TEXT;")?;
+        }
+
+        let has_canvas_tags: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canvas_tags'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if has_canvas_tags {
+            conn.execute_batch(
+                "UPDATE canvas_nodes SET tags_json = (
+                    SELECT json_group_array(t.tag)
+                    FROM canvas_tags t
+                    WHERE t.node_id = canvas_nodes.id
+                )
+                WHERE EXISTS (SELECT 1 FROM canvas_tags t WHERE t.node_id = canvas_nodes.id);
+
+                DROP TABLE canvas_tags;",
+            )?;
+        }
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::{Connection, OptionalExtension};
 
     fn setup_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -185,7 +222,7 @@ mod tests {
         assert!(tables.contains(&"issues".to_string()));
         assert!(tables.contains(&"canvas_edges".to_string()));
         assert!(tables.contains(&"canvas_groups".to_string()));
-        assert!(tables.contains(&"canvas_tags".to_string()));
+        assert!(!tables.contains(&"canvas_tags".to_string()));
         assert!(tables.contains(&"schema_version".to_string()));
     }
 
@@ -279,5 +316,53 @@ mod tests {
             !table_exists(&conn, "code_vectors"),
             "code_vectors should be dropped after migrating to v19"
         );
+    }
+
+    #[test]
+    fn test_migrate_folds_canvas_tags_into_node_tags_json() {
+        // Simulate a pre-v21 database with a canvas_node and some canvas_tags rows.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE canvas_nodes (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                x REAL NOT NULL DEFAULT 0,
+                y REAL NOT NULL DEFAULT 0,
+                width REAL NOT NULL DEFAULT 200,
+                height REAL NOT NULL DEFAULT 100,
+                metadata_json TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE canvas_tags (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                tag TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO canvas_nodes (id, canvas_id, title, created_at, updated_at) VALUES ('node-1', 'canvas-1', 'Node One', 0, 0);
+            INSERT INTO canvas_tags (id, node_id, tag, created_at) VALUES ('tag-1', 'node-1', 'bug', 0);
+            INSERT INTO canvas_tags (id, node_id, tag, created_at) VALUES ('tag-2', 'node-1', 'urgent', 0);
+            INSERT INTO schema_version (version) VALUES (20);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert!(
+            !table_exists(&conn, "canvas_tags"),
+            "canvas_tags should be dropped after migrating to v21"
+        );
+
+        let tags_json: String = conn
+            .query_row("SELECT tags_json FROM canvas_nodes WHERE id = 'node-1'", [], |row| row.get(0))
+            .unwrap();
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap();
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&"bug".to_string()));
+        assert!(tags.contains(&"urgent".to_string()));
     }
 }

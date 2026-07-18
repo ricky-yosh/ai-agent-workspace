@@ -24,8 +24,8 @@ pub fn create_test_canvas_with_nodes(db: &Database) -> (String, String, String, 
     let canvases = db.visual_canvases(&conn);
     let canvas = canvases.create(&session.id, "Test Canvas").unwrap();
     let nodes = db.canvas_nodes(&conn);
-    let node1 = nodes.create(&canvas.id, "Node 1", "", 0.0, 0.0, 100.0, 50.0, None).unwrap();
-    let node2 = nodes.create(&canvas.id, "Node 2", "", 200.0, 200.0, 100.0, 50.0, None).unwrap();
+    let node1 = nodes.create(&canvas.id, "Node 1", "", 0.0, 0.0, 100.0, 50.0, None, None).unwrap();
+    let node2 = nodes.create(&canvas.id, "Node 2", "", 200.0, 200.0, 100.0, 50.0, None, None).unwrap();
     (session.id, canvas.id, node1.id, node2.id)
 }
 
@@ -33,6 +33,6 @@ pub fn create_test_canvas_with_nodes(db: &Database) -> (String, String, String, 
 pub fn create_test_node(db: &Database, canvas_id: &str) -> String {
     let conn = db.connection().unwrap();
     let nodes = db.canvas_nodes(&conn);
-    let node = nodes.create(canvas_id, "Test Node", "", 0.0, 0.0, 100.0, 50.0, None).unwrap();
+    let node = nodes.create(canvas_id, "Test Node", "", 0.0, 0.0, 100.0, 50.0, None, None).unwrap();
     node.id
 }

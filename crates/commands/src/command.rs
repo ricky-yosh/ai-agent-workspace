@@ -18,6 +18,8 @@ pub struct NodeImportSpec {
     pub height: Option<f64>,
     #[serde(default)]
     pub metadata_json: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 
 /// Spec for an edge to create in a canvas_import batch.
@@ -209,6 +211,7 @@ pub enum Command {
         width: f64,
         height: f64,
         metadata_json: Option<String>,
+        tags: Option<Vec<String>>,
     },
     CanvasNodeList {
         canvas_id: String,
@@ -225,6 +228,7 @@ pub enum Command {
         width: Option<f64>,
         height: Option<f64>,
         metadata_json: Option<String>,
+        tags: Option<Vec<String>>,
     },
     CanvasNodeDelete {
         id: String,
@@ -284,20 +288,6 @@ pub enum Command {
     },
     CanvasGroupDelete {
         id: String,
-    },
-    CanvasTagAdd {
-        node_id: String,
-        tag: String,
-    },
-    CanvasTagRemove {
-        node_id: String,
-        tag: String,
-    },
-    CanvasTagListByNode {
-        node_id: String,
-    },
-    CanvasTagListByCanvas {
-        canvas_id: String,
     },
     CanvasViewStateGet {
         canvas_id: String,

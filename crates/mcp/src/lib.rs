@@ -42,6 +42,7 @@ fn unwrap_json_field_name(key: &str) -> Option<&'static str> {
         "metadata_json" => Some("metadata"),
         "node_ids_json" => Some("node_ids"),
         "diagram_json" => Some("diagram"),
+        "tags_json" => Some("tags"),
         _ => None,
     }
 }
@@ -206,9 +207,6 @@ impl McpHandler {
         group_update,
         group_delete,
         canvas_import,
-        tag_add,
-        tag_remove,
-        tag_list,
         c4_diagram_create,
         c4_diagram_list,
         c4_diagram_get,
@@ -316,12 +314,12 @@ impl McpHandler {
         respond(&state, execute(Command::VisualCanvasRename { id, name }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Create a node on a visual canvas with title, description, position, and optional metadata")]
-    async fn node_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] title: String, #[tool(param)] description: String, #[tool(param)] x: f64, #[tool(param)] y: f64, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Create a node on a visual canvas with title, description, position, optional metadata, and optional tags")]
+    async fn node_create(&self, #[tool(param)] canvas_id: String, #[tool(param)] title: String, #[tool(param)] description: String, #[tool(param)] x: f64, #[tool(param)] y: f64, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>, #[tool(param)] tags: Option<Vec<String>>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         let w = width.unwrap_or(200.0);
         let h = height.unwrap_or(100.0);
-        respond(&state, execute(Command::CanvasNodeCreate { canvas_id, title, description, x, y, width: w, height: h, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+        respond(&state, execute(Command::CanvasNodeCreate { canvas_id, title, description, x, y, width: w, height: h, metadata_json, tags }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "List all nodes on a visual canvas")]
@@ -330,10 +328,10 @@ impl McpHandler {
         respond(&state, execute(Command::CanvasNodeList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Update a canvas node's title, description, position, size, or metadata")]
-    async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] description: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(description = "Update a canvas node's title, description, position, size, metadata, or tags")]
+    async fn node_update(&self, #[tool(param)] id: String, #[tool(param)] title: Option<String>, #[tool(param)] description: Option<String>, #[tool(param)] x: Option<f64>, #[tool(param)] y: Option<f64>, #[tool(param)] width: Option<f64>, #[tool(param)] height: Option<f64>, #[tool(param)] metadata_json: Option<String>, #[tool(param)] tags: Option<Vec<String>>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
+        respond(&state, execute(Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json, tags }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Delete a canvas node. Cascades to remove connected edges and remove the node from any groups.")]
@@ -420,7 +418,7 @@ impl McpHandler {
             efficient and coherent than making individual create calls. \
             Params: nodes (required, JSON array), edges (optional, JSON array), groups (optional, JSON array). \
             Each node: { ref?: string, title: string, description?: string, x?: number, y?: number, \
-            width?: number, height?: number, metadata_json?: string }. \
+            width?: number, height?: number, metadata_json?: string, tags?: string[] }. \
             Each edge: { source: string, target: string, label?: string, metadata_json?: string }. \
             source/target accept EITHER a ref from this call's nodes OR an existing node UUID. \
             Each group: { label: string, node_refs: string[], metadata_json?: string }. \
@@ -444,31 +442,6 @@ impl McpHandler {
             edges_json: edges,
             groups_json: groups,
         }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
-    #[tool(description = "Add a tag to a canvas node for categorization")]
-    async fn tag_add(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasTagAdd { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
-    #[tool(description = "Remove a tag from a canvas node")]
-    async fn tag_remove(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        let ack_id = node_id.clone();
-        respond(&state, execute(Command::CanvasTagRemove { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
-    }
-
-    #[tool(description = "List tags for a canvas node or all tags on a canvas. Provide node_id to list tags for a specific node, or canvas_id to list all tags on a canvas.")]
-    async fn tag_list(&self, #[tool(param)] node_id: Option<String>, #[tool(param)] canvas_id: Option<String>) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        if let Some(node_id) = node_id {
-            respond(&state, execute(Command::CanvasTagListByNode { node_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-        } else if let Some(canvas_id) = canvas_id {
-            respond(&state, execute(Command::CanvasTagListByCanvas { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-        } else {
-            Err(rmcp::Error::invalid_params("Either node_id or canvas_id must be provided", None))
-        }
     }
 
     #[tool(description = "Create a C4 diagram for a repository. The diagram_json must be a JSON object with nodes[], edges[], and groups[]. \
@@ -525,6 +498,14 @@ mod tests {
     fn test_redundant_get_and_issue_close_are_absent_from_tool_set() {
         let names: Vec<String> = McpHandler::tool_box().list().into_iter().map(|t| t.name.to_string()).collect();
         for removed in ["node_get", "edge_get", "group_get", "canvas_get", "issue_close"] {
+            assert!(!names.contains(&removed.to_string()), "{removed} should have been removed from the advertised tool set");
+        }
+    }
+
+    #[test]
+    fn test_tag_tools_are_absent_from_tool_set() {
+        let names: Vec<String> = McpHandler::tool_box().list().into_iter().map(|t| t.name.to_string()).collect();
+        for removed in ["tag_add", "tag_remove", "tag_list"] {
             assert!(!names.contains(&removed.to_string()), "{removed} should have been removed from the advertised tool set");
         }
     }
@@ -843,7 +824,7 @@ mod tests {
         let existing_node_id = {
             let conn = handler.db.connection().unwrap();
             let nodes_repo = handler.db.canvas_nodes(&conn);
-            nodes_repo.create(&canvas_id, "Existing Node", "", 0.0, 0.0, 100.0, 50.0, None).unwrap().id
+            nodes_repo.create(&canvas_id, "Existing Node", "", 0.0, 0.0, 100.0, 50.0, None, None).unwrap().id
         };
 
         // Now import using the existing UUID as an edge endpoint
@@ -872,7 +853,7 @@ mod tests {
         // Create existing node
         let existing_id = {
             let conn = handler.db.connection().unwrap();
-            handler.db.canvas_nodes(&conn).create(&canvas_id, "Existing", "", 0.0, 0.0, 100.0, 50.0, None).unwrap().id
+            handler.db.canvas_nodes(&conn).create(&canvas_id, "Existing", "", 0.0, 0.0, 100.0, 50.0, None, None).unwrap().id
         };
 
         let nodes = r#"[
@@ -985,7 +966,7 @@ mod tests {
     #[tokio::test]
     async fn test_node_delete_returns_ack() {
         let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
-        let create_result = handler.node_create(canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let create_result = handler.node_create(canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None, None, None).await.unwrap();
         let created: serde_json::Value = serde_json::from_str(&extract_text(create_result)).unwrap();
         let id = created["id"].as_str().unwrap().to_string();
 
@@ -998,9 +979,9 @@ mod tests {
     #[tokio::test]
     async fn test_edge_delete_returns_ack() {
         let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
-        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None, None).await.unwrap();
         let n1: serde_json::Value = serde_json::from_str(&extract_text(n1)).unwrap();
-        let n2 = handler.node_create(canvas_id.clone(), "B".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n2 = handler.node_create(canvas_id.clone(), "B".into(), "".into(), 0.0, 0.0, None, None, None, None).await.unwrap();
         let n2: serde_json::Value = serde_json::from_str(&extract_text(n2)).unwrap();
         let edge = handler.edge_create(canvas_id, n1["id"].as_str().unwrap().into(), n2["id"].as_str().unwrap().into(), None, None).await.unwrap();
         let edge: serde_json::Value = serde_json::from_str(&extract_text(edge)).unwrap();
@@ -1056,7 +1037,7 @@ mod tests {
         let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
         let result = handler.node_create(
             canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None,
-            Some(r#"{"color": "red", "size": 3}"#.into()),
+            Some(r#"{"color": "red", "size": 3}"#.into()), None,
         ).await.unwrap();
         let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
 
@@ -1070,7 +1051,7 @@ mod tests {
         let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
         handler.node_create(
             canvas_id.clone(), "Node".into(), "".into(), 0.0, 0.0, None, None,
-            Some(r#"{"nested": {"a": 1}}"#.into()),
+            Some(r#"{"nested": {"a": 1}}"#.into()), None,
         ).await.unwrap();
         let result = handler.node_list(canvas_id).await.unwrap();
         let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
@@ -1080,9 +1061,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_node_create_sets_and_returns_tags() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let result = handler.node_create(
+            canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None, None,
+            Some(vec!["bug".to_string(), "urgent".to_string()]),
+        ).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+
+        assert!(data.get("tags_json").is_none(), "raw tags_json field must not leak");
+        let tags: Vec<String> = serde_json::from_value(data["tags"].clone()).unwrap();
+        assert_eq!(tags, vec!["bug".to_string(), "urgent".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_node_update_sets_and_returns_tags() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let created = handler.node_create(canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None, None, None).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(created)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let result = handler.node_update(id, None, None, None, None, None, None, None, Some(vec!["reviewed".to_string()])).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let tags: Vec<String> = serde_json::from_value(data["tags"].clone()).unwrap();
+        assert_eq!(tags, vec!["reviewed".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_node_list_returns_tags_inline() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        handler.node_create(
+            canvas_id.clone(), "Node".into(), "".into(), 0.0, 0.0, None, None, None,
+            Some(vec!["a".to_string()]),
+        ).await.unwrap();
+        let result = handler.node_list(canvas_id).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let node = &data.as_array().unwrap()[0];
+        let tags: Vec<String> = serde_json::from_value(node["tags"].clone()).unwrap();
+        assert_eq!(tags, vec!["a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_canvas_import_sets_node_tags() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let nodes = r#"[
+            {"ref": "a", "title": "Login", "tags": ["auth", "priority:high"]}
+        ]"#;
+        let result = handler.canvas_import(canvas_id, nodes.into(), None, None).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let node = &data["nodes"].as_array().unwrap()[0];
+        let tags: Vec<String> = serde_json::from_value(node["tags"].clone()).unwrap();
+        assert_eq!(tags, vec!["auth".to_string(), "priority:high".to_string()]);
+    }
+
+    #[tokio::test]
     async fn test_group_create_returns_node_ids_as_nested_json() {
         let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
-        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None, None).await.unwrap();
         let n1: serde_json::Value = serde_json::from_str(&extract_text(n1)).unwrap();
         let node_id = n1["id"].as_str().unwrap().to_string();
 
@@ -1176,12 +1211,6 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                             DomainEvent::CanvasGroupsChanged { session_id, canvas_id } => {
                                 let _ = h.emit("canvas-groups-changed", serde_json::json!({
-                                    "session_id": session_id,
-                                    "canvas_id": canvas_id,
-                                }));
-                            }
-                            DomainEvent::CanvasTagsChanged { session_id, canvas_id } => {
-                                let _ = h.emit("canvas-tags-changed", serde_json::json!({
                                     "session_id": session_id,
                                     "canvas_id": canvas_id,
                                 }));

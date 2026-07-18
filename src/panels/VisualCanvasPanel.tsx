@@ -40,7 +40,6 @@ import {
   backendNodeToXYFlowNode,
   backendEdgeToXYFlowEdge,
   type CanvasNode,
-  type CanvasTag,
   type CanvasEdge as BackendCanvasEdge,
 } from "../hooks/canvas/useCanvasSync";
 import "./VisualCanvasPanel.css";
@@ -67,7 +66,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
   const [canvases, setCanvases] = useState<VisualCanvas[]>([]);
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null);
-  const [tags, setTags] = useState<CanvasTag[]>([]);
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [canvasModalOpen, setCanvasModalOpen] = useState<{ mode: "create" } | { mode: "rename"; canvas: VisualCanvas } | null>(null);
   const [canvasFilterQuery, setCanvasFilterQuery] = useState("");
@@ -76,9 +74,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
   const [focusedCanvasIndex, setFocusedCanvasIndex] = useState<number | null>(null);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [viewportLoaded, setViewportLoaded] = useState(false);
-
-  // Track known tag IDs for change detection
-  const prevTagIdsRef = useRef<Set<string>>(new Set());
 
   // Node modal state
   const [nodeModalOpen, setNodeModalOpen] = useState(false);
@@ -175,15 +170,9 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     }
     Promise.all([
       safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId }),
-      safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: selectedCanvasId }),
       safeInvoke<{ id: string; node_id: string; url: string; source_type: string }[]>("list_canvas_node_sources", { nodeId: "__all__" }).catch(() => []),
     ])
-      .then(([backendNodes, backendTags, backendSources]) => {
-        const tagsByNode = new Map<string, string[]>();
-        for (const t of backendTags) {
-          if (!tagsByNode.has(t.node_id)) tagsByNode.set(t.node_id, []);
-          tagsByNode.get(t.node_id)!.push(t.tag);
-        }
+      .then(([backendNodes, backendSources]) => {
         const sourcesByNode = new Map<string, { id: string; url: string; source_type: string }[]>();
         for (const s of backendSources) {
           if (!sourcesByNode.has(s.node_id)) sourcesByNode.set(s.node_id, []);
@@ -196,7 +185,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
               ...base,
               data: {
                 ...base.data,
-                tags: tagsByNode.get(n.id) || [],
                 sources: sourcesByNode.get(n.id) || [],
               },
             };
@@ -245,22 +233,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
       })
       .catch((err) => {
         console.error("Failed to fetch groups:", err);
-      });
-  }, [selectedCanvasId]);
-
-  const fetchTags = useCallback(() => {
-    if (!selectedCanvasId) {
-      setTags([]);
-      prevTagIdsRef.current = new Set();
-      return;
-    }
-    safeInvoke<CanvasTag[]>("list_canvas_tags_by_canvas", { canvasId: selectedCanvasId })
-      .then((data) => {
-        prevTagIdsRef.current = new Set(data.map((t) => t.id));
-        setTags(data);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch tags:", err);
       });
   }, [selectedCanvasId]);
 
@@ -400,17 +372,29 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
 
   const handleAddTag = useCallback(async (tag: string) => {
     if (!nodeModalNodeId) return;
+    const node = xyflowNodes.find((n) => n.id === nodeModalNodeId);
+    const currentTags = ((node?.data.tags as string[]) || []);
+    if (currentTags.includes(tag)) return;
+    const nextTags = [...currentTags, tag];
     try {
-      await safeInvoke("add_canvas_tag", { nodeId: nodeModalNodeId, tag });
+      await safeInvoke("update_canvas_node", { id: nodeModalNodeId, tags: nextTags });
+      setXYFlowNodes((nds) =>
+        nds.map((n) => (n.id === nodeModalNodeId ? { ...n, data: { ...n.data, tags: nextTags } } : n))
+      );
     } catch (err) { console.error(err); }
-  }, [nodeModalNodeId]);
+  }, [nodeModalNodeId, xyflowNodes, setXYFlowNodes]);
 
   const handleRemoveTag = useCallback(async (tag: string) => {
     if (!nodeModalNodeId) return;
+    const node = xyflowNodes.find((n) => n.id === nodeModalNodeId);
+    const nextTags = ((node?.data.tags as string[]) || []).filter((t) => t !== tag);
     try {
-      await safeInvoke("remove_canvas_tag", { nodeId: nodeModalNodeId, tag });
+      await safeInvoke("update_canvas_node", { id: nodeModalNodeId, tags: nextTags });
+      setXYFlowNodes((nds) =>
+        nds.map((n) => (n.id === nodeModalNodeId ? { ...n, data: { ...n.data, tags: nextTags } } : n))
+      );
     } catch (err) { console.error(err); }
-  }, [nodeModalNodeId]);
+  }, [nodeModalNodeId, xyflowNodes, setXYFlowNodes]);
 
   const handleAddSource = useCallback(async (url: string, sourceType: "file" | "link") => {
     if (!nodeModalNodeId) return;
@@ -504,10 +488,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     );
   }, [xyflowNodes, setXYFlowGroups]);
 
-  useEffect(() => {
-    fetchTags();
-  }, [fetchTags]);
-
   useTauriEvent<{ session_id: string }>(
     "visual-canvases-changed",
     useCallback((payload) => {
@@ -544,15 +524,6 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     }, [sessionId, selectedCanvasId, fetchGroups]),
   );
 
-  useTauriEvent<{ session_id: string; canvas_id: string }>(
-    "canvas-tags-changed",
-    useCallback((payload) => {
-      if (payload.session_id === sessionId && payload.canvas_id === selectedCanvasId) {
-        fetchTags();
-      }
-    }, [sessionId, selectedCanvasId, fetchTags]),
-  );
-
   useTauriEvent(
     "db-changed",
     useCallback(() => {
@@ -560,8 +531,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
       fetchNodes();
       fetchEdges();
       fetchGroups();
-      fetchTags();
-    }, [fetchCanvases, fetchNodes, fetchEdges, fetchGroups, fetchTags]),
+    }, [fetchCanvases, fetchNodes, fetchEdges, fetchGroups]),
   );
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
@@ -643,7 +613,13 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  const getUniqueTagLabels = (tags: CanvasTag[]) => [...new Set(tags.map(t => t.tag))].sort();
+  const uniqueTagLabels = useMemo(() => {
+    const labels = new Set<string>();
+    for (const n of xyflowNodes) {
+      for (const tag of (n.data.tags as string[]) || []) labels.add(tag);
+    }
+    return [...labels].sort();
+  }, [xyflowNodes]);
 
   const allNodes = useMemo(() => [...xyflowGroups, ...xyflowNodes], [xyflowGroups, xyflowNodes]);
 
@@ -819,7 +795,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
                 width: 200,
                 height: 100,
               }) as any;
-              const xyflowNode = backendNodeToXYFlowNode({ ...node, tags: [], sources: [] });
+              const xyflowNode = backendNodeToXYFlowNode(node);
               setXYFlowNodes((nds) => [...nds, xyflowNode]);
             } catch (err) { console.error(err); }
           }}>
@@ -829,7 +805,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
       </div>
 
       {/* Tag filter bar */}
-      {tags.length > 0 && (
+      {uniqueTagLabels.length > 0 && (
         <div className="canvas-tag-bar">
           <button
             className={`canvas-tag-pill ${!activeTagFilter ? 'canvas-tag-pill--active' : ''}`}
@@ -837,7 +813,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
           >
             All
           </button>
-          {getUniqueTagLabels(tags).map(tag => (
+          {uniqueTagLabels.map(tag => (
             <button
               key={tag}
               className={`canvas-tag-pill ${activeTagFilter === tag ? 'canvas-tag-pill--active' : ''}`}
