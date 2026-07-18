@@ -253,6 +253,22 @@
   position: relative;
 }
 
+/* ── Canvas handles ──
+   The visible dot stays small, but a generous invisible ::before extends the
+   grab area well past it so starting an edge doesn't demand pixel-precision.
+   Pointer events on the pad count toward the handle, so the drag still begins
+   from the true handle center. */
+.visual-canvas-panel .react-flow__handle.canvas-handle {
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+.visual-canvas-panel .react-flow__handle.canvas-handle::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
 /* ── Canvas handle bob animations ── */
 :root[data-motion="full"] .canvas-handle {
   animation-duration: 1.8s;

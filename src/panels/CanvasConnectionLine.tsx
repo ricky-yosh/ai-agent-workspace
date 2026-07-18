@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback } from "react";
-import type { ConnectionLineComponentProps, InternalNode } from "@xyflow/react";
+import { useEffect, useRef, useState } from "react";
+import { type ConnectionLineComponentProps } from "@xyflow/react";
 
 const ROPE_SEGMENTS = 20;
 const ROPE_GRAVITY = 1500;
@@ -96,34 +96,31 @@ function ropePathD(pts: RopePoint[]): string {
   return d;
 }
 
+/**
+ * The live edge drawn while dragging a new connection: a verlet cable pinned at
+ * the grabbed handle and the cursor, so it swings and droops with momentum.
+ * (Settled edges use the simpler static sag curve.) The sim mutates a ref, so a
+ * per-frame tick state forces React to repaint from the advancing physics —
+ * without it the rope only repainted when xyflow pushed a new cursor position
+ * and the motion looked frozen between moves.
+ */
 export default function CanvasConnectionLine({
-  fromX, fromY, toX, toY,
-  fromNode, toNode,
+  fromX, fromY, toX, toY, toNode,
 }: ConnectionLineComponentProps) {
   const ropeRef = useRef<RopeState | null>(null);
   const rafRef = useRef<number | null>(null);
-  const prevTargetRef = useRef<{ x: number; y: number }>({ x: toX, y: toY });
+  const sourceRef = useRef({ x: fromX, y: fromY });
+  const targetRef = useRef({ x: toX, y: toY });
+  const [, forceRepaint] = useState(0);
 
-  // Compute source anchor point (center of source handle side)
-  const getSourcePoint = useCallback((): { x: number; y: number } => {
-    if (!fromNode) return { x: fromX, y: fromY };
-    const n = fromNode as InternalNode;
-    const hw = (n.measured?.width ?? n.width ?? 200) / 2;
-    const hh = (n.measured?.height ?? n.height ?? 100) / 2;
-    const px = n.position.x;
-    const py = n.position.y;
-    // Default to right side center
-    return { x: px + hw * 2, y: py + hh };
-  }, [fromX, fromY, fromNode]);
+  sourceRef.current = { x: fromX, y: fromY };
+  targetRef.current = { x: toX, y: toY };
 
-  // Initialize rope on first mount or when source changes significantly
+  if (!ropeRef.current) {
+    ropeRef.current = makeRope(sourceRef.current, targetRef.current);
+  }
+
   useEffect(() => {
-    const src = getSourcePoint();
-    if (!ropeRef.current || fromNode) {
-      ropeRef.current = makeRope(src, { x: toX, y: toY });
-    }
-    prevTargetRef.current = { x: toX, y: toY };
-
     let ropeAcc = 0;
     let lastTime = 0;
 
@@ -132,12 +129,14 @@ export default function CanvasConnectionLine({
       lastTime = time;
       ropeAcc = Math.min(ropeAcc + dt, 0.1);
       let steps = 0;
+      let live = false;
       while (ropeAcc >= ROPE_STEP) {
         ropeAcc -= ROPE_STEP;
         const r = ropeRef.current;
-        if (r) stepRope(r, src, prevTargetRef.current, ROPE_STEP);
+        if (r && stepRope(r, sourceRef.current, targetRef.current, ROPE_STEP)) live = true;
         if (++steps > 8) { ropeAcc = 0; break; }
       }
+      if (live) forceRepaint((n) => n + 1);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -145,15 +144,7 @@ export default function CanvasConnectionLine({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [fromX, fromY, fromNode]);
-
-  // Update target position
-  useEffect(() => {
-    prevTargetRef.current = { x: toX, y: toY };
-    if (ropeRef.current) {
-      ropeRef.current.still = 0;
-    }
-  }, [toX, toY]);
+  }, []);
 
   const rope = ropeRef.current;
   if (!rope) return null;

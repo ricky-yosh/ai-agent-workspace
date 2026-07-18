@@ -857,6 +857,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
           edgeTypes={{ canvasEdge: CanvasEdge }}
           defaultEdgeOptions={{ type: "canvasEdge" }}
           connectionLineComponent={CanvasConnectionLine}
+          connectionRadius={40}
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
           onNodeDoubleClick={(_event, node) => {
