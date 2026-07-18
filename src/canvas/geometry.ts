@@ -53,6 +53,49 @@ export function facingSide(n: Bounds, otherCenter: Point): Side {
       : "top";
 }
 
+const ALL_SIDES: Side[] = ["top", "right", "bottom", "left"];
+
+/**
+ * Picks the pair of connection dots that are actually nearest, restricted to
+ * side combinations where each side faces the other's dot. The facing test
+ * (outward normal pointing toward the peer dot) is what lets adjacent sides win
+ * when they're genuinely closer while still rejecting pairings that would kink
+ * the rope or route it back across a card. Falls back to the independent
+ * center-facing sides when no combination faces (e.g. heavily overlapping nodes),
+ * so it never resolves worse than the plain `facingSide` heuristic.
+ */
+export function resolveNearestFacingSides(
+  a: Bounds,
+  b: Bounds,
+): { srcSide: Side; tgtSide: Side } {
+  let best: { srcSide: Side; tgtSide: Side } | null = null;
+  let bestDist = Infinity;
+
+  for (const srcSide of ALL_SIDES) {
+    const srcDot = sideHandleCenter(a, srcSide);
+    const srcNormal = SIDE_NORMAL[srcSide];
+    for (const tgtSide of ALL_SIDES) {
+      const tgtDot = sideHandleCenter(b, tgtSide);
+      const tgtNormal = SIDE_NORMAL[tgtSide];
+      const toTgt = { x: tgtDot.x - srcDot.x, y: tgtDot.y - srcDot.y };
+      const facesTgt = srcNormal.x * toTgt.x + srcNormal.y * toTgt.y > 0;
+      const facesSrc = tgtNormal.x * -toTgt.x + tgtNormal.y * -toTgt.y > 0;
+      if (!facesTgt || !facesSrc) continue;
+      const dist = Math.hypot(toTgt.x, toTgt.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { srcSide, tgtSide };
+      }
+    }
+  }
+
+  if (best) return best;
+  return {
+    srcSide: facingSide(a, nodeCenter(b)),
+    tgtSide: facingSide(b, nodeCenter(a)),
+  };
+}
+
 export function getEdgePoint(node: Bounds, tx: number, ty: number): Point {
   const cx = node.x + node.width / 2;
   const cy = node.y + node.height / 2;
