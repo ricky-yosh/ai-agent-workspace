@@ -5,6 +5,9 @@ import { initMotion } from "./motionPreference";
 import { applyTheme, type ThemeName } from "./themes";
 import { Store } from "@tauri-apps/plugin-store";
 import { listen } from "@tauri-apps/api/event";
+import { installDevConsoleCapture } from "./devConsoleCapture";
+
+installDevConsoleCapture();
 
 // Load and apply theme before rendering
 (async () => {

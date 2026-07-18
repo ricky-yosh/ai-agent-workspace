@@ -34,3 +34,6 @@ target/
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Dev-only frontend console mirror
+frontend-console.log

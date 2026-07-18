@@ -342,6 +342,37 @@ async fn cancel_index(
     Ok(())
 }
 
+fn frontend_log_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("frontend-console.log")
+}
+
+/// Dev-only: truncate the frontend console log so each dev session starts
+/// fresh. Called once at frontend startup.
+#[tauri::command]
+fn clear_frontend_log() -> Result<(), String> {
+    let _ = std::fs::remove_file(frontend_log_path());
+    Ok(())
+}
+
+/// Dev-only: append a line from the frontend console into a log file at the
+/// repo root (`frontend-console.log`) so it can be tailed outside the webview
+/// devtools. No-op friendly: errors here are swallowed to avoid recursion.
+#[tauri::command]
+fn log_frontend(level: String, message: String) -> Result<(), String> {
+    use std::io::Write;
+    let path = frontend_log_path();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "[{ts}] [{level}] {message}");
+    }
+    Ok(())
+}
+
 // ── Non-macro commands ──────────────────────────────────────────────
 
 #[tauri::command]
@@ -1017,6 +1048,8 @@ pub fn run() {
             index_code,
             get_index_status,
             cancel_index,
+            log_frontend,
+            clear_frontend_log,
             open_preferences,
             open_in_app,
             is_git_repo,
