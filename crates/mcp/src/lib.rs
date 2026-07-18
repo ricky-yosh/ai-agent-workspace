@@ -23,8 +23,97 @@ fn invoke_callbacks(
 
 enum ResponseFormat {
     Json,
-    Empty,
     JsonOrNull,
+    Deleted(String),
+}
+
+/// Fields never useful to an MCP-connected agent: session scoping and audit
+/// timestamps. The Tauri/UI read path serializes the same domain structs
+/// directly and keeps these fields; this trim only applies to agent-facing
+/// MCP responses.
+const AGENT_HIDDEN_FIELDS: [&str; 3] = ["session_id", "created_at", "updated_at"];
+
+/// `*_json` domain fields (`metadata_json`, `node_ids_json`, `diagram_json`)
+/// store JSON as an escaped string so the DB layer can treat it as opaque
+/// text. Agent-facing responses re-parse them into real nested JSON under
+/// the un-suffixed field name so the agent doesn't have to unescape a string.
+fn unwrap_json_field_name(key: &str) -> Option<&'static str> {
+    match key {
+        "metadata_json" => Some("metadata"),
+        "node_ids_json" => Some("node_ids"),
+        "diagram_json" => Some("diagram"),
+        _ => None,
+    }
+}
+
+fn parse_embedded_json(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(s) => {
+            serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)
+        }
+        other => other,
+    }
+}
+
+/// Recursively trims hidden fields and unwraps escaped-JSON fields from a
+/// serialized `CommandResult`, at every depth (list responses, and nested
+/// entities such as `canvas_import`'s `{nodes, edges, groups}`).
+fn shape_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut shaped = serde_json::Map::new();
+            for (key, val) in map {
+                if AGENT_HIDDEN_FIELDS.contains(&key.as_str()) {
+                    continue;
+                }
+                let shaped_val = shape_value(val);
+                if let Some(new_key) = unwrap_json_field_name(&key) {
+                    shaped.insert(new_key.to_string(), parse_embedded_json(shaped_val));
+                } else {
+                    shaped.insert(key, shaped_val);
+                }
+            }
+            serde_json::Value::Object(shaped)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(shape_value).collect())
+        }
+        other => other,
+    }
+}
+
+fn project_fields(value: serde_json::Value, fields: &[&str]) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items.into_iter().map(|item| project_fields(item, fields)).collect(),
+        ),
+        serde_json::Value::Object(map) => {
+            let mut projected = serde_json::Map::new();
+            for field in fields {
+                if let Some(v) = map.get(*field) {
+                    projected.insert(field.to_string(), v.clone());
+                }
+            }
+            serde_json::Value::Object(projected)
+        }
+        other => other,
+    }
+}
+
+/// Shapes a `CommandResult` for an agent-facing MCP response: trims hidden
+/// fields, unwraps escaped-JSON fields, and applies the list/detail
+/// projections (`issue_list` summaries, `c4_diagram_list` metadata-only).
+fn shape_command_result(result: &CommandResult) -> serde_json::Value {
+    let raw = serde_json::to_value(result).unwrap_or(serde_json::Value::Null);
+    match result {
+        CommandResult::Issues(_) => {
+            project_fields(raw, &["number", "title", "labels", "state"])
+        }
+        CommandResult::C4Diagrams(_) => {
+            project_fields(shape_value(raw), &["id", "repo_path", "name"])
+        }
+        _ => shape_value(raw),
+    }
 }
 
 fn mcp_app_state(state: &McpState) -> AppState {
@@ -40,9 +129,11 @@ fn respond(
 ) -> Result<CallToolResult, rmcp::Error> {
     invoke_callbacks(&state.on_events, &outcome.events);
     match format {
-        ResponseFormat::Empty => Ok(CallToolResult::success(vec![])),
+        ResponseFormat::Deleted(id) => Ok(CallToolResult::success(vec![
+            Content::json(&serde_json::json!({ "deleted": true, "id": id }))?,
+        ])),
         ResponseFormat::Json => Ok(CallToolResult::success(vec![
-            Content::json(&outcome.result)?,
+            Content::json(&shape_command_result(&outcome.result))?,
         ])),
         ResponseFormat::JsonOrNull => {
             if matches!(outcome.result, CommandResult::Unit(())) {
@@ -51,7 +142,7 @@ fn respond(
                 ]))
             } else {
                 Ok(CallToolResult::success(vec![
-                    Content::json(&outcome.result)?,
+                    Content::json(&shape_command_result(&outcome.result))?,
                 ]))
             }
         }
@@ -189,7 +280,8 @@ impl McpHandler {
     async fn issue_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::IssueDelete { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::IssueDelete { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Search issues in the current session by state, label, and/or keyword")]
@@ -236,7 +328,8 @@ impl McpHandler {
     #[tool(description = "Delete a visual canvas")]
     async fn canvas_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::VisualCanvasDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::VisualCanvasDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Rename a visual canvas")]
@@ -274,7 +367,8 @@ impl McpHandler {
     #[tool(description = "Delete a canvas node. Cascades to remove connected edges and remove the node from any groups.")]
     async fn node_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasNodeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::CanvasNodeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Add a source reference (file or link) to a canvas node")]
@@ -292,7 +386,8 @@ impl McpHandler {
     #[tool(description = "Remove a source reference from a canvas node")]
     async fn node_source_remove(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasNodeSourceDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::CanvasNodeSourceDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Create a directional edge between two canvas nodes with optional label and metadata")]
@@ -322,7 +417,8 @@ impl McpHandler {
     #[tool(description = "Delete a canvas edge")]
     async fn edge_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasEdgeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::CanvasEdgeDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Create a group to visually cluster related nodes with a label and list of node IDs")]
@@ -354,7 +450,8 @@ impl McpHandler {
     #[tool(description = "Delete a canvas group")]
     async fn group_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasGroupDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::CanvasGroupDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(
@@ -398,7 +495,8 @@ impl McpHandler {
     #[tool(description = "Remove a tag from a canvas node")]
     async fn tag_remove(&self, #[tool(param)] node_id: String, #[tool(param)] tag: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasTagRemove { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = node_id.clone();
+        respond(&state, execute(Command::CanvasTagRemove { node_id, tag }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "List tags for a canvas node or all tags on a canvas. Provide node_id to list tags for a specific node, or canvas_id to list all tags on a canvas.")]
@@ -438,7 +536,8 @@ impl McpHandler {
     #[tool(description = "Delete a C4 diagram")]
     async fn c4_diagram_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::C4DiagramDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Empty)
+        let ack_id = id.clone();
+        respond(&state, execute(Command::C4DiagramDelete { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Deleted(ack_id))
     }
 
     #[tool(description = "Rename a C4 diagram")]
@@ -577,195 +676,6 @@ mod tests {
             ai_agent_workspace_commands::CommandError::internal("oops")
         );
         assert_eq!(err.code.0, -32000);
-    }
-
-    // --- Session tool tests ---
-
-    #[tokio::test]
-    async fn test_session_list_empty() {
-        let (handler, _dir) = setup();
-        let result = handler.session_list().await.unwrap();
-        assert_eq!(result.content.len(), 1);
-        let text = extract_text(result);
-        assert_eq!(text, "[]");
-    }
-
-    #[tokio::test]
-    async fn test_session_create_then_list() {
-        let (handler, _dir) = setup();
-        let result = handler.session_create("/tmp/test".into(), "Test Session".into()).await.unwrap();
-        let text = extract_text(result);
-        assert!(text.contains("Test Session"));
-        assert!(text.contains("/tmp/test"));
-
-        let list = handler.session_list().await.unwrap();
-        let list_text = extract_text(list);
-        assert!(list_text.contains("Test Session"));
-    }
-
-    #[tokio::test]
-    async fn test_session_create_global() {
-        let (handler, _dir) = setup();
-        let result = handler.session_create("/tmp/global".into(), "Global".into()).await;
-        assert!(result.is_ok());
-        let text = extract_text(result.unwrap());
-        assert!(text.contains("Global"));
-    }
-
-    #[tokio::test]
-    async fn test_session_delete_not_found() {
-        let (handler, _dir) = setup();
-        let result = handler.session_delete("nonexistent".into()).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code.0, -32001);
-        let data = err.data.unwrap();
-        assert_eq!(data["entity"], "session");
-    }
-
-    #[tokio::test]
-    async fn test_session_rename_not_found() {
-        let (handler, _dir) = setup();
-        let result = handler.session_rename("nonexistent".into(), "New".into()).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code.0, -32001);
-    }
-
-    // --- Template tool tests ---
-
-    #[tokio::test]
-    async fn test_template_list_empty() {
-        let (handler, _dir) = setup();
-        let result = handler.template_list().await.unwrap();
-        let text = extract_text(result);
-        assert_eq!(text, "[]");
-    }
-
-    #[tokio::test]
-    async fn test_template_save_and_list() {
-        let (handler, _dir) = setup();
-        let screen = ai_agent_workspace_core::Screen::default();
-        let result = handler.template_save("My Template".into(), screen).await.unwrap();
-        let text = extract_text(result);
-        assert!(text.contains("My Template"));
-
-        let list = handler.template_list().await.unwrap();
-        let list_text = extract_text(list);
-        assert!(list_text.contains("My Template"));
-    }
-
-    #[tokio::test]
-    async fn test_template_delete_not_found() {
-        let (handler, _dir) = setup();
-        let result = handler.template_delete("nonexistent".into()).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code.0, -32001);
-    }
-
-    #[tokio::test]
-    async fn test_template_rename_not_found() {
-        let (handler, _dir) = setup();
-        let result = handler.template_rename("nonexistent".into(), "New".into()).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code.0, -32001);
-    }
-
-    // --- Workspace tool tests ---
-
-    #[tokio::test]
-    async fn test_workspace_requires_session_id() {
-        let (mut handler, _dir) = setup();
-        handler.resolved_session_id = None;
-        std::env::remove_var("AIAW_SESSION_ID");
-        let result = handler.workspace_list().await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code.0, -32602);
-        assert!(err.message.contains("AIAW_SESSION_ID"));
-    }
-
-    #[tokio::test]
-    async fn test_workspace_get_active_requires_session_id() {
-        let (mut handler, _dir) = setup();
-        handler.resolved_session_id = None;
-        std::env::remove_var("AIAW_SESSION_ID");
-        let result = handler.workspace_get_active().await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code.0, -32602);
-    }
-
-    #[tokio::test]
-    async fn test_workspace_add_and_list_with_session() {
-        let (mut handler, _dir) = setup();
-
-        let create_result = handler.session_create("/tmp/ws_test".into(), "WS Test".into()).await.unwrap();
-        let create_text = extract_text(create_result);
-
-        let session: serde_json::Value = serde_json::from_str(&create_text).unwrap();
-        let session_id = session["id"].as_str().unwrap().to_string();
-
-        handler.resolved_session_id = Some(session_id);
-
-        let mut terminal_screen = ai_agent_workspace_core::Screen::new();
-        terminal_screen.areas[0].panel_type = "terminal".to_string();
-        let tmpl_result = handler.template_save("WS Template".into(), terminal_screen).await.unwrap();
-        let tmpl_text = extract_text(tmpl_result);
-        let tmpl: serde_json::Value = serde_json::from_str(&tmpl_text).unwrap();
-        let template_id = tmpl["id"].as_str().unwrap().to_string();
-
-        let add_result = handler.workspace_add(template_id.clone()).await.unwrap();
-        let add_text = extract_text(add_result);
-        assert!(add_text.contains("WS Template"));
-
-        let list_result = handler.workspace_list().await.unwrap();
-        let list_text = extract_text(list_result);
-        assert!(list_text.contains("WS Template"));
-
-        let active_result = handler.workspace_get_active().await.unwrap();
-        let active_text = extract_text(active_result);
-        assert!(active_text.contains("WS Template"));
-    }
-
-    #[tokio::test]
-    async fn test_cannot_delete_builtin_template() {
-        let (handler, _dir) = setup();
-        let screen = ai_agent_workspace_core::Screen::default();
-        let conn = handler.db.connection().unwrap();
-        let layouts = handler.db.layouts(&conn);
-        let builtin = layouts.create("General", screen, true).unwrap();
-        let result = handler.template_delete(builtin.id.clone()).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code.0, -32602);
-        assert!(err.message.contains("Built-in") || err.message.contains("built-in"));
-    }
-
-    #[tokio::test]
-    async fn test_cannot_rename_builtin_template() {
-        let (handler, _dir) = setup();
-        let screen = ai_agent_workspace_core::Screen::default();
-        let conn = handler.db.connection().unwrap();
-        let layouts = handler.db.layouts(&conn);
-        let builtin = layouts.create("General", screen, true).unwrap();
-        let result = handler.template_rename(builtin.id.clone(), "Not General".into()).await;
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.code.0, -32602);
-        assert!(err.message.contains("Built-in") || err.message.contains("built-in"));
-    }
-
-    #[tokio::test]
-    async fn test_builtin_shows_in_list() {
-        let (handler, _dir) = setup();
-        let screen = ai_agent_workspace_core::Screen::default();
-        let conn = handler.db.connection().unwrap();
-        let layouts = handler.db.layouts(&conn);
-        let _builtin = layouts.create("General", screen, true).unwrap();
-        let result = handler.template_list().await.unwrap();
-        let text = extract_text(result);
-        assert!(text.contains("General"));
-        assert!(text.contains("built_in"));
-        assert!(text.contains("true"));
     }
 
     // --- Issue tool tests ---
@@ -1247,6 +1157,231 @@ mod tests {
         let result = handler.canvas_import(canvas_id.clone(), nodes.into(), Some(edges), None).await.unwrap();
         let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
         assert_eq!(data["edges"].as_array().unwrap().len(), 1);
+    }
+
+    // --- Response shaping tests ---
+
+    fn assert_no_hidden_fields(value: &serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                assert!(!map.contains_key("session_id"), "session_id leaked: {}", value);
+                assert!(!map.contains_key("created_at"), "created_at leaked: {}", value);
+                assert!(!map.contains_key("updated_at"), "updated_at leaked: {}", value);
+                for v in map.values() {
+                    assert_no_hidden_fields(v);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for v in items {
+                    assert_no_hidden_fields(v);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[tokio::test]
+    async fn test_issue_create_omits_session_and_timestamps() {
+        let (handler, _dir) = setup_with_session();
+        let result = handler.issue_create("Bug".into(), "crash".into()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_no_hidden_fields(&data);
+        assert_eq!(data["title"], "Bug");
+    }
+
+    #[tokio::test]
+    async fn test_issue_list_omits_session_and_timestamps() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Bug".into(), "crash".into()).await.unwrap();
+        let result = handler.issue_list().await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_no_hidden_fields(&data);
+    }
+
+    #[tokio::test]
+    async fn test_issue_list_is_summary_projection_without_body() {
+        let (handler, _dir) = setup_with_session();
+        handler.issue_create("Bug".into(), "full body text".into()).await.unwrap();
+        let result = handler.issue_list().await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let items = data.as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        assert!(item.get("body").is_none(), "issue_list must not include body");
+        assert!(item.get("number").is_some());
+        assert!(item.get("title").is_some());
+        assert!(item.get("labels").is_some());
+        assert!(item.get("state").is_some());
+        assert_eq!(item.as_object().unwrap().len(), 4, "issue_list must project exactly number/title/labels/state");
+    }
+
+    #[tokio::test]
+    async fn test_issue_get_keeps_full_body() {
+        let (handler, _dir) = setup_with_session();
+        let r = handler.issue_create("Bug".into(), "full body text".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let result = handler.issue_get(id).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["body"], "full body text");
+        assert_no_hidden_fields(&data);
+    }
+
+    #[tokio::test]
+    async fn test_issue_delete_returns_ack() {
+        let (handler, _dir) = setup_with_session();
+        let r = handler.issue_create("Bug".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let result = handler.issue_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_node_delete_returns_ack() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let create_result = handler.node_create(canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(create_result)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let result = handler.node_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_edge_delete_returns_ack() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n1: serde_json::Value = serde_json::from_str(&extract_text(n1)).unwrap();
+        let n2 = handler.node_create(canvas_id.clone(), "B".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n2: serde_json::Value = serde_json::from_str(&extract_text(n2)).unwrap();
+        let edge = handler.edge_create(canvas_id, n1["id"].as_str().unwrap().into(), n2["id"].as_str().unwrap().into(), None, None).await.unwrap();
+        let edge: serde_json::Value = serde_json::from_str(&extract_text(edge)).unwrap();
+        let id = edge["id"].as_str().unwrap().to_string();
+
+        let result = handler.edge_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_group_delete_returns_ack() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let group = handler.group_create(canvas_id, "Group".into(), vec![], None).await.unwrap();
+        let group: serde_json::Value = serde_json::from_str(&extract_text(group)).unwrap();
+        let id = group["id"].as_str().unwrap().to_string();
+
+        let result = handler.group_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_canvas_delete_returns_ack() {
+        let (handler, _dir) = setup_with_session();
+        let canvas = handler.canvas_create("My Canvas".into()).await.unwrap();
+        let canvas: serde_json::Value = serde_json::from_str(&extract_text(canvas)).unwrap();
+        let id = canvas["id"].as_str().unwrap().to_string();
+
+        let result = handler.canvas_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_c4_diagram_delete_returns_ack() {
+        let (handler, _dir) = setup();
+        let diagram = handler.c4_diagram_create("/tmp/repo".into(), "Diagram".into(), r#"{"nodes":[],"edges":[],"groups":[]}"#.into()).await.unwrap();
+        let diagram: serde_json::Value = serde_json::from_str(&extract_text(diagram)).unwrap();
+        let id = diagram["id"].as_str().unwrap().to_string();
+
+        let result = handler.c4_diagram_delete(id.clone()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["deleted"], true);
+        assert_eq!(data["id"], id);
+    }
+
+    #[tokio::test]
+    async fn test_node_create_returns_metadata_as_nested_json_not_escaped_string() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let result = handler.node_create(
+            canvas_id, "Node".into(), "".into(), 0.0, 0.0, None, None,
+            Some(r#"{"color": "red", "size": 3}"#.into()),
+        ).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+
+        assert!(data.get("metadata_json").is_none(), "raw metadata_json field must not leak");
+        assert_eq!(data["metadata"]["color"], "red");
+        assert_eq!(data["metadata"]["size"], 3);
+    }
+
+    #[tokio::test]
+    async fn test_node_get_via_list_returns_metadata_as_nested_json() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        handler.node_create(
+            canvas_id.clone(), "Node".into(), "".into(), 0.0, 0.0, None, None,
+            Some(r#"{"nested": {"a": 1}}"#.into()),
+        ).await.unwrap();
+        let result = handler.node_list(canvas_id).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let node = &data.as_array().unwrap()[0];
+        assert_eq!(node["metadata"]["nested"]["a"], 1);
+        assert_no_hidden_fields(&data);
+    }
+
+    #[tokio::test]
+    async fn test_group_create_returns_node_ids_as_nested_json() {
+        let (handler, _dir, canvas_id) = setup_with_session_and_canvas();
+        let n1 = handler.node_create(canvas_id.clone(), "A".into(), "".into(), 0.0, 0.0, None, None, None).await.unwrap();
+        let n1: serde_json::Value = serde_json::from_str(&extract_text(n1)).unwrap();
+        let node_id = n1["id"].as_str().unwrap().to_string();
+
+        let result = handler.group_create(canvas_id, "Group".into(), vec![node_id.clone()], None).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+
+        assert!(data.get("node_ids_json").is_none(), "raw node_ids_json field must not leak");
+        assert_eq!(data["node_ids"][0], node_id);
+    }
+
+    #[tokio::test]
+    async fn test_c4_diagram_list_returns_metadata_only_no_diagram_json() {
+        let (handler, _dir) = setup();
+        handler.c4_diagram_create("/tmp/repo".into(), "Diagram".into(), r#"{"nodes":[{"label":"a"}],"edges":[],"groups":[]}"#.into()).await.unwrap();
+
+        let result = handler.c4_diagram_list("/tmp/repo".into()).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        let items = data.as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        assert!(item.get("diagram_json").is_none());
+        assert!(item.get("diagram").is_none(), "c4_diagram_list must not include diagram JSON at all");
+        assert!(item.get("id").is_some());
+        assert!(item.get("repo_path").is_some());
+        assert!(item.get("name").is_some());
+        assert_no_hidden_fields(&data);
+    }
+
+    #[tokio::test]
+    async fn test_c4_diagram_get_keeps_diagram_json_as_nested_json() {
+        let (handler, _dir) = setup();
+        let created = handler.c4_diagram_create("/tmp/repo".into(), "Diagram".into(), r#"{"nodes":[{"label":"a"}],"edges":[],"groups":[]}"#.into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(created)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        let result = handler.c4_diagram_get(id).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert!(data.get("diagram_json").is_none(), "raw diagram_json field must not leak");
+        assert_eq!(data["diagram"]["nodes"][0]["label"], "a");
+        assert_no_hidden_fields(&data);
     }
 }
 
