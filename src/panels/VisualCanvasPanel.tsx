@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   useNodesState,
@@ -62,7 +63,7 @@ interface CanvasGroup {
   updated_at: string;
 }
 
-function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
+function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
   const { sessionId } = usePanelContext();
   const [canvases, setCanvases] = useState<VisualCanvas[]>([]);
   const [selectedCanvasId, setSelectedCanvasId] = useState<string | null>(null);
@@ -635,6 +636,8 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   const getUniqueTagLabels = (tags: CanvasTag[]) => [...new Set(tags.map(t => t.tag))].sort();
 
+  const allNodes = useMemo(() => [...xyflowGroups, ...xyflowNodes], [xyflowGroups, xyflowNodes]);
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   if (loading && canvases.length === 0) {
@@ -757,8 +760,6 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
 
   // Show the canvas with nodes
   const selectedCanvas = canvases.find(c => c.id === selectedCanvasId);
-
-  const allNodes = useMemo(() => [...xyflowGroups, ...xyflowNodes], [xyflowGroups, xyflowNodes]);
 
   return (
     <div className="visual-canvas-panel">
@@ -1092,6 +1093,14 @@ function VisualCanvasPanel({ panelType: _panelType }: PanelProps) {
         </Dialog>
       )}
     </div>
+  );
+}
+
+function VisualCanvasPanel(props: PanelProps) {
+  return (
+    <ReactFlowProvider>
+      <VisualCanvasPanelInner {...props} />
+    </ReactFlowProvider>
   );
 }
 
