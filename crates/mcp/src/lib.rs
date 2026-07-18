@@ -182,19 +182,16 @@ impl McpHandler {
         issue_list,
         issue_get,
         issue_update,
-        issue_close,
         issue_delete,
         issue_search,
         issue_get_next,
         issue_summarize_backlog,
         canvas_create,
         canvas_list,
-        canvas_get,
         canvas_delete,
         canvas_rename,
         node_create,
         node_list,
-        node_get,
         node_update,
         node_delete,
         node_source_add,
@@ -202,12 +199,10 @@ impl McpHandler {
         node_source_remove,
         edge_create,
         edge_list,
-        edge_get,
         edge_update,
         edge_delete,
         group_create,
         group_list,
-        group_get,
         group_update,
         group_delete,
         canvas_import,
@@ -265,13 +260,6 @@ impl McpHandler {
         respond(&state_arg, execute(Command::IssueUpdate { id, session_id: Some(session_id), title, body, labels, state }, &mcp_app_state(&state_arg)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Close an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
-    async fn issue_close(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let session_id = self.require_session_id()?;
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::IssueClose { id, session_id: Some(session_id) }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
     #[tool(description = "Delete an issue. The id parameter accepts both UUID and issue number (e.g. '5')")]
     async fn issue_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let session_id = self.require_session_id()?;
@@ -315,12 +303,6 @@ impl McpHandler {
         respond(&state, execute(Command::VisualCanvasList { session_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Get a visual canvas by ID")]
-    async fn canvas_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::VisualCanvasGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
     #[tool(description = "Delete a visual canvas")]
     async fn canvas_delete(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
@@ -346,12 +328,6 @@ impl McpHandler {
     async fn node_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         respond(&state, execute(Command::CanvasNodeList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
-    #[tool(description = "Get a canvas node by ID")]
-    async fn node_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasNodeGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update a canvas node's title, description, position, size, or metadata")]
@@ -398,12 +374,6 @@ impl McpHandler {
         respond(&state, execute(Command::CanvasEdgeList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
-    #[tool(description = "Get a canvas edge by ID")]
-    async fn edge_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasEdgeGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
     #[tool(description = "Update a canvas edge's label, metadata, source, or target")]
     async fn edge_update(&self, #[tool(param)] id: String, #[tool(param)] source_node_id: Option<String>, #[tool(param)] target_node_id: Option<String>, #[tool(param)] label: Option<String>, #[tool(param)] metadata_json: Option<String>) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
@@ -428,12 +398,6 @@ impl McpHandler {
     async fn group_list(&self, #[tool(param)] canvas_id: String) -> Result<CallToolResult, rmcp::Error> {
         let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
         respond(&state, execute(Command::CanvasGroupList { canvas_id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
-    }
-
-    #[tool(description = "Get a canvas group by ID")]
-    async fn group_get(&self, #[tool(param)] id: String) -> Result<CallToolResult, rmcp::Error> {
-        let state = McpState { db: self.db.clone(), on_events: self.on_events.clone() };
-        respond(&state, execute(Command::CanvasGroupGet { id }, &mcp_app_state(&state)).map_err(|e| crate::error::to_mcp_error(e))?, ResponseFormat::Json)
     }
 
     #[tool(description = "Update a canvas group's label, node IDs, or metadata")]
@@ -557,6 +521,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_redundant_get_and_issue_close_are_absent_from_tool_set() {
+        let names: Vec<String> = McpHandler::tool_box().list().into_iter().map(|t| t.name.to_string()).collect();
+        for removed in ["node_get", "edge_get", "group_get", "canvas_get", "issue_close"] {
+            assert!(!names.contains(&removed.to_string()), "{removed} should have been removed from the advertised tool set");
+        }
+    }
+
     fn setup() -> (McpHandler, TempDir) {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("workspace.db");
@@ -648,7 +620,7 @@ mod tests {
         let r = handler.issue_create("ToClose".into(), "".into()).await.unwrap();
         let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
         let id = created["id"].as_str().unwrap().to_string();
-        handler.issue_close(id).await.unwrap();
+        handler.issue_update(id, None, None, None, Some("closed".into())).await.unwrap();
 
         let result = handler.issue_search(Some("open".into()), None, None).await.unwrap();
         let issues: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
@@ -712,7 +684,7 @@ mod tests {
         let r = handler.issue_create("Issue".into(), "".into()).await.unwrap();
         let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
         let id = created["id"].as_str().unwrap().to_string();
-        handler.issue_close(id).await.unwrap();
+        handler.issue_update(id, None, None, None, Some("closed".into())).await.unwrap();
 
         let result = handler.issue_get_next().await.unwrap();
         let text = extract_text(result);
@@ -738,7 +710,7 @@ mod tests {
         let r = handler.issue_create("C".into(), "".into()).await.unwrap();
         let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
         let id = created["id"].as_str().unwrap().to_string();
-        handler.issue_close(id).await.unwrap();
+        handler.issue_update(id, None, None, None, Some("closed".into())).await.unwrap();
 
         let result = handler.issue_summarize_backlog().await.unwrap();
         let text = extract_text(result);
@@ -981,6 +953,20 @@ mod tests {
         let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
         assert_eq!(data["body"], "full body text");
         assert_no_hidden_fields(&data);
+    }
+
+    #[tokio::test]
+    async fn test_issue_update_state_closed_persists() {
+        let (handler, _dir) = setup_with_session();
+        let r = handler.issue_create("Bug".into(), "".into()).await.unwrap();
+        let created: serde_json::Value = serde_json::from_str(&extract_text(r)).unwrap();
+        let id = created["id"].as_str().unwrap().to_string();
+
+        handler.issue_update(id.clone(), None, None, None, Some("closed".into())).await.unwrap();
+
+        let result = handler.issue_get(id).await.unwrap();
+        let data: serde_json::Value = serde_json::from_str(&extract_text(result)).unwrap();
+        assert_eq!(data["state"], "closed");
     }
 
     #[tokio::test]
