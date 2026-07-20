@@ -1,4 +1,4 @@
-use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasNodeSource, CanvasViewState, C4Diagram, DomainEvent};
+use ai_agent_workspace_core::{Session, SessionSummary, Layout, WorkspaceInstance, Issue, IssueSummary, ChangeEvent, VisualCanvas, CanvasNode, CanvasEdge, CanvasGroup, CanvasViewState, C4Diagram, DomainEvent};
 use serde::Serialize;
 
 /// A single node result from a canvas_import batch, pairing the created
@@ -39,8 +39,6 @@ pub enum CommandResult {
     CanvasEdges(Vec<CanvasEdge>),
     CanvasGroup(CanvasGroup),
     CanvasGroups(Vec<CanvasGroup>),
-    CanvasNodeSource(CanvasNodeSource),
-    CanvasNodeSources(Vec<CanvasNodeSource>),
     CanvasViewState(CanvasViewState),
     C4Diagram(C4Diagram),
     C4Diagrams(Vec<C4Diagram>),
@@ -69,8 +67,6 @@ impl Serialize for CommandResult {
             CommandResult::CanvasEdges(v) => v.serialize(serializer),
             CommandResult::CanvasGroup(v) => v.serialize(serializer),
             CommandResult::CanvasGroups(v) => v.serialize(serializer),
-            CommandResult::CanvasNodeSource(v) => v.serialize(serializer),
-            CommandResult::CanvasNodeSources(v) => v.serialize(serializer),
             CommandResult::CanvasViewState(v) => v.serialize(serializer),
             CommandResult::C4Diagram(v) => v.serialize(serializer),
             CommandResult::C4Diagrams(v) => v.serialize(serializer),

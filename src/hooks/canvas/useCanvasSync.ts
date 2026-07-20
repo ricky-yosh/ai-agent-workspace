@@ -13,6 +13,7 @@ export interface CanvasNode {
   height: number;
   metadata_json: string | null;
   tags_json: string | null;
+  sources_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -28,19 +29,26 @@ export interface CanvasEdge {
   updated_at: string;
 }
 
-export interface CanvasNodeSource {
-  id: string;
-  node_id: string;
+export interface NodeSource {
   url: string;
   source_type: string;
   sort_order: number;
-  created_at: string;
 }
 
 function parseTags(tagsJson: string | null): string[] {
   if (!tagsJson) return [];
   try {
     const parsed = JSON.parse(tagsJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseSources(sourcesJson: string | null): NodeSource[] {
+  if (!sourcesJson) return [];
+  try {
+    const parsed = JSON.parse(sourcesJson);
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -56,7 +64,7 @@ export function backendNodeToXYFlowNode(node: CanvasNode): Node {
       title: node.title,
       description: node.description,
       tags: parseTags(node.tags_json),
-      sources: [] as { id: string; url: string; source_type: string }[],
+      sources: parseSources(node.sources_json),
     },
     width: node.width,
     height: node.height,
@@ -85,27 +93,8 @@ export function useCanvasSync({ canvasId, sessionId: _sessionId, setNodes, setEd
   const pendingNodeIds = useRef<Set<string>>(new Set());
 
   const fetchNodes = useCallback(async (id: string) => {
-    const [backendNodes, backendSources] = await Promise.all([
-      safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: id }),
-      safeInvoke<CanvasNodeSource[]>("list_canvas_node_sources", { nodeId: "__all__" }).catch(() => [] as CanvasNodeSource[]),
-    ]);
-
-    const sourcesByNode = new Map<string, { id: string; url: string; source_type: string }[]>();
-    for (const s of backendSources) {
-      if (!sourcesByNode.has(s.node_id)) sourcesByNode.set(s.node_id, []);
-      sourcesByNode.get(s.node_id)!.push({ id: s.id, url: s.url, source_type: s.source_type });
-    }
-
-    const xyflowNodes = backendNodes.map((n) => {
-      const base = backendNodeToXYFlowNode(n);
-      return {
-        ...base,
-        data: {
-          ...base.data,
-          sources: sourcesByNode.get(n.id) || [],
-        },
-      };
-    });
+    const backendNodes = await safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: id });
+    const xyflowNodes = backendNodes.map(backendNodeToXYFlowNode);
     setNodes(xyflowNodes);
   }, [setNodes]);
 

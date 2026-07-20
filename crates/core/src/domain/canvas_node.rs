@@ -12,6 +12,7 @@ pub struct CanvasNode {
     pub height: f64,
     pub metadata_json: Option<String>,
     pub tags_json: Option<String>,
+    pub sources_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

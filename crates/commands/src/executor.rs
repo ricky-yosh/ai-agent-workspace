@@ -459,14 +459,15 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let canvas = canvases.rename(&id, &name)?;
             Ok(ExecutionOutcome::with_event(CommandResult::VisualCanvas(canvas), DomainEvent::VisualCanvasesChanged { session_id }))
         }
-        Command::CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json, tags } => {
+        Command::CanvasNodeCreate { canvas_id, title, description, x, y, width, height, metadata_json, tags, sources } => {
             let canvases = state.db.visual_canvases(&conn);
             let canvas = canvases.get(&canvas_id)
                 .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
             let session_id = canvas.session_id.clone();
             let tags_json = to_json_column(tags.as_ref());
+            let sources_json = to_json_column(sources.as_ref());
             let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.create(&canvas_id, &title, &description, x, y, width, height, metadata_json.as_deref(), tags_json.as_deref())
+            let node = nodes.create(&canvas_id, &title, &description, x, y, width, height, metadata_json.as_deref(), tags_json.as_deref(), sources_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -482,7 +483,7 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
             Ok(ExecutionOutcome::none(CommandResult::CanvasNode(node)))
         }
-        Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json, tags } => {
+        Command::CanvasNodeUpdate { id, title, description, x, y, width, height, metadata_json, tags, sources } => {
             let nodes = state.db.canvas_nodes(&conn);
             let existing = nodes.get(&id)
                 .map_err(|e| CommandError::not_found_from_sql("canvas_node", &id, e))?;
@@ -493,7 +494,8 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             let session_id = canvas.session_id.clone();
             let canvas_id = existing.canvas_id.clone();
             let tags_json = to_json_column(tags.as_ref());
-            let node = nodes.update(&id, title.as_deref(), description.as_deref(), x, y, width, height, metadata_json.as_deref(), tags_json.as_deref())
+            let sources_json = to_json_column(sources.as_ref());
+            let node = nodes.update(&id, title.as_deref(), description.as_deref(), x, y, width, height, metadata_json.as_deref(), tags_json.as_deref(), sources_json.as_deref())
                 .map_err(|e| CommandError::internal(&e.to_string()))?;
             Ok(ExecutionOutcome::with_event(CommandResult::CanvasNode(node), DomainEvent::CanvasNodesChanged { session_id, canvas_id }))
         }
@@ -520,42 +522,6 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 DomainEvent::CanvasEdgesChanged { session_id, canvas_id },
             ];
             Ok(ExecutionOutcome::new(CommandResult::Unit(()), events))
-        }
-        Command::CanvasNodeSourceCreate { node_id, url, source_type, sort_order } => {
-            let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.get(&node_id)
-                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &node_id, e))?;
-            let canvas_id = node.canvas_id.clone();
-            let canvases = state.db.visual_canvases(&conn);
-            let canvas = canvases.get(&canvas_id)
-                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &canvas_id, e))?;
-            let session_id = canvas.session_id.clone();
-            let sources = state.db.canvas_node_sources(&conn);
-            let source = sources.create(&node_id, &url, &source_type, sort_order)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::CanvasNodeSource(source), DomainEvent::CanvasNodeSourcesChanged { session_id, canvas_id }))
-        }
-        Command::CanvasNodeSourceList { node_id } => {
-            let sources = state.db.canvas_node_sources(&conn);
-            let list = sources.list_by_node(&node_id)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::none(CommandResult::CanvasNodeSources(list)))
-        }
-        Command::CanvasNodeSourceDelete { id } => {
-            let sources = state.db.canvas_node_sources(&conn);
-            let source = sources.get(&id)
-                .map_err(|e| CommandError::not_found_from_sql("canvas_node_source", &id, e))?;
-            let nodes = state.db.canvas_nodes(&conn);
-            let node = nodes.get(&source.node_id)
-                .map_err(|e| CommandError::not_found_from_sql("canvas_node", &source.node_id, e))?;
-            let canvases = state.db.visual_canvases(&conn);
-            let canvas = canvases.get(&node.canvas_id)
-                .map_err(|e| CommandError::not_found_from_sql("visual_canvas", &node.canvas_id, e))?;
-            let session_id = canvas.session_id.clone();
-            let canvas_id = node.canvas_id.clone();
-            sources.delete(&id)
-                .map_err(|e| CommandError::internal(&e.to_string()))?;
-            Ok(ExecutionOutcome::with_event(CommandResult::Unit(()), DomainEvent::CanvasNodeSourcesChanged { session_id, canvas_id }))
         }
         Command::CanvasEdgeCreate { canvas_id, source_node_id, target_node_id, label, metadata_json } => {
             let canvases = state.db.visual_canvases(&conn);
@@ -720,10 +686,12 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
                 let w = spec.width.unwrap_or(200.0);
                 let h = spec.height.unwrap_or(100.0);
                 let tags_json = to_json_column(spec.tags.as_ref());
+                let sources_json = to_json_column(spec.sources.as_ref());
                 let node = nodes_repo.create(
                     &canvas_id, &spec.title, desc, x, y, w, h,
                     spec.metadata_json.as_deref(),
                     tags_json.as_deref(),
+                    sources_json.as_deref(),
                 )?;
                 let ref_val = spec.r#ref.clone();
                 if let Some(ref r) = ref_val {
@@ -1942,6 +1910,7 @@ mod tests {
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -1958,6 +1927,7 @@ mod tests {
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2067,6 +2037,7 @@ mod tests {
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2083,6 +2054,7 @@ mod tests {
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2189,6 +2161,7 @@ mod tests {
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2249,6 +2222,7 @@ mod tests {
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2265,6 +2239,7 @@ mod tests {
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2357,6 +2332,7 @@ mod tests {
                 x: 0.0, y: 0.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();
@@ -2373,6 +2349,7 @@ mod tests {
                 x: 200.0, y: 200.0, width: 100.0, height: 50.0,
                 metadata_json: None,
                 tags: None,
+                sources: None,
             },
             &state,
         ).unwrap();

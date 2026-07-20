@@ -20,6 +20,8 @@ pub struct NodeImportSpec {
     pub metadata_json: Option<String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub sources: Option<Vec<ai_agent_workspace_core::NodeSource>>,
 }
 
 /// Spec for an edge to create in a canvas_import batch.
@@ -212,6 +214,7 @@ pub enum Command {
         height: f64,
         metadata_json: Option<String>,
         tags: Option<Vec<String>>,
+        sources: Option<Vec<ai_agent_workspace_core::NodeSource>>,
     },
     CanvasNodeList {
         canvas_id: String,
@@ -229,20 +232,9 @@ pub enum Command {
         height: Option<f64>,
         metadata_json: Option<String>,
         tags: Option<Vec<String>>,
+        sources: Option<Vec<ai_agent_workspace_core::NodeSource>>,
     },
     CanvasNodeDelete {
-        id: String,
-    },
-    CanvasNodeSourceCreate {
-        node_id: String,
-        url: String,
-        source_type: String,
-        sort_order: i32,
-    },
-    CanvasNodeSourceList {
-        node_id: String,
-    },
-    CanvasNodeSourceDelete {
         id: String,
     },
     CanvasEdgeCreate {

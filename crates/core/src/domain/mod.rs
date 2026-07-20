@@ -8,7 +8,7 @@ pub mod visual_canvas;
 pub mod canvas_node;
 pub mod canvas_edge;
 pub mod canvas_group;
-pub mod canvas_node_source;
+pub mod node_source;
 pub mod canvas_view_state;
 pub mod c4_diagram;
 
@@ -22,6 +22,6 @@ pub use visual_canvas::VisualCanvas;
 pub use canvas_node::CanvasNode;
 pub use canvas_edge::CanvasEdge;
 pub use canvas_group::CanvasGroup;
-pub use canvas_node_source::CanvasNodeSource;
+pub use node_source::{NodeSource, SourceType};
 pub use canvas_view_state::CanvasViewState;
 pub use c4_diagram::C4Diagram;

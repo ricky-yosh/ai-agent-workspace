@@ -193,6 +193,48 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         }
     }
 
+    // v21 -> v22: fold node sources into a `canvas_nodes.sources_json` field,
+    // dropping the `canvas_node_sources` table (ADR 0025 / .aw/adr/0025).
+    // Same shape-gated, idempotent, self-healing pattern as the v20->v21
+    // tags migration.
+    {
+        let has_sources_json: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"sources_json".to_string())
+            })
+            .unwrap_or(false);
+        if !has_sources_json {
+            conn.execute_batch("ALTER TABLE canvas_nodes ADD COLUMN sources_json TEXT;")?;
+        }
+
+        let has_canvas_node_sources: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canvas_node_sources'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if has_canvas_node_sources {
+            conn.execute_batch(
+                "UPDATE canvas_nodes SET sources_json = (
+                    SELECT json_group_array(json_object('url', s.url, 'source_type', s.source_type, 'sort_order', s.sort_order))
+                    FROM (
+                        SELECT url, source_type, sort_order
+                        FROM canvas_node_sources
+                        WHERE node_id = canvas_nodes.id
+                        ORDER BY sort_order ASC
+                    ) s
+                )
+                WHERE EXISTS (SELECT 1 FROM canvas_node_sources s WHERE s.node_id = canvas_nodes.id);
+
+                DROP TABLE canvas_node_sources;",
+            )?;
+        }
+    }
+
     Ok(())
 }
 
@@ -223,6 +265,7 @@ mod tests {
         assert!(tables.contains(&"canvas_edges".to_string()));
         assert!(tables.contains(&"canvas_groups".to_string()));
         assert!(!tables.contains(&"canvas_tags".to_string()));
+        assert!(!tables.contains(&"canvas_node_sources".to_string()));
         assert!(tables.contains(&"schema_version".to_string()));
     }
 
@@ -364,5 +407,58 @@ mod tests {
         assert_eq!(tags.len(), 2);
         assert!(tags.contains(&"bug".to_string()));
         assert!(tags.contains(&"urgent".to_string()));
+    }
+
+    #[test]
+    fn test_migrate_folds_canvas_node_sources_into_node_sources_json() {
+        // Simulate a pre-v22 database with a canvas_node and some canvas_node_sources rows.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE canvas_nodes (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                x REAL NOT NULL DEFAULT 0,
+                y REAL NOT NULL DEFAULT 0,
+                width REAL NOT NULL DEFAULT 200,
+                height REAL NOT NULL DEFAULT 100,
+                metadata_json TEXT,
+                tags_json TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE canvas_node_sources (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO canvas_nodes (id, canvas_id, title, created_at, updated_at) VALUES ('node-1', 'canvas-1', 'Node One', 0, 0);
+            INSERT INTO canvas_node_sources (id, node_id, url, source_type, sort_order, created_at) VALUES ('src-2', 'node-1', 'https://second.example', 'link', 1, 0);
+            INSERT INTO canvas_node_sources (id, node_id, url, source_type, sort_order, created_at) VALUES ('src-1', 'node-1', 'https://first.example', 'file', 0, 0);
+            INSERT INTO schema_version (version) VALUES (21);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert!(
+            !table_exists(&conn, "canvas_node_sources"),
+            "canvas_node_sources should be dropped after migrating to v22"
+        );
+
+        let sources_json: String = conn
+            .query_row("SELECT sources_json FROM canvas_nodes WHERE id = 'node-1'", [], |row| row.get(0))
+            .unwrap();
+        let sources: Vec<serde_json::Value> = serde_json::from_str(&sources_json).unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0]["url"], "https://first.example");
+        assert_eq!(sources[0]["sort_order"], 0);
+        assert_eq!(sources[1]["url"], "https://second.example");
+        assert_eq!(sources[1]["sort_order"], 1);
     }
 }

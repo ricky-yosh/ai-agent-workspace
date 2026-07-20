@@ -3,10 +3,16 @@ import { FileText, Link, Tag, Pencil, Check, Plus, Trash2 } from "lucide-react";
 import { Dialog } from "../components/Dialog";
 import { Button, Input } from "../components/ui";
 
+export interface NodeSource {
+  url: string;
+  source_type: string;
+  sort_order: number;
+}
+
 export interface NodeEditData {
   title: string;
   description: string;
-  sources: { id: string; url: string; source_type: string }[];
+  sources: NodeSource[];
   tags: string[];
 }
 
@@ -18,7 +24,7 @@ interface NodeEditModalProps {
   onAddTag: (tag: string) => void;
   onRemoveTag: (tag: string) => void;
   onAddSource: (url: string, sourceType: "file" | "link") => void;
-  onRemoveSource: (sourceId: string) => void;
+  onRemoveSource: (index: number) => void;
 }
 
 export default function NodeEditModal({
@@ -73,14 +79,13 @@ export default function NodeEditModal({
   function handleAddSource() {
     if (newSourceUrl.trim()) {
       onAddSource(newSourceUrl.trim(), newSourceType);
-      setDraftSources([...draftSources, { id: "", url: newSourceUrl.trim(), source_type: newSourceType }]);
+      setDraftSources([...draftSources, { url: newSourceUrl.trim(), source_type: newSourceType, sort_order: draftSources.length }]);
       setNewSourceUrl("");
     }
   }
 
   function handleRemoveSource(idx: number) {
-    const src = draftSources[idx];
-    if (src.id) onRemoveSource(src.id);
+    onRemoveSource(idx);
     setDraftSources(draftSources.filter((_, i) => i !== idx));
   }
 

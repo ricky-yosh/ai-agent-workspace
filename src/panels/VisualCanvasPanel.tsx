@@ -40,6 +40,7 @@ import {
   backendNodeToXYFlowNode,
   backendEdgeToXYFlowEdge,
   type CanvasNode,
+  type NodeSource,
   type CanvasEdge as BackendCanvasEdge,
 } from "../hooks/canvas/useCanvasSync";
 import "./VisualCanvasPanel.css";
@@ -168,28 +169,9 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
       setXYFlowNodes([]);
       return;
     }
-    Promise.all([
-      safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId }),
-      safeInvoke<{ id: string; node_id: string; url: string; source_type: string }[]>("list_canvas_node_sources", { nodeId: "__all__" }).catch(() => []),
-    ])
-      .then(([backendNodes, backendSources]) => {
-        const sourcesByNode = new Map<string, { id: string; url: string; source_type: string }[]>();
-        for (const s of backendSources) {
-          if (!sourcesByNode.has(s.node_id)) sourcesByNode.set(s.node_id, []);
-          sourcesByNode.get(s.node_id)!.push({ id: s.id, url: s.url, source_type: s.source_type });
-        }
-        setXYFlowNodes(
-          backendNodes.map((n) => {
-            const base = backendNodeToXYFlowNode(n);
-            return {
-              ...base,
-              data: {
-                ...base.data,
-                sources: sourcesByNode.get(n.id) || [],
-              },
-            };
-          })
-        );
+    safeInvoke<CanvasNode[]>("list_canvas_nodes", { canvasId: selectedCanvasId })
+      .then((backendNodes) => {
+        setXYFlowNodes(backendNodes.map(backendNodeToXYFlowNode));
       })
       .catch((err) => {
         console.error("Failed to fetch nodes:", err);
@@ -347,7 +329,7 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
     return {
       title: (nodeData.title as string) || "",
       description: (nodeData.description as string) || "",
-      sources: (nodeData.sources as { id: string; url: string; source_type: string }[]) || [],
+      sources: (nodeData.sources as NodeSource[]) || [],
       tags: (nodeData.tags as string[]) || [],
     };
   }, [nodeModalNodeId, xyflowNodes]);
@@ -398,22 +380,28 @@ function VisualCanvasPanelInner({ panelType: _panelType }: PanelProps) {
 
   const handleAddSource = useCallback(async (url: string, sourceType: "file" | "link") => {
     if (!nodeModalNodeId) return;
+    const node = xyflowNodes.find((n) => n.id === nodeModalNodeId);
+    const currentSources = ((node?.data.sources as NodeSource[]) || []);
+    const nextSources = [...currentSources, { url, source_type: sourceType, sort_order: currentSources.length }];
     try {
-      await safeInvoke("create_canvas_node_source", {
-        nodeId: nodeModalNodeId,
-        url,
-        sourceType,
-        sortOrder: 0,
-      });
+      await safeInvoke("update_canvas_node", { id: nodeModalNodeId, sources: nextSources });
+      setXYFlowNodes((nds) =>
+        nds.map((n) => (n.id === nodeModalNodeId ? { ...n, data: { ...n.data, sources: nextSources } } : n))
+      );
     } catch (err) { console.error(err); }
-  }, [nodeModalNodeId]);
+  }, [nodeModalNodeId, xyflowNodes, setXYFlowNodes]);
 
-  const handleRemoveSource = useCallback(async (sourceId: string) => {
-    if (!sourceId) return;
+  const handleRemoveSource = useCallback(async (index: number) => {
+    if (!nodeModalNodeId) return;
+    const node = xyflowNodes.find((n) => n.id === nodeModalNodeId);
+    const nextSources = ((node?.data.sources as NodeSource[]) || []).filter((_, i) => i !== index);
     try {
-      await safeInvoke("delete_canvas_node_source", { id: sourceId });
+      await safeInvoke("update_canvas_node", { id: nodeModalNodeId, sources: nextSources });
+      setXYFlowNodes((nds) =>
+        nds.map((n) => (n.id === nodeModalNodeId ? { ...n, data: { ...n.data, sources: nextSources } } : n))
+      );
     } catch (err) { console.error(err); }
-  }, []);
+  }, [nodeModalNodeId, xyflowNodes, setXYFlowNodes]);
 
   // ── Edge modal helpers ──────────────────────────────────────────────────
 

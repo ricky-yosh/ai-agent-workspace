@@ -1,4 +1,4 @@
-pub const SCHEMA_VERSION: i32 = 21;
+pub const SCHEMA_VERSION: i32 = 22;
 
 pub const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS canvas_nodes (
     height REAL NOT NULL DEFAULT 100,
     metadata_json TEXT,
     tags_json TEXT,
+    sources_json TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -119,16 +120,6 @@ CREATE TABLE IF NOT EXISTS canvas_groups (
 );
 
 CREATE INDEX IF NOT EXISTS idx_canvas_groups_canvas_id ON canvas_groups(canvas_id);
-
-CREATE TABLE IF NOT EXISTS canvas_node_sources (
-    id TEXT PRIMARY KEY,
-    node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
-    url TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);
 
 CREATE TABLE IF NOT EXISTS canvas_view_states (
     id TEXT PRIMARY KEY,
@@ -195,8 +186,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_tables_includes_canvas_node_sources() {
-        assert!(CREATE_TABLES.contains("canvas_node_sources"));
+    fn test_create_tables_excludes_canvas_node_sources() {
+        assert!(!CREATE_TABLES.contains("canvas_node_sources"));
+    }
+
+    #[test]
+    fn test_create_tables_includes_node_sources_json() {
+        assert!(CREATE_TABLES.contains("sources_json"));
     }
 
     #[test]
@@ -220,8 +216,8 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_version_is_twenty_one() {
-        assert_eq!(SCHEMA_VERSION, 21);
+    fn test_schema_version_is_twenty_two() {
+        assert_eq!(SCHEMA_VERSION, 22);
     }
 
     #[test]
