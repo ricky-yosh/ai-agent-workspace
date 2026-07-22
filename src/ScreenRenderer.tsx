@@ -1,14 +1,15 @@
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import type { Screen, Vertex, Edge, Area, Axis } from "./types/screen";
 import { getPanel } from "./panelRegistry";
-import { PanelContext } from "./PanelContext";
+import { PanelIdentityContext, PanelFocusContext } from "./PanelContext";
 import PanelTypeSelector from "./PanelTypeSelector";
-import { disposeTerminal } from "./TerminalPanel";
+import { useTerminalCache } from "./providers/TerminalCacheProvider";
 import { safeInvoke } from "./safeInvoke";
-import { resizeEdgeLocal, classifyCornerDrag } from "./screenGeometry";
-import type { Adjacency, CornerDragMode } from "./screenGeometry";
-import { areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse } from "./screenMotion";
-import type { AreaRect, SeamSide } from "./screenMotion";
+import {
+  resizeEdgeLocal, classifyCornerDrag,
+  areaRect, diffAreas, prefersReducedMotion, determineEnterSeam, determineExitCollapse,
+} from "./screenLayout";
+import type { Adjacency, CornerDragMode, AreaRect, SeamSide } from "./screenLayout";
 import "./ScreenRenderer.css";
 
 const EPSILON = 0.0001;
@@ -71,6 +72,20 @@ export default function ScreenRenderer({
   onScreenChange,
   onError,
 }: ScreenRendererProps) {
+  const { disposeTerminal } = useTerminalCache();
+  const handleFocusChange = useCallback((areaId: string) => {
+    onFocusedAreaChange?.(areaId);
+  }, [onFocusedAreaChange]);
+
+  // ---------- Memoized focus context value (shared across all areas) ----------
+  // Only changes when focusedAreaId, handleFocusChange, or onScreenChange change.
+  // Panels consuming only PanelIdentityContext will NOT re-render on focus changes.
+  const focusValue = useMemo(() => ({
+    focusedAreaId,
+    onFocusedAreaChange: handleFocusChange,
+    onScreenChange,
+  }), [focusedAreaId, handleFocusChange, onScreenChange]);
+
   // ---------- Refs for stable closures ----------
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef(sessionId);
@@ -141,6 +156,23 @@ export default function ScreenRenderer({
   // `screen` (child props, terminal ids, join/split logic) stay on `screen`.
   const activeScreen = draftScreen ?? screen;
 
+  // ---------- Memoized identity context values (per area) ----------
+  // Prevents identity-context consumers from re-rendering when only focus changes.
+  // The map is rebuilt when the area set or identity props change — NOT when
+  // focusedAreaId changes.
+  const identityValues = useMemo(() => {
+    const map = new Map<string, { workspaceId: string; sessionId: string; areaId: string; terminalId: string | null }>();
+    for (const area of activeScreen.areas) {
+      map.set(area.id, {
+        workspaceId,
+        sessionId,
+        areaId: area.id,
+        terminalId: area.terminal_id,
+      });
+    }
+    return map;
+  }, [workspaceId, sessionId, activeScreen.areas]);
+
   // ---------- Vertex lookup ----------
   const vertexMap = useMemo(() => {
     const map = new Map<string, Vertex>();
@@ -151,9 +183,10 @@ export default function ScreenRenderer({
   }, [activeScreen.vertices]);
 
   // ---------- Areas to render ----------
-  const areasToRender = zoomedAreaId
-    ? activeScreen.areas.filter((a) => a.id === zoomedAreaId)
-    : activeScreen.areas;
+  // Always render ALL areas so React never unmounts TerminalPanel components.
+  // Non-zoomed areas are hidden via CSS `display: none` in the render loop below,
+  // preserving Tauri Channel objects, PTY exit callbacks, and backpressure.
+  const areasToRender = activeScreen.areas;
 
   // ------------------------------------------------------------------
   // Resize snapping helpers
@@ -1122,31 +1155,28 @@ export default function ScreenRenderer({
               top: `${top}%`,
               width: `${width}%`,
               height: `${height}%`,
+              ...(zoomedAreaId && !isZoomed ? { display: "none" } : {}),
             }}
             onClick={() => onFocusedAreaChange?.(area.id)}
             data-area-id={area.id}
           >
             {/* Panel content */}
             {PanelComponent ? (
-              <PanelContext.Provider
-                value={{
-                  workspaceId,
-                  sessionId,
-                  areaId: area.id,
-                  terminalId: area.terminal_id,
-                  focusedAreaId,
-                }}
+              <PanelIdentityContext.Provider
+                value={identityValues.get(area.id)!}
               >
-                <div className="screen-area-content">
-                  <PanelTypeSelector
-                    currentType={area.panel_type}
-                    onTypeSelect={(newType) =>
-                      handlePanelTypeChange(area, newType)
-                    }
-                  />
-                  <PanelComponent panelType={area.panel_type} />
-                </div>
-              </PanelContext.Provider>
+                <PanelFocusContext.Provider value={focusValue}>
+                  <div className={"screen-area-content" + (area.panel_type === "terminal" ? " screen-area-content--terminal" : "")}>
+                    <PanelTypeSelector
+                      currentType={area.panel_type}
+                      onTypeSelect={(newType) =>
+                        handlePanelTypeChange(area, newType)
+                      }
+                    />
+                    <PanelComponent panelType={area.panel_type} />
+                  </div>
+                </PanelFocusContext.Provider>
+              </PanelIdentityContext.Provider>
             ) : (
               <div className="screen-area-content">
                 <PanelTypeSelector

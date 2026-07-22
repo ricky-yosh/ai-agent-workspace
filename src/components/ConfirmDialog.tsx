@@ -1,4 +1,5 @@
 import { Dialog } from "./Dialog";
+import { Button } from "./ui";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -25,13 +26,13 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onClose} title={title}>
       <p className="dialog-confirm-text">{message}</p>
       <div className="dialog-actions">
-        <button className="dialog-btn" onClick={onClose}>{cancelLabel}</button>
-        <button
-          className={`dialog-btn ${destructive ? "dialog-btn-delete" : "dialog-btn-primary"}`}
+        <Button variant="ghost" onClick={onClose}>{cancelLabel}</Button>
+        <Button
+          variant={destructive ? "danger" : "primary"}
           onClick={() => { onConfirm(); onClose(); }}
         >
           {confirmLabel}
-        </button>
+        </Button>
       </div>
     </Dialog>
   );

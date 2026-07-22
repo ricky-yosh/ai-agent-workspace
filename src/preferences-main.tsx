@@ -2,10 +2,13 @@ import React, { useEffect, useState, useCallback } from "react";
 import ReactDOM from "react-dom/client";
 import { Store } from "@tauri-apps/plugin-store";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { initMotion, type MotionPreference, resolveMotion, applyMotion, osPrefersReduced } from "./motionPreference";
+import { applyTheme, type ThemeName } from "./themes";
+import { setShikiTheme } from "./file-panel/shikiSingleton";
 import "./Preferences.css";
-import "./Dialog.css";
+import { Button, Input, SegmentedControl } from "./components/ui";
 
 interface Preset {
   label: string;
@@ -59,6 +62,7 @@ function usePreferences() {
     external_terminal: "",
     pty_command: "$SHELL",
     motion: "system",
+    theme: "dark" as ThemeName,
   });
   const [loading, setLoading] = useState(true);
 
@@ -70,23 +74,27 @@ function usePreferences() {
           autoSave: 300,
         });
         setStore(s);
-        const [editor, diffTool, terminal, ptyCommand, motion] = await Promise.all([
+        const [editor, diffTool, terminal, ptyCommand, motion, theme] = await Promise.all([
           s.get<string>("external_editor"),
           s.get<string>("external_diff_tool"),
           s.get<string>("external_terminal"),
           s.get<string>("pty_command"),
           s.get<string>("motion"),
+          s.get<string>("theme"),
         ]);
+        const themeName = (theme as ThemeName) || "dark";
         setPrefs({
           external_editor: editor ?? "",
           external_diff_tool: diffTool ?? "",
           external_terminal: terminal ?? "",
           pty_command: ptyCommand ?? "$SHELL",
           motion: motion ?? "system",
+          theme: themeName,
         });
+        // Apply theme immediately on load
+        applyTheme(themeName);
       } catch (err) {
         console.error("Failed to load preferences:", err);
-        // TODO: Wire toast notification when ToastContext is available (task 3)
       } finally {
         setLoading(false);
       }
@@ -140,6 +148,7 @@ function ToolRow({ label, presets, value, onChange, placeholder = "App name or b
   return (
     <div className="tool-row">
       <span className="tool-label">{label}</span>
+      {/* NOTE: <select> not migrated — no Select primitive exists */}
       <select className="tool-select" value={selectValue} onChange={handleSelectChange}>
         <option value="">Not configured</option>
         {presets.map((preset) => (
@@ -150,12 +159,10 @@ function ToolRow({ label, presets, value, onChange, placeholder = "App name or b
         <option value={CUSTOM_SENTINEL}>Custom...</option>
       </select>
       {isCustom && (
-        <input
-          className="tool-input"
-          type="text"
+        <Input
           placeholder={placeholder}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(v) => onChange(v)}
         />
       )}
     </div>
@@ -197,9 +204,11 @@ function ExternalToolsForm({ toolPrefs, setToolPrefs }: {
   );
 }
 
-function AppearanceSection({ motionPref, setMotionPref }: {
+function AppearanceSection({ motionPref, setMotionPref, themePref, setThemePref }: {
   motionPref: string;
   setMotionPref: (key: string, value: string) => Promise<void>;
+  themePref: string;
+  setThemePref: (key: string, value: string) => Promise<void>;
 }) {
   const handleMotionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
@@ -207,10 +216,47 @@ function AppearanceSection({ motionPref, setMotionPref }: {
     applyMotion(resolveMotion(value as MotionPreference, osPrefersReduced()));
   };
 
+  const handleThemeChange = (themeName: ThemeName) => {
+    setThemePref("theme", themeName);
+    applyTheme(themeName);
+    setShikiTheme(themeName);
+    emit("theme-changed", { theme: themeName });
+  };
+
+  const themes: { value: ThemeName; label: string; colors: string[] }[] = [
+    { value: "dark", label: "Dark", colors: ["#1e1e1e", "#0078d4", "#cccccc"] },
+    { value: "light", label: "Light", colors: ["#f5f5f5", "#0078d4", "#222222"] },
+    { value: "catppuccin", label: "Catppuccin", colors: ["#1e1e2e", "#cba6f7", "#cdd6f4"] },
+  ];
+
   return (
     <div>
-      <div className="tool-row">
+      <div className="theme-section">
+        <div className="tool-label" style={{ marginBottom: 12 }}>Theme</div>
+        <div className="theme-grid">
+          {themes.map((t) => (
+            <Button
+              key={t.value}
+              variant={themePref === t.value ? "primary" : "ghost"}
+              size="md"
+              onClick={() => handleThemeChange(t.value)}
+              style={{ height: "auto", padding: "8px 12px" }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <div className="theme-swatch">
+                  {t.colors.map((c, i) => (
+                    <div key={i} className="theme-swatch-color" style={{ background: c }} />
+                  ))}
+                </div>
+                <span className="theme-label">{t.label}</span>
+              </div>
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="tool-row" style={{ marginTop: 20 }}>
         <span className="tool-label">Animations</span>
+        {/* NOTE: <select> not migrated — no Select primitive exists */}
         <select className="tool-select" value={motionPref} onChange={handleMotionChange}>
           <option value="system">Follow system</option>
           <option value="full">Always on</option>
@@ -275,26 +321,26 @@ function DangerZoneSection() {
               <div className="danger-label">Delete All Sessions</div>
               <div className="danger-desc">Removes every session from the sidebar.</div>
             </div>
-            <button
-              className="danger-btn"
+            <Button
+              variant="danger"
+              loading={deletingSessions}
               onClick={() => setConfirmAction("sessions")}
-              disabled={deletingSessions}
             >
-              {deletingSessions ? "Deleting..." : "Delete All Sessions"}
-            </button>
+              Delete All Sessions
+            </Button>
           </div>
           <div className="danger-row">
             <div>
               <div className="danger-label">Delete All Templates</div>
               <div className="danger-desc">Removes all custom templates. Built-in templates are preserved.</div>
             </div>
-            <button
-              className="danger-btn"
+            <Button
+              variant="danger"
+              loading={deletingTemplates}
               onClick={() => setConfirmAction("templates")}
-              disabled={deletingTemplates}
             >
-              {deletingTemplates ? "Deleting..." : "Delete All Templates"}
-            </button>
+              Delete All Templates
+            </Button>
           </div>
         </div>
       </div>
@@ -330,25 +376,17 @@ function PreferencesForm() {
 
   return (
     <>
-      <div className="tabs">
-        <button
-          className={`tab ${activeTab === "external-tools" ? "tab-active" : ""}`}
-          onClick={() => setActiveTab("external-tools")}
-        >
-          External Tools
-        </button>
-        <button
-          className={`tab ${activeTab === "appearance" ? "tab-active" : ""}`}
-          onClick={() => setActiveTab("appearance")}
-        >
-          Appearance
-        </button>
-        <button
-          className={`tab ${activeTab === "danger-zone" ? "tab-active" : ""}`}
-          onClick={() => setActiveTab("danger-zone")}
-        >
-          Danger Zone
-        </button>
+      <div style={{ marginBottom: 20 }}>
+        <SegmentedControl
+          options={[
+            { value: "external-tools", label: "External Tools" },
+            { value: "appearance", label: "Appearance" },
+            { value: "danger-zone", label: "Danger Zone" },
+          ]}
+          value={activeTab}
+          onChange={(v) => setActiveTab(v as Tab)}
+          ariaLabel="Preferences tabs"
+        />
       </div>
 
       {activeTab === "external-tools" && (
@@ -356,7 +394,7 @@ function PreferencesForm() {
       )}
 
       {activeTab === "appearance" && (
-        <AppearanceSection motionPref={prefs.motion} setMotionPref={updatePref} />
+        <AppearanceSection motionPref={prefs.motion} setMotionPref={updatePref} themePref={prefs.theme} setThemePref={updatePref} />
       )}
 
       {activeTab === "danger-zone" && <DangerZoneSection />}
@@ -366,8 +404,19 @@ function PreferencesForm() {
 
 initMotion();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <PreferencesForm />
-  </React.StrictMode>,
-);
+// Apply theme before rendering the preferences window
+(async () => {
+  try {
+    const store = await Store.load("preferences.json", { defaults: {}, autoSave: 300 });
+    const savedTheme = await store.get<string>("theme");
+    applyTheme((savedTheme as ThemeName) || "dark");
+  } catch {
+    applyTheme("dark");
+  }
+
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <PreferencesForm />
+    </React.StrictMode>,
+  );
+})();

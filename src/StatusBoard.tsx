@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Copy, Check, X, Plus } from "lucide-react";
+import { RefreshCw, Plus } from "lucide-react";
+import { Button, SnippetCard, SegmentedControl } from "./components/ui";
 import { safeInvoke } from "./safeInvoke";
 import { useSessions } from "./SessionContext";
 import type { BinaryStatus } from "./types/status-board";
@@ -43,7 +44,7 @@ export default function StatusBoard() {
       label: "Claude Code",
       methodHint: "Run in your terminal:",
       buildSnippet(path: string) {
-        return `claude mcp add aiaws -- "${path}"`;
+        return `claude mcp add aiaw -- "${path}"`;
       },
     },
     {
@@ -77,35 +78,9 @@ export default function StatusBoard() {
   ] as const;
 
   const [selectedAgent, setSelectedAgent] = useState("claude-code");
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-
-  /* Reset copy state when agent selection changes */
-  useEffect(() => {
-    setCopyState("idle");
-  }, [selectedAgent]);
-
   const currentAgent = AGENTS.find((a) => a.id === selectedAgent) ?? AGENTS[0];
   const snippetPath = data?.path ?? "<binary path>";
   const snippet = currentAgent.buildSnippet(snippetPath);
-  const copyLabel =
-    copyState === "copied"
-      ? "Copied"
-      : copyState === "failed"
-        ? "Copy failed"
-        : "Copy";
-
-  async function handleCopy() {
-    if (!data) return;
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-    setTimeout(() => setCopyState("idle"), 1500);
-  }
 
   /* ---------- sessions & folder-picker ---------- */
 
@@ -149,9 +124,9 @@ export default function StatusBoard() {
           </div>
         </div>
         <div className="status-card-right">
-          <button className={`status-card-action${loading ? " is-loading" : ""}`} onClick={check} title="Re-check">
+          <Button variant="ghost" size="sm" onClick={check} title="Re-check" loading={loading}>
             <RefreshCw size={14} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -166,53 +141,19 @@ export default function StatusBoard() {
           Register this app's MCP server with your coding agent.
         </p>
 
-        {/* Agent selector (segmented control) */}
-        <div
-          className="agent-selector"
-          role="radiogroup"
-          aria-label="Select agent"
-        >
-          {AGENTS.map((agent) => (
-            <button
-              key={agent.id}
-              className={`agent-selector-btn${selectedAgent === agent.id ? " active" : ""}`}
-              onClick={() => setSelectedAgent(agent.id)}
-              role="radio"
-              aria-checked={selectedAgent === agent.id}
-            >
-              {agent.label}
-            </button>
-          ))}
+        <div style={{ marginBottom: 12 }}>
+          <SegmentedControl
+            options={AGENTS.map((a) => ({ value: a.id, label: a.label }))}
+            value={selectedAgent}
+            onChange={setSelectedAgent}
+            ariaLabel="Select agent"
+          />
         </div>
 
         {/* Snippet area */}
-        <div className="agent-snippet">
-          <p className="agent-method-hint">{currentAgent.methodHint}</p>
-          <div className="agent-snippet-codewrap">
-            <pre className="agent-snippet-code">
-              <code>{snippet}</code>
-            </pre>
-            <button
-              className={`snippet-copy-btn${copyState === "copied" ? " copied" : ""}${copyState === "failed" ? " failed" : ""}`}
-              onClick={handleCopy}
-              disabled={!data}
-              title={copyLabel}
-              aria-label={copyLabel}
-            >
-              <span className="snippet-copy-icon-wrap">
-                <span className={`snippet-copy-icon${copyState === "idle" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
-                  <Copy size={14} />
-                </span>
-                <span className={`snippet-copy-icon${copyState === "copied" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
-                  <Check size={14} />
-                </span>
-                <span className={`snippet-copy-icon${copyState === "failed" ? " snippet-copy-icon-visible" : " snippet-copy-icon-hidden"}`}>
-                  <X size={14} />
-                </span>
-              </span>
-            </button>
-          </div>
-        </div>
+        <SnippetCard hint={currentAgent.methodHint} copyText={snippet} disabled={!data}>
+          {snippet}
+        </SnippetCard>
       </div>
 
       {/* ── Start a session CTA ── */}
@@ -221,13 +162,13 @@ export default function StatusBoard() {
         <p className="status-section-desc">
           Choose a project folder and give your session a name.
         </p>
-        <button
-          className="status-cta-button"
+        <Button
+          variant="primary"
           onClick={() => setShowNewSessionDialog(true)}
         >
           <Plus size={16} />
-          New session
-        </button>
+          {" "}New session <kbd className="status-kbd">⌘N</kbd>
+        </Button>
       </div>
     </div>
   );

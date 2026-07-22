@@ -1,0 +1,220 @@
+.dialog-overlay .panel-actions-dialog {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+.panel-actions-header {
+  padding: 12px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-actions-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.panel-actions-context-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.panel-actions-name {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── List ────────────────────────────────────────────── */
+
+.panel-actions-list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.panel-actions-divider {
+  height: 1px;
+  background: var(--bg-overlay);
+  margin: 4px 10px;
+}
+
+.panel-actions-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  cursor: default;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  color: var(--text-primary);
+}
+
+.panel-actions-item:hover,
+.ui-bg-accent-hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent), transparent 90%) 0%,
+    color-mix(in oklch, var(--accent), transparent 96%) 60%,
+    transparent 100%
+  );
+}
+
+.panel-actions-item--active,
+.ui-bg-accent-active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
+
+.panel-actions-item:focus-visible,
+.ui-focus-accent {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
+  outline: none;
+}
+
+.panel-actions-row-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.panel-actions-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.panel-actions-icon--current {
+  color: var(--accent);
+}
+
+.panel-actions-item:hover .panel-actions-icon,
+.panel-actions-item--active .panel-actions-icon {
+  color: var(--text-primary);
+}
+
+.panel-actions-item:hover .panel-actions-icon--current,
+.panel-actions-item--active .panel-actions-icon--current {
+  color: var(--accent);
+}
+
+.panel-actions-icon-spacer {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.panel-actions-label {
+  font-size: var(--font-size-base);
+  color: inherit;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Current badge ───────────────────────────────────── */
+
+.panel-actions-current-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  line-height: 18px;
+}
+
+.panel-actions-item:hover .panel-actions-current-badge,
+.panel-actions-item--active .panel-actions-current-badge {
+  background: color-mix(in oklch, var(--accent), transparent 80%);
+}
+
+/* ── Footer ──────────────────────────────────────────── */
+
+.panel-actions-footer {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-actions-footer-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--bg-overlay-hover);
+  flex-shrink: 0;
+}
+
+.panel-actions-footer kbd,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+}
+
+/* ── Confirmed (checkmark) state ─────────────────────── */
+
+.panel-actions-item--confirmed {
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: rgb(134, 239, 172);
+}
+.panel-actions-item--confirmed,
+.ui-confirmed {
+  background: var(--confirmed-bg, rgba(34, 197, 94, 0.12)) !important;
+  color: var(--confirmed-color, rgb(134, 239, 172));
+}
+
+.panel-actions-item--confirmed .panel-actions-label {
+  color: rgb(134, 239, 172);
+}
+
+.panel-actions-icon--confirmed {
+  color: rgb(134, 239, 172) !important;
+}
+
+/* ── Motion ──────────────────────────────────────────── */
+
+:root[data-motion="full"] .panel-actions-item {
+  transition: background 0.12s, transform 0.06s;
+}
+
+:root[data-motion="full"] .panel-actions-item--confirmed {
+  transition: background 0.1s, color 0.1s;
+}
+
+:root[data-motion="full"] .panel-actions-item:active:not(:disabled) {
+  transform: scale(0.97);
+}

@@ -18,6 +18,9 @@ src-tauri/target/
 src-tauri/gen/schemas/
 target/
 
+# fastembed model cache
+.fastembed_cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -31,3 +34,6 @@ target/
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Dev-only frontend console mirror
+frontend-console.log

@@ -1,0 +1,21 @@
+.ui-heading {
+  font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  margin: 0;
+}
+
+.ui-heading--1 { font-size: var(--font-size-2xl, 20px); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.2); }
+.ui-heading--2 { font-size: var(--font-size-xl, 18px); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.2); }
+.ui-heading--3 { font-size: var(--font-size-lg, 15px); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.2); }
+.ui-heading--4 { font-size: var(--font-size-base, 13px); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.2); }
+.ui-heading--5 { font-size: var(--font-size-sm, 12px); font-weight: var(--font-weight-medium, 500); line-height: var(--line-height-normal, 1.5); }
+.ui-heading--6 { font-size: var(--font-size-xs, 11px); font-weight: var(--font-weight-medium, 500); line-height: var(--line-height-normal, 1.5); }
+
+.ui-heading--color-primary   { color: var(--text-primary, #fff); }
+.ui-heading--color-secondary { color: var(--text-secondary, #ccc); }
+.ui-heading--color-muted     { color: var(--text-muted, #999); }
+.ui-heading--color-dim       { color: var(--text-dim, #666); }
+
+.ui-heading--weight-normal   { font-weight: var(--font-weight-normal, 400); }
+.ui-heading--weight-medium   { font-weight: var(--font-weight-medium, 500); }
+.ui-heading--weight-semibold { font-weight: var(--font-weight-semibold, 600); }
+.ui-heading--weight-bold     { font-weight: var(--font-weight-bold, 700); }

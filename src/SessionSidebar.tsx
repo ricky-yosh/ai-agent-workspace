@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput, Pencil, X } from "lucide-react";
+import { useState, useRef, useEffect, useMemo, type RefObject } from "react";
+import { PanelLeftClose, PanelLeft, Plus, ArrowLeft, FolderOpen, FolderInput } from "lucide-react";
 import { safeInvoke } from "./safeInvoke";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -8,13 +8,12 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Store } from "@tauri-apps/plugin-store";
 import { useToast } from "./ToastContext";
 import { SessionIcon } from "./SessionVisuals";
-import { useClickOutside } from "./hooks/useClickOutside";
 import { useEventListener } from "./hooks/useEventListener";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Dialog } from "./components/Dialog";
+import SessionActionsModal from "./SessionActionsModal";
+import { Button, Input, Select } from "./components/ui";
 import "./SessionSidebar.css";
-import "./ContextMenu.css";
-import "./Dialog.css";
 
 function folderNameOf(path: string): string {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -164,8 +163,8 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
       <div className="dialog-fields">
         <label className="dialog-label">
           Working Directory
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             className={`dialog-dropzone${workingDir ? " has-value" : ""}${isDragOver ? " drag-over" : ""}`}
             autoFocus
             onClick={async () => {
@@ -187,88 +186,64 @@ function NewSessionDialog({ open, onClose, onCreate, groupedSessions }: NewSessi
                 <span className="dialog-dropzone-hint">or click to browse</span>
               </>
             )}
-          </button>
+          </Button>
         </label>
         {uniqueDirs.length > 0 && (
-          <label className="dialog-label">
-            Recent directories
-            <select
-              className="dialog-input"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) applyWorkingDir(e.target.value);
-              }}
-            >
-              <option value="" disabled>Select a recent directory...</option>
-              {uniqueDirs.map((dir) => (
-                <option key={dir} value={dir}>{dir}</option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Recent directories"
+            placeholder="Select a recent directory..."
+            options={uniqueDirs.map((dir) => ({ value: dir, label: dir }))}
+            value=""
+            onChange={(v) => { if (v) applyWorkingDir(v); }}
+          />
         )}
         <label className="dialog-label">
           Name
-          <input
-            className="dialog-input"
+          <Input
             value={name}
-            onChange={(e) => {
+            onChange={(v) => {
               nameEditedRef.current = true;
-              setName(e.target.value);
+              setName(v);
             }}
             placeholder="Session name"
           />
         </label>
       </div>
       <div className="dialog-actions">
-        <button
-          className="dialog-btn dialog-btn-cancel"
-          onClick={onClose}
-        >
-          Cancel
-        </button>
-        <button
-          className="dialog-btn dialog-btn-create"
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button
+          variant="primary"
           onClick={() => onCreate(name.trim(), workingDir.trim())}
           disabled={!name.trim() || !workingDir.trim()}
         >
           Create
-        </button>
+        </Button>
       </div>
     </Dialog>
   );
 }
 
-export default function SessionSidebar() {
+export default function SessionSidebar({ openActionsRef, closeActionsRef }: { openActionsRef?: RefObject<((sessionId: string) => void) | null>; closeActionsRef?: RefObject<(() => void) | null> }) {
   const {
     sessions, activeSessionId, setActiveSessionId, refreshSessions,
     showNewSessionDialog, setShowNewSessionDialog,
     sidebarCollapsed, setSidebarCollapsed,
   } = useSessions();
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
-    null,
-  );
-  const [renameValue, setRenameValue] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
-  const [ctxMenuOpen, setCtxMenuOpen] = useState(false);
+  const [sessionActionsId, setSessionActionsId] = useState<string | null>(null);
 
   const { addToast } = useToast();
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(contextMenuRef, () => setContextMenu(null));
+  const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
 
   useEffect(() => {
-    if (contextMenu) {
-      setCtxMenuOpen(false);
-      const raf = requestAnimationFrame(() => setCtxMenuOpen(true));
-      return () => cancelAnimationFrame(raf);
-    } else {
-      setCtxMenuOpen(false);
-    }
-  }, [contextMenu]);
+    if (openActionsRef) openActionsRef.current = (id) => setSessionActionsId(prev => prev === id ? null : id);
+    return () => { if (openActionsRef) openActionsRef.current = null; };
+  }, [openActionsRef]);
 
-  const { isResizing, handleMouseDown, width: sidebarWidth } = useSidebarResize(sidebarCollapsed, setSidebarCollapsed);
+  useEffect(() => {
+    if (closeActionsRef) closeActionsRef.current = () => setSessionActionsId(null);
+    return () => { if (closeActionsRef) closeActionsRef.current = null; };
+  }, [closeActionsRef]);
 
   const grouped = useMemo(() => sessions.reduce<Record<string, SessionSummary[]>>(
     (acc, s) => {
@@ -304,24 +279,6 @@ export default function SessionSidebar() {
     }).catch(console.error);
   }
 
-  function handleStartRename(session: SessionSummary) {
-    setRenamingSessionId(session.id);
-    setRenameValue(session.name);
-    setTimeout(() => renameInputRef.current?.focus(), 0);
-  }
-
-  function handleSaveRename(sessionId: string) {
-    if (renameValue.trim()) {
-      safeInvoke("rename_session", {
-        sessionId,
-        newName: renameValue.trim(),
-      }, (msg) => addToast({ type: "error", message: msg })).then(() => {
-        refreshSessions();
-      }).catch(console.error);
-    }
-    setRenamingSessionId(null);
-  }
-
   function handleDelete(sessionId: string) {
     safeInvoke("delete_session", { sessionId }, (msg) => addToast({ type: "error", message: msg })).then(() => {
       setDeleteConfirmId(null);
@@ -332,19 +289,17 @@ export default function SessionSidebar() {
 
   useEventListener(document, "keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (contextMenu) {
-      setContextMenu(null);
+    if (sessionActionsId) {
+      setSessionActionsId(null);
     } else if (deleteConfirmId) {
       setDeleteConfirmId(null);
     } else if (showNewSessionDialog) {
       setShowNewSessionDialog(false);
-    } else if (renamingSessionId) {
-      setRenamingSessionId(null);
     }
-  }, [showNewSessionDialog, deleteConfirmId, renamingSessionId, contextMenu]);
+  }, [showNewSessionDialog, deleteConfirmId, sessionActionsId]);
 
-  const contextSession = contextMenu
-    ? sessions.find((s) => s.id === contextMenu.sessionId)
+  const contextSession = sessionActionsId
+    ? sessions.find((s) => s.id === sessionActionsId)
     : null;
 
   async function handleOpenInFinder() {
@@ -362,19 +317,19 @@ export default function SessionSidebar() {
         addToast({ type: "error", message: "Failed to open Finder" });
       }
     }
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleCopySessionId() {
     if (!contextSession) return;
     await copyToClipboard(contextSession.id, "session ID", (msg) => addToast({ type: "error", message: msg }));
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleCopySessionPath() {
     if (!contextSession) return;
     await copyToClipboard(contextSession.working_directory, "path", (msg) => addToast({ type: "error", message: msg }));
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function getToolPref(key: string): Promise<string> {
@@ -432,7 +387,7 @@ export default function SessionSidebar() {
       "editor",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleOpenInDiff() {
@@ -450,7 +405,7 @@ export default function SessionSidebar() {
       "diff tool",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   async function handleOpenInTerminal() {
@@ -461,51 +416,54 @@ export default function SessionSidebar() {
       "terminal",
       openPreferences,
     );
-    setContextMenu(null);
+    setSessionActionsId(null);
   }
 
   return (
     <>
       <aside className={`sidebar${sidebarCollapsed ? " sidebar-collapsed" : ""}${isResizing ? " sidebar-resizing" : ""}`} style={{ width: sidebarCollapsed ? 42 : sidebarWidth }}>
         <div className="sidebar-header">
-          <button
-            className="sidebar-toggle-btn"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
-          </button>
+          </Button>
           <div className="sidebar-header-content">
             {activeSessionId ? (
-              <button
-                className="sidebar-title sidebar-title-back"
-                onClick={() => {
-                  const sid = activeSessionId;
-                  setActiveSessionId(null);
-                  if (sid) {
-                    safeInvoke("close_session", { sessionId: sid }, (msg) => addToast({ type: "error", message: msg })).then(() => {
-                      refreshSessions();
-                    }).catch(console.error);
-                  }
-                }}
-                title="Back to all sessions"
-                aria-label="Close session and return to all sessions"
-              >
-                <ArrowLeft size={14} className="sidebar-title-back-icon" />
-                <span className="sidebar-title-back-label">
-                  {sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}
-                </span>
-              </button>
+              <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const sid = activeSessionId;
+                    setActiveSessionId(null);
+                    if (sid) {
+                      safeInvoke("close_session", { sessionId: sid }, (msg) => addToast({ type: "error", message: msg })).then(() => {
+                        refreshSessions();
+                      }).catch(console.error);
+                    }
+                  }}
+                  title="Back to home"
+                  aria-label="Close session and return to home"
+                >
+                  <ArrowLeft size={14} />
+                  <span style={{ fontWeight: "var(--font-weight-semibold)", fontSize: "var(--font-size-base)", letterSpacing: "0.2px" }}>{sessions.find((s) => s.id === activeSessionId)?.name ?? "Sessions"}</span>
+                </Button>
+              </div>
             ) : (
               <h2 className="sidebar-title">Sessions</h2>
             )}
-            <button
-              className="new-session-btn"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowNewSessionDialog(true)}
               title="New Session"
             >
               <Plus size={16} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -525,12 +483,15 @@ export default function SessionSidebar() {
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setContextMenu({ x: e.clientX, y: e.clientY, sessionId: s.id });
+                        setSessionActionsId(s.id);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
+                        if (e.key === "Enter") {
                           e.preventDefault();
                           handleSelect(s.id);
+                        } else if (e.key === " ") {
+                          e.preventDefault();
+                          setSessionActionsId(s.id);
                         }
                       }}
                       role="button"
@@ -549,47 +510,8 @@ export default function SessionSidebar() {
                         aria-hidden="true"
                         title={s.state}
                       />
-                      {renamingSessionId === s.id ? (
-                          <input
-                            ref={renameInputRef}
-                            className="rename-input"
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => handleSaveRename(s.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveRename(s.id);
-                              if (e.key === "Escape") setRenamingSessionId(null);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          <span className="session-name">{s.name}</span>
-                        )}
+                      <span className="session-name">{s.name}</span>
                       </div>
-                      <div className="session-actions">
-                      <button
-                        className="session-action-btn"
-                        title="Rename"
-                        aria-label={`Rename ${s.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartRename(s);
-                        }}
-                      >
-                        <Pencil size={13} />
-                      </button>
-                      <button
-                        className="session-action-btn"
-                        title="Delete"
-                        aria-label={`Delete ${s.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirmId(s.id);
-                        }}
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -599,8 +521,10 @@ export default function SessionSidebar() {
           <div className="sidebar-view sidebar-view-collapsed">
             <div className="sidebar-collapsed-sessions">
               {sessions.map((s) => (
-                <button
+                <Button
                   key={s.id}
+                  variant="ghost"
+                  size="sm"
                   className={`sidebar-collapsed-session${s.id === activeSessionId ? " active" : ""}`}
                   onClick={() => handleSelect(s.id)}
                   title={`${s.name} — ${s.state}`}
@@ -612,7 +536,7 @@ export default function SessionSidebar() {
                     size={22}
                   />
                   <span className={`session-state-dot session-state-dot-${s.state.toLowerCase()}`} aria-hidden="true" />
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -626,14 +550,12 @@ export default function SessionSidebar() {
         onMouseDown={handleMouseDown}
       />
 
-      {showNewSessionDialog && (
-        <NewSessionDialog
-          open={showNewSessionDialog}
-          onClose={() => setShowNewSessionDialog(false)}
-          onCreate={handleCreate}
-          groupedSessions={grouped}
-        />
-      )}
+      <NewSessionDialog
+        open={showNewSessionDialog}
+        onClose={() => setShowNewSessionDialog(false)}
+        onCreate={handleCreate}
+        groupedSessions={grouped}
+      />
 
       <ConfirmDialog
         open={deleteConfirmId !== null}
@@ -645,29 +567,27 @@ export default function SessionSidebar() {
         destructive
       />
 
-      {contextMenu && (
-        <div ref={contextMenuRef} className={`context-menu${ctxMenuOpen ? " open" : ""}`} style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <div className="context-menu-item" onClick={handleOpenInFinder}>
-            Open in Finder
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInEditor}>
-            Open in Editor
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInDiff}>
-            Open in External Diff
-          </div>
-          <div className="context-menu-item" onClick={handleOpenInTerminal}>
-            Open in Terminal
-          </div>
-          <div className="context-menu-divider" />
-          <div className="context-menu-item" onClick={handleCopySessionId}>
-            Copy SessionID
-          </div>
-          <div className="context-menu-item" onClick={handleCopySessionPath}>
-            Copy Session Path
-          </div>
-        </div>
-      )}
+      <SessionActionsModal
+        open={sessionActionsId !== null}
+        onClose={() => setSessionActionsId(null)}
+        session={contextSession ?? null}
+        onOpenInFinder={handleOpenInFinder}
+        onOpenInEditor={handleOpenInEditor}
+        onOpenInDiff={handleOpenInDiff}
+        onOpenInTerminal={handleOpenInTerminal}
+        onCopyId={handleCopySessionId}
+        onCopyPath={handleCopySessionPath}
+        onRename={(newName) => {
+          if (contextSession) {
+            safeInvoke("rename_session", { sessionId: contextSession.id, newName }, (msg) => addToast({ type: "error", message: msg }))
+              .then(() => refreshSessions())
+              .catch(console.error);
+          }
+        }}
+        onDelete={() => {
+          if (contextSession) setDeleteConfirmId(contextSession.id);
+        }}
+      />
     </>
   );
 }

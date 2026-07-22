@@ -1,25 +1,7 @@
-:root {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #252526;
-  --bg-active: #37373d;
-  --bg-hover: #2a2a2a;
-  --text-primary: #cccccc;
-  --text-muted: #6e6e6e;
-  --text-dim: #888888;
-  --border-color: #3c3c3c;
-  --accent-color: #0078d4;
-  --danger-color: #d32f2f;
-  --dot-running: #4caf50;
-  --dot-paused: #ff9800;
-  --dot-missing: #f44336;
-  --canvas-bg: #121212;
-  --bg-panel: #232324;
-  --bg-panel-raised: #2c2c2e;
-  --gutter: 8px;
-  --radius-island: 8px;
-  --shadow-island: 0 1px 3px rgba(0,0,0,.4), 0 4px 12px rgba(0,0,0,.25);
-  --radius-control: 6px;
-}
+/* All color/layout tokens are set by applyTheme() in src/themes/index.ts.
+   The :root block is intentionally empty — themes inject values at runtime. */
+
+@import "./components/ui/shared.css";
 
 * {
   margin: 0;
@@ -36,11 +18,10 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
+  font-family: var(--font-family-sans);
   font-size: 13px;
   color: var(--text-primary);
-  background: #121212;
+  background: var(--canvas-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -54,12 +35,71 @@ body {
   position: relative;
 }
 
+/* Canvas grain — sits on the dark background between panels */
+.app-layout::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-base);
+  opacity: var(--noise-opacity, 0.07);
+  mix-blend-mode: var(--noise-blend, screen);
+  background-image: var(--noise-img);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+
 .main-content {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #121212;
+  background: var(--canvas-bg);
   overflow: hidden;
+}
+
+.home-hint-svg {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 170px;
+  height: auto;
+  aspect-ratio: 144 / 96;
+  pointer-events: none;
+  z-index: var(--z-surface);
+  background-color: var(--text-primary);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+.home-hint-svg--mac {
+  -webkit-mask-image: url("./assets/home-page-session-hint/home-page-session-hint-mac.svg");
+  mask-image: url("./assets/home-page-session-hint/home-page-session-hint-mac.svg");
+}
+
+.home-hint-svg--linux {
+  -webkit-mask-image: url("./assets/home-page-session-hint/home-page-session-hint-linux.svg");
+  mask-image: url("./assets/home-page-session-hint/home-page-session-hint-linux.svg");
+}
+
+@media (max-width: 1200px) {
+  .home-hint-svg {
+    display: none;
+  }
+}
+
+.home-hint-svg--mac {
+  -webkit-mask-image: url("./assets/home-page-session-hint/home-page-session-hint-mac.svg");
+  mask-image: url("./assets/home-page-session-hint/home-page-session-hint-mac.svg");
+}
+
+.home-hint-svg--linux {
+  -webkit-mask-image: url("./assets/home-page-session-hint/home-page-session-hint-linux.svg");
+  mask-image: url("./assets/home-page-session-hint/home-page-session-hint-linux.svg");
 }
 
 .tab-content {

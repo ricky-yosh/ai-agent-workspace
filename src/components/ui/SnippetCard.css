@@ -1,0 +1,41 @@
+.ui-snippet-card {
+  background: var(--bg-panel);
+  border-radius: var(--radius-island);
+  padding: 16px;
+  box-shadow: var(--shadow-island);
+}
+
+.ui-snippet-card__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  user-select: none;
+}
+
+.ui-snippet-card__codewrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+}
+
+.ui-snippet-card__code {
+  margin: 0;
+  padding: 12px 44px 12px 12px;
+  background: var(--bg-primary);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
+  user-select: text;
+}
+
+.ui-snippet-card__copy {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  z-index: var(--z-surface);
+}

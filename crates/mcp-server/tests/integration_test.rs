@@ -100,7 +100,7 @@ fn test_handshake() {
 
     let line2 = send_tools_list(&mut server);
     eprintln!("R2: {}", line2.trim());
-    assert!(line2.contains("session_create"), "Expected tools list");
+    assert!(line2.contains("issue_create"), "Expected tools list");
 
     drop(server.stdin);
     let _ = server.child.wait();
@@ -124,7 +124,7 @@ fn test_startup_single_match() {
 
     let line2 = send_tools_list(&mut server);
     eprintln!("R2: {}", line2.trim());
-    assert!(line2.contains("session_create"), "Expected tools list");
+    assert!(line2.contains("issue_create"), "Expected tools list");
 
     drop(server.stdin);
     let _ = server.child.wait();

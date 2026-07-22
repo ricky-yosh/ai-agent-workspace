@@ -1,0 +1,25 @@
+.ui-text {
+  font-family: var(--font-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+  margin: 0;
+}
+
+.ui-text--size-xs  { font-size: var(--font-size-xs, 11px); }
+.ui-text--size-sm  { font-size: var(--font-size-sm, 12px); }
+.ui-text--size-base { font-size: var(--font-size-base, 13px); }
+.ui-text--size-lg  { font-size: var(--font-size-lg, 15px); }
+.ui-text--size-xl  { font-size: var(--font-size-xl, 18px); }
+.ui-text--size-2xl { font-size: var(--font-size-2xl, 20px); }
+
+.ui-text--weight-normal   { font-weight: var(--font-weight-normal, 400); }
+.ui-text--weight-medium   { font-weight: var(--font-weight-medium, 500); }
+.ui-text--weight-semibold { font-weight: var(--font-weight-semibold, 600); }
+.ui-text--weight-bold     { font-weight: var(--font-weight-bold, 700); }
+
+.ui-text--color-primary   { color: var(--text-primary, #fff); }
+.ui-text--color-secondary { color: var(--text-secondary, #ccc); }
+.ui-text--color-muted     { color: var(--text-muted, #999); }
+.ui-text--color-dim       { color: var(--text-dim, #666); }
+
+.ui-text--leading-tight   { line-height: var(--line-height-tight, 1.2); }
+.ui-text--leading-normal  { line-height: var(--line-height-normal, 1.5); }
+.ui-text--leading-relaxed { line-height: var(--line-height-relaxed, 1.6); }

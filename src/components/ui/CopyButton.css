@@ -1,0 +1,85 @@
+.ui-copy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-elevated, rgba(128, 128, 128, 0.10));
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+}
+
+.ui-copy-button--idle:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+  color: var(--text-primary);
+}
+
+.ui-copy-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-copy-button--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-copy-button--sm {
+  padding: 2px 6px;
+  font-size: var(--font-size-xs, 11px);
+}
+
+.ui-copy-button--md {
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  font-size: var(--font-size-sm, 12px);
+}
+
+.ui-copy-button--copied {
+  color: var(--confirmed-color, rgb(134, 239, 172));
+  border-color: var(--confirmed-color, rgb(134, 239, 172));
+}
+
+.ui-copy-button--failed {
+  color: var(--danger, #ef4444);
+  border-color: var(--danger, #ef4444);
+}
+
+.ui-copy-button__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-copy-button--sm .ui-copy-button__icon-wrap {
+  width: 14px;
+  height: 14px;
+}
+
+.ui-copy-button--md .ui-copy-button__icon-wrap {
+  width: 16px;
+  height: 16px;
+}
+
+.ui-copy-button__icon {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-copy-button__label {
+  white-space: nowrap;
+}
+
+:root[data-motion="full"] .ui-copy-button:not(:disabled) {
+  transition: background-color var(--duration-fast, 100ms), color var(--duration-fast, 100ms), border-color var(--duration-fast, 100ms), transform var(--duration-fast, 100ms);
+}
+
+:root[data-motion="full"] .ui-copy-button:active:not(:disabled) {
+  transform: scale(0.96);
+}

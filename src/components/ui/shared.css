@@ -1,0 +1,63 @@
+/* ── Z-index scale ─────────────────────────────────────── */
+:root {
+  --z-base: 0;
+  --z-surface: 1;
+  --z-overlay: 100;
+  --z-context: 1000;
+  --z-toast: 2000;
+}
+
+/* ── Accent hover gradient ────────────────────────────── */
+.ui-bg-accent-hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent), transparent 90%) 0%,
+    color-mix(in oklch, var(--accent), transparent 96%) 60%,
+    transparent 100%
+  );
+}
+
+.ui-bg-accent-active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
+
+.ui-focus-accent {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
+  outline: none;
+}
+
+/* ── Confirmed state ──────────────────────────────────── */
+.ui-confirmed {
+  background: var(--confirmed-bg, rgba(34, 197, 94, 0.12)) !important;
+  color: var(--confirmed-color, rgb(134, 239, 172));
+}
+
+/* ── Keyboard shortcut pill ────────────────────────────── */
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  border-radius: var(--radius-xs);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.ui-kbd--sm {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-size: 10px;
+}
+
+.ui-kbd--md {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  border-color: var(--border-overlay);
+}

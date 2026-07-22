@@ -12,18 +12,19 @@ A macOS desktop app where humans and AI agents share a visual workspace. The app
 ## Installation
 
 1. Download the `.dmg` from the [latest release](../../releases/latest) and open it.
-2. Before dragging to `/Applications`, run this in Terminal to clear the macOS quarantine flag (the app is not yet notarized):
+2. Drag the app to `/Applications`.
+3. Clear the macOS quarantine flag (the app is not yet notarized) by running this in Terminal:
    ```sh
-   xattr -cr "/Volumes/AI Agent Workspace/AI Agent Workspace.app"
+   xattr -cr "/Applications/AI Agent Workspace.app"
    ```
-3. Drag the app to `/Applications` and open it — the zero state walks you through registering the MCP server with your AI tool.
+4. Open the app — the zero state walks you through registering the MCP server with your AI tool.
 
 ## MCP Setup
 
 Register the MCP server with Claude Code:
 
 ```sh
-claude mcp add aiaws -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
+claude mcp add aiaw -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
 ```
 
 The app's zero state can do this for you, or you can run it manually. The binary lives inside the `.app` bundle — no separate installation needed.
@@ -48,3 +49,7 @@ The automatic injection means that if you launch Claude Code from the app's buil
 ## Building from Source
 
 See [`docs/commands.md`](docs/commands.md) for build, release, and MCP commands.
+
+## License
+
+Released under the [MIT License](LICENSE). You are free to use, modify, and distribute this app.

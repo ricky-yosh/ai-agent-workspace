@@ -41,21 +41,20 @@ bash scripts/build-release.sh
 ```
 This creates the git tag, pushes it, creates the GitHub release, and attaches all installer artifacts found in `target/release/bundle/`. Bump the version number in `package.json`, `src-tauri/tauri.conf.json`, and all `crates/*/Cargo.toml` before each release.
 
-> **Note:** The app is not yet notarized, so macOS will block it with a "damaged" warning after download. Users must run:
+> **Note:** The app is not yet notarized, so macOS will block it with a "damaged" warning after download. Users must drag the app to `/Applications`, then run:
 > ```sh
-> xattr -cr "/Volumes/AI Agent Workspace/AI Agent Workspace.app"
+> xattr -cr "/Applications/AI Agent Workspace.app"
 > ```
-> before dragging to `/Applications`.
 
 ## MCP
 
 ```sh
 # Register the MCP server with Claude Code (absolute path — no install needed)
-claude mcp add aiaws -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
+claude mcp add aiaw -- "/Applications/AI Agent Workspace.app/Contents/Resources/aiaw-mcp-server"
 
 # List registered MCP servers
 claude mcp list
 
 # Remove the MCP server
-claude mcp remove aiaws
+claude mcp remove aiaw
 ```

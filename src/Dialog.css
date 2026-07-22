@@ -7,9 +7,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
-  opacity: 0;
+  z-index: var(--z-overlay);
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-normal, 200ms) cubic-bezier(0.2, 0, 0, 1);
 }
 
 .dialog-overlay.open {
@@ -24,61 +25,87 @@
 
 .dialog {
   background: var(--bg-secondary);
-  border-radius: 8px;
-  padding: 24px;
+  border-radius: var(--radius-lg, 8px);
+  padding: var(--space-6);
   min-width: 360px;
   max-width: 440px;
-  box-shadow: 0 0 0 1px var(--border-color), 0 12px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
+  will-change: transform, opacity;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  outline: none;
+  pointer-events: auto;
   opacity: 0;
   transform: scale(0.97) translateY(8px);
+  transition: opacity var(--duration-normal, 200ms) cubic-bezier(0.2, 0, 0, 1),
+              transform var(--duration-normal, 200ms) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .dialog.open {
   opacity: 1;
-  transform: none;
+  transform: scale(1) translateY(0);
 }
 
 .dialog.closing {
   opacity: 0;
   transform: translateY(8px);
+  transition: opacity var(--duration-normal, 200ms) cubic-bezier(0.2, 0, 0, 1),
+              transform var(--duration-normal, 200ms) cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Modal surface noise — minimal, elevated surfaces are cleanest */
+.dialog::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-surface);
+  opacity: 0.018;
+  mix-blend-mode: screen;
+  background-image: var(--noise-img);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  border-radius: var(--radius-lg, 8px);
 }
 
 .dialog-title {
-  font-size: 15px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   text-wrap: balance;
 }
 
 .dialog-fields {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
 }
 
 .dialog-label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
   color: var(--text-dim);
 }
 
 .dialog-input {
   padding: 8px 10px;
-  background: #3c3c3c;
-  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   outline: none;
   font-family: inherit;
 }
 
-.dialog-input:focus {
-  border-color: var(--accent-color);
+.dialog-input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle, rgba(0, 120, 212, 0.18));
 }
 
 .dialog-input::placeholder {
@@ -90,20 +117,20 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--space-1);
   width: 100%;
   min-height: 140px;
   padding: 20px 16px;
   background: var(--bg-primary);
-  border: 1.5px dashed var(--border-color);
-  border-radius: 6px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-md, 6px);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-family: inherit;
   text-align: center;
   cursor: pointer;
   box-sizing: border-box;
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition: border-color var(--duration-fast, 100ms), background var(--duration-fast, 100ms), color var(--duration-fast, 100ms);
 }
 
 .dialog-dropzone:hover {
@@ -113,24 +140,24 @@
 
 .dialog-dropzone:focus-visible {
   outline: none;
-  border-color: var(--accent-color);
+  border-color: var(--accent);
 }
 
 .dialog-dropzone.drag-over {
   border-style: solid;
-  border-color: var(--accent-color);
+  border-color: var(--accent);
   background: rgba(45, 140, 255, 0.08);
   color: var(--text-primary);
 }
 
 .dialog-dropzone.has-value {
   border-style: solid;
-  background: #3c3c3c;
+  background: var(--bg-input);
   color: var(--text-primary);
 }
 
 .dialog-dropzone.has-value:hover {
-  background: #4a4a4a;
+  background: var(--bg-input-hover);
   border-color: var(--text-muted);
 }
 
@@ -141,7 +168,7 @@
 
 .dialog-dropzone.drag-over .dialog-dropzone-icon,
 .dialog-dropzone.has-value .dialog-dropzone-icon {
-  color: var(--accent-color);
+  color: var(--accent);
 }
 
 .dialog-dropzone-title {
@@ -175,35 +202,51 @@
   margin-top: 2px;
 }
 
+/* Dropzone uses vertical stacking — override Button's horizontal content wrapper */
+.dialog-dropzone .ui-button__content {
+  flex-direction: column;
+  width: 100%;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .dialog-btn {
-  padding: 6px 16px;
-  border: 1px solid var(--border-color);
+  padding: 6px var(--space-4);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   cursor: pointer;
-  background: #3c3c3c;
+  background: var(--bg-input);
   color: var(--text-primary);
   font-family: inherit;
 }
 
 .dialog-btn:hover {
-  background: #4a4a4a;
+  background: var(--bg-input-hover);
+}
+
+.dialog-btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-inset);
 }
 
 .dialog-btn-create {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
 }
 
 .dialog-btn-create:hover {
-  background: #1a8cff;
+  background: var(--accent-hover);
+}
+
+.dialog-btn-create:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-inset);
 }
 
 .dialog-btn-create:disabled {
@@ -212,50 +255,38 @@
 }
 
 .dialog-btn-delete {
-  color: var(--danger-color);
-  border-color: var(--danger-color);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .dialog-btn-delete:hover {
-  background: var(--danger-color);
+  background: var(--danger);
   color: white;
 }
 
 .dialog-btn-primary {
-  background: var(--accent-color);
-  border-color: var(--accent-color);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
 }
 
 .dialog-btn-primary:hover {
-  background: #1a8cff;
+  background: var(--accent-hover);
 }
 
 .dialog-confirm-text {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
   line-height: 1.4;
   text-wrap: pretty;
-}
-
-:root[data-motion="full"] .dialog-overlay {
-  transition-property: opacity;
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-motion="full"] .dialog {
-  transition-property: opacity, transform;
-  transition-duration: 150ms;
-  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 :root[data-motion="full"] .dialog-btn,
 :root[data-motion="full"] .dialog-btn-create,
 :root[data-motion="full"] .dialog-btn-delete,
 :root[data-motion="full"] .dialog-btn-primary {
-  transition: transform 80ms cubic-bezier(0.2, 0, 0, 1);
+  transition: transform var(--duration-fast, 100ms) cubic-bezier(0.2, 0, 0, 1), box-shadow var(--duration-fast, 100ms) ease;
 }
 
 :root[data-motion="full"] .dialog-btn:active,
@@ -266,4 +297,37 @@
 
 :root[data-motion="full"] .dialog-btn-create:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+.dialog-overlay--action {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+}
+
+.dialog-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.dialog-close-btn::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.dialog-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }

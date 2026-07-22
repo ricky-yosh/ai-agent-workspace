@@ -1,17 +1,23 @@
 .shortcuts-dialog {
-  width: 400px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
 }
 
+.shortcuts-body-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
 .shortcuts-body {
   padding: 0 0 16px;
   overflow-y: auto;
+  max-height: 60vh;
 }
 
 .shortcuts-group {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .shortcuts-group:last-child {
@@ -19,11 +25,11 @@
 }
 
 .shortcuts-group-title {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--text-muted);
-  padding: 8px 16px 4px;
+  padding: var(--space-2) var(--space-4) var(--space-1);
   user-select: none;
   text-wrap: balance;
 }
@@ -32,23 +38,71 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 16px;
-  font-size: 13px;
+  padding: var(--space-1) var(--space-4);
+  font-size: var(--font-size-base);
+  border-radius: var(--radius-sm);
+  margin: 0 6px;
+  transition: background 0.12s;
+}
+
+.shortcuts-row--active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
 }
 
 .shortcuts-keys {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.shortcuts-keys kbd,
+.ui-kbd.ui-kbd--md {
+  font-family: var(--font-family-sans);
   font-size: 12px;
   background: var(--bg-hover);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  padding: 2px 8px;
+  padding: 2px 6px;
   color: var(--text-primary);
-  white-space: nowrap;
+  line-height: 1.4;
 }
 
 .shortcuts-action {
   color: var(--text-dim);
   margin-left: 24px;
   text-align: right;
+}
+
+.shortcuts-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.shortcuts-footer-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--bg-overlay-hover);
+  flex-shrink: 0;
+}
+
+.shortcuts-footer kbd,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
 }

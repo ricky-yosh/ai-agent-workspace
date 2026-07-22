@@ -1,0 +1,253 @@
+/* IssueModal — keyboard-first command-palette styling, aligned with the
+   shared modal visual language (see NewWorkspaceModal.css). */
+
+/* ── Header ───────────────────────────────────────────────── */
+.issue-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.issue-modal-header__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.issue-modal-header__left svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Read mode ────────────────────────────────────────────── */
+.issue-modal-read {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.issue-modal-read__title {
+  line-height: 1.3;
+}
+
+.issue-modal-read__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.issue-modal-read__meta .ui-text--color-muted {
+  font-size: var(--font-size-xs);
+}
+
+.issue-modal-read__separator {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-1) 0;
+}
+
+.issue-modal-error {
+  margin-bottom: var(--space-3);
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--danger-subtle);
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Sub-page back link ──────────────────────────────── */
+
+.issue-modal-subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+.issue-modal-back {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.issue-modal-back:hover {
+  color: var(--text-primary);
+}
+
+/* ── List (actions + label picker) ───────────────────── */
+
+.issue-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.issue-modal-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border-radius: var(--radius-md, 6px);
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background: transparent;
+  transition: background var(--duration-fast, 120ms);
+}
+
+.issue-modal-item:hover,
+.ui-bg-accent-hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent), transparent 90%) 0%,
+    color-mix(in oklch, var(--accent), transparent 96%) 60%,
+    transparent 100%
+  );
+}
+
+.issue-modal-item.issue-modal-item--active,
+.ui-bg-accent-active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
+
+.issue-modal-item.issue-modal-item--destructive {
+  color: var(--danger);
+}
+
+.issue-modal-item.issue-modal-item--destructive svg {
+  color: var(--danger);
+}
+
+.issue-modal-item svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.issue-modal-spinner {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: issue-modal-spin 0.6s linear infinite;
+}
+
+@keyframes issue-modal-spin {
+  to { transform: rotate(360deg); }
+}
+
+.issue-modal-item-body {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-modal-item-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.issue-modal-item-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.issue-modal-pill {
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+}
+
+.issue-modal-item-key,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+}
+
+.issue-modal-item--active .issue-modal-item-key {
+  color: var(--text-muted);
+}
+
+/* Label picker row */
+.issue-modal-picker-idx {
+  width: 16px;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.issue-modal-picker-pill {
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.issue-modal-picker-current {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* ── Footer: hint bar ────────────────────────────────── */
+
+.issue-modal-hints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.issue-modal-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.issue-modal-hints kbd,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+}

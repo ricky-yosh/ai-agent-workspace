@@ -46,11 +46,11 @@
 }
 
 .status-dot-running {
-  background: var(--dot-running);
+  background: var(--status-running);
 }
 
 .status-dot-missing {
-  background: var(--dot-missing);
+  background: var(--status-missing);
 }
 
 /* ── Info column inside the card ── */
@@ -121,7 +121,7 @@
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-dim);
-  font-family: monospace;
+  font-family: var(--font-family-mono);
   user-select: text;
   word-break: break-all;
 }
@@ -149,145 +149,7 @@
   text-wrap: pretty;
 }
 
-/* ── Agent selector (segmented control) ── */
-
-.agent-selector {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-primary);
-  padding: 2px;
-  border-radius: var(--radius-control);
-  margin-bottom: 12px;
-}
-
-.agent-selector-btn {
-  flex: 1;
-  padding: 5px 10px;
-  border: none;
-  border-radius: calc(var(--radius-control) - 2px);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s, color 0.12s;
-  user-select: none;
-}
-
-.agent-selector-btn:hover {
-  color: var(--text-primary);
-}
-
-.agent-selector-btn.active {
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-
-/* ── Snippet card ── */
-
-.agent-snippet {
-  background: var(--bg-panel);
-  border-radius: var(--radius-island);
-  padding: 16px;
-  box-shadow: var(--shadow-island);
-}
-
-.agent-method-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-  user-select: none;
-}
-
-.agent-snippet-code {
-  margin: 0;
-  padding: 12px 44px 12px 12px;
-  background: var(--bg-primary);
-  border-radius: var(--radius-control);
-  font-family: monospace;
-  font-size: 12px;
-  color: var(--text-primary);
-  line-height: 1.5;
-  overflow-x: auto;
-  white-space: pre;
-  word-break: normal;
-  user-select: text;
-}
-
-.agent-snippet-codewrap {
-  position: relative;
-}
-
-.snippet-copy-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-control);
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.snippet-copy-btn::after {
-  content: "";
-  position: absolute;
-  inset: -7px;
-}
-
-.snippet-copy-icon-wrap {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.snippet-copy-icon {
-  position: absolute;
-}
-
-.snippet-copy-icon-hidden {
-  opacity: 0;
-  transform: scale(0.25);
-  filter: blur(4px);
-  pointer-events: none;
-}
-
-.snippet-copy-icon-visible {
-  opacity: 1;
-  transform: scale(1);
-  filter: blur(0px);
-}
-
-.snippet-copy-btn:hover:not(:disabled) {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-.snippet-copy-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.snippet-copy-btn.copied {
-  background: rgba(39, 174, 96, 0.15);
-  color: #27ae60;
-}
-
-.snippet-copy-btn.failed {
-  background: rgba(211, 47, 47, 0.15);
-  color: var(--danger-color);
-}
+/* ── Agent selector is a SegmentedControl primitive ── */
 
 /* ── "Open a folder" CTA ── */
 
@@ -304,8 +166,8 @@
   padding: 10px 20px;
   border: none;
   border-radius: var(--radius-control);
-  background: var(--accent-color);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-on-accent);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
@@ -330,22 +192,23 @@
   transform: scale(0.96);
 }
 
-:root[data-motion="full"] .snippet-copy-btn {
-  transition: background 0.12s, color 0.12s, opacity 0.12s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-motion="full"] .snippet-copy-btn:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-:root[data-motion="full"] .snippet-copy-icon {
-  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), transform 200ms cubic-bezier(0.2, 0, 0, 1), filter 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-
 :root[data-motion="full"] .status-cta-button {
   transition: opacity 0.15s, transform 80ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 :root[data-motion="full"] .status-cta-button:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+.status-kbd,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-xs);
+  margin-left: 4px;
+  line-height: 1.2;
 }

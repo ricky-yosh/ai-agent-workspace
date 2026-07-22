@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Toast } from "./ToastContext";
 import { useToast } from "./ToastContext";
+import { Button } from "./components/ui";
 import "./Toast.css";
 
 interface ToastItemProps {
@@ -34,19 +35,20 @@ export function ToastItem({ toast, onDismiss, index }: ToastItemProps) {
     >
       <span className="toast-message">{toast.message}</span>
       {toast.action && (
-        <button
-          className="toast-action"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => {
             toast.action!.onClick();
             onDismiss(toast.id);
           }}
         >
           {toast.action.label}
-        </button>
+        </Button>
       )}
-      <button className="toast-close" onClick={() => onDismiss(toast.id)}>
+      <Button variant="ghost" size="sm" onClick={() => onDismiss(toast.id)}>
         ×
-      </button>
+      </Button>
     </div>
   );
 }

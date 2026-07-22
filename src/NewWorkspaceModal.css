@@ -1,0 +1,477 @@
+.dialog-overlay .new-workspace-dialog {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────── */
+
+.nwm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.nwm-header-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.nwm-edit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: var(--font-size-xs);
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.nwm-edit-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+}
+
+.nwm-edit-toggle--on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent), transparent 90%);
+}
+
+/* ── Edit-mode signifier ─────────────────────────────── */
+
+.nwm-editing .nwm-header {
+  background: color-mix(in oklch, var(--accent), transparent 94%);
+}
+
+.nwm-editing .nwm-header-title {
+  color: var(--accent);
+}
+
+/* ── Two-column body ─────────────────────────────────── */
+
+.nwm-body {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  height: 340px;
+}
+
+.nwm-left {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nwm-right {
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Preview panel ───────────────────────────────────── */
+
+.nwm-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nwm-preview--empty {
+  flex: 1;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.nwm-preview-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.nwm-preview-name {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.nwm-preview-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-active);
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.nwm-preview-mini {
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  padding: 4px;
+}
+
+.nwm-preview-meta {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.nwm-preview-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.nwm-preview-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.nwm-preview-stat-value {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── List ────────────────────────────────────────────── */
+
+.new-workspace-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.new-workspace-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.new-workspace-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.new-workspace-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-xs);
+}
+
+.new-workspace-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  cursor: default;
+  transition: background 0.12s;
+}
+
+.new-workspace-item:hover,
+.ui-bg-accent-hover {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--accent), transparent 90%) 0%,
+    color-mix(in oklch, var(--accent), transparent 96%) 60%,
+    transparent 100%
+  );
+}
+
+.new-workspace-item.new-workspace-item-active,
+.ui-bg-accent-active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
+
+.new-workspace-item:focus-visible,
+.ui-focus-accent {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
+  outline: none;
+}
+
+.new-workspace-item-name {
+  flex: 1;
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.new-workspace-item-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.new-workspace-item--edit .nwm-manager-actions {
+  opacity: 0;
+}
+
+.new-workspace-item--edit:hover .nwm-manager-actions,
+.new-workspace-item--edit.new-workspace-item-active .nwm-manager-actions {
+  opacity: 1;
+}
+
+.new-workspace-item--confirmed {
+  background: rgba(34, 197, 94, 0.12) !important;
+}
+.new-workspace-item--confirmed,
+.ui-confirmed {
+  background: var(--confirmed-bg, rgba(34, 197, 94, 0.12)) !important;
+  color: var(--confirmed-color, rgb(134, 239, 172));
+}
+
+.new-workspace-item--confirmed .new-workspace-item-name {
+  color: rgb(134, 239, 172);
+}
+
+.new-workspace-item-check {
+  color: rgb(134, 239, 172);
+  flex-shrink: 0;
+}
+
+/* ── Empty states ────────────────────────────────────── */
+
+.new-workspace-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+
+.new-workspace-empty-icon {
+  opacity: 0.4;
+}
+
+.new-workspace-empty-text {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+}
+
+.new-workspace-empty-hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+/* ── Footer ──────────────────────────────────────────── */
+
+.new-workspace-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.new-workspace-footer-hints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.new-workspace-footer-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--bg-overlay-hover);
+  flex-shrink: 0;
+}
+
+.new-workspace-footer kbd,
+.ui-kbd.ui-kbd--sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-family: inherit;
+  font-size: 10px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-overlay);
+  border-radius: var(--radius-xs);
+  color: var(--text-dim);
+}
+
+/* ── Manager list ────────────────────────────────────── */
+
+.nwm-manager-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.nwm-manager-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  cursor: default;
+}
+
+.nwm-manager-item:hover {
+  background: var(--bg-hover);
+}
+
+.nwm-manager-item--active {
+  background: color-mix(in oklch, var(--accent), transparent 85%);
+}
+
+.nwm-manager-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 45%);
+}
+
+.nwm-manager-name {
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.nwm-manager-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.nwm-manager-item:hover .nwm-manager-actions,
+.nwm-manager-item--active .nwm-manager-actions {
+  opacity: 1;
+}
+
+.nwm-manager-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+}
+
+.nwm-manager-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.nwm-manager-btn--delete:hover {
+  color: var(--danger);
+}
+
+.nwm-manager-btn--confirm {
+  color: var(--text-on-danger);
+  background: var(--danger);
+}
+
+.nwm-manager-btn--confirm:hover {
+  background: var(--danger);
+  color: var(--text-on-danger);
+}
+
+.nwm-manager-btn--disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nwm-manager-btn--disabled:hover {
+  background: none;
+  color: var(--text-dim);
+}
+
+.nwm-manager-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.nwm-manager-rename-input {
+  width: 100%;
+  font-size: var(--font-size-base);
+  padding: 2px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.nwm-sort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.nwm-sort-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* ── Motion ──────────────────────────────────────────── */
+
+:root[data-motion="full"] .new-workspace-item {
+  transition: background 0.12s, transform 0.06s;
+}
+
+:root[data-motion="full"] .new-workspace-item--confirmed {
+  transition: background 0.1s, color 0.1s;
+}
+
+:root[data-motion="full"] .new-workspace-item:active:not(:disabled) {
+  transform: scale(0.97);
+}

@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::schema::{CREATE_TABLES, SCHEMA_VERSION};
 
@@ -42,7 +42,65 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
 
 
+    if current_version < 11 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS canvas_view_states (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL UNIQUE REFERENCES visual_canvases(id) ON DELETE CASCADE,
+                offset_x REAL NOT NULL DEFAULT 0,
+                offset_y REAL NOT NULL DEFAULT 0,
+                zoom REAL NOT NULL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_canvas_view_states_canvas_id ON canvas_view_states(canvas_id);"
+        )?;
+    }
+
     if current_version < SCHEMA_VERSION {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS change_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                processed_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_change_events_session_id ON change_events(session_id);
+            CREATE INDEX IF NOT EXISTS idx_change_events_unprocessed ON change_events(processed_at) WHERE processed_at IS NULL;"
+        )?;
+
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS issue_delete_trigger
+            AFTER DELETE ON issues
+            BEGIN
+                INSERT INTO change_events (id, session_id, entity_type, entity_id, event_type, payload_json, created_at)
+                VALUES (
+                    lower(hex(randomblob(16))),
+                    OLD.session_id,
+                    'issue',
+                    OLD.id,
+                    'deleted',
+                    json_object(
+                        'id', OLD.id,
+                        'session_id', OLD.session_id,
+                        'number', OLD.number,
+                        'title', OLD.title,
+                        'body', OLD.body,
+                        'state', OLD.state,
+                        'labels', OLD.labels,
+                        'author', OLD.author,
+                        'created_at', OLD.created_at,
+                        'updated_at', OLD.updated_at
+                    ),
+                    CAST((julianday('now') - 2440587.5) * 86400 * 1000 AS INTEGER)
+                );
+            END;"
+        )?;
+
         if current_version == 0 {
             conn.execute(
                 "INSERT INTO schema_version (version) VALUES (?1)",
@@ -56,13 +114,133 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         }
     }
 
+    if current_version < 19 {
+        // v18 -> v19: remove the semantic/vector search subsystem. The
+        // code_vectors table held only rebuildable embeddings and is no longer
+        // read by anything, so drop it (its indexes go with it).
+        conn.execute_batch("DROP TABLE IF EXISTS code_vectors;")?;
+    }
+
+    // v19 -> v20: canvas_nodes.content -> title + description, add sources table.
+    // Gated on table shape, not `current_version`, so a DB stamped at v20 with the
+    // old columns (possible from a mid-development dev build) still self-heals.
+    {
+        let has_title: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"title".to_string())
+            })
+            .unwrap_or(false);
+        if !has_title {
+            conn.execute_batch(
+                "ALTER TABLE canvas_nodes RENAME COLUMN content TO title;
+                 ALTER TABLE canvas_nodes ADD COLUMN description TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
+
+        // Create the sources table unconditionally — `IF NOT EXISTS` makes this
+        // a no-op when it already exists, and it covers both the fresh-repair
+        // path above and a DB that has `title` but somehow lacks the table.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS canvas_node_sources (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_canvas_node_sources_node_id ON canvas_node_sources(node_id);",
+        )?;
+    }
+
+    // v20 -> v21: fold tags into a `canvas_nodes.tags_json` field, dropping
+    // the `canvas_tags` table (ADR 0025 / .aw/adr/0025). Gated on table
+    // shape, matching the v19->v20 pattern, so a DB stamped at v21 that
+    // somehow still lacks the column self-heals.
+    {
+        let has_tags_json: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"tags_json".to_string())
+            })
+            .unwrap_or(false);
+        if !has_tags_json {
+            conn.execute_batch("ALTER TABLE canvas_nodes ADD COLUMN tags_json TEXT;")?;
+        }
+
+        let has_canvas_tags: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canvas_tags'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if has_canvas_tags {
+            conn.execute_batch(
+                "UPDATE canvas_nodes SET tags_json = (
+                    SELECT json_group_array(t.tag)
+                    FROM canvas_tags t
+                    WHERE t.node_id = canvas_nodes.id
+                )
+                WHERE EXISTS (SELECT 1 FROM canvas_tags t WHERE t.node_id = canvas_nodes.id);
+
+                DROP TABLE canvas_tags;",
+            )?;
+        }
+    }
+
+    // v21 -> v22: fold node sources into a `canvas_nodes.sources_json` field,
+    // dropping the `canvas_node_sources` table (ADR 0025 / .aw/adr/0025).
+    // Same shape-gated, idempotent, self-healing pattern as the v20->v21
+    // tags migration.
+    {
+        let has_sources_json: bool = conn
+            .prepare("PRAGMA table_info(canvas_nodes)")
+            .map(|mut stmt| {
+                let cols: Vec<String> = stmt.query_map([], |row| row.get(1)).unwrap().filter_map(|r| r.ok()).collect();
+                cols.contains(&"sources_json".to_string())
+            })
+            .unwrap_or(false);
+        if !has_sources_json {
+            conn.execute_batch("ALTER TABLE canvas_nodes ADD COLUMN sources_json TEXT;")?;
+        }
+
+        let has_canvas_node_sources: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='canvas_node_sources'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if has_canvas_node_sources {
+            conn.execute_batch(
+                "UPDATE canvas_nodes SET sources_json = (
+                    SELECT json_group_array(json_object('url', s.url, 'source_type', s.source_type, 'sort_order', s.sort_order))
+                    FROM (
+                        SELECT url, source_type, sort_order
+                        FROM canvas_node_sources
+                        WHERE node_id = canvas_nodes.id
+                        ORDER BY sort_order ASC
+                    ) s
+                )
+                WHERE EXISTS (SELECT 1 FROM canvas_node_sources s WHERE s.node_id = canvas_nodes.id);
+
+                DROP TABLE canvas_node_sources;",
+            )?;
+        }
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
 
     fn setup_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -83,6 +261,11 @@ mod tests {
         assert!(tables.contains(&"sessions".to_string()));
         assert!(tables.contains(&"workspaces".to_string()));
         assert!(tables.contains(&"layouts".to_string()));
+        assert!(tables.contains(&"issues".to_string()));
+        assert!(tables.contains(&"canvas_edges".to_string()));
+        assert!(tables.contains(&"canvas_groups".to_string()));
+        assert!(!tables.contains(&"canvas_tags".to_string()));
+        assert!(!tables.contains(&"canvas_node_sources".to_string()));
         assert!(tables.contains(&"schema_version".to_string()));
     }
 
@@ -130,5 +313,152 @@ mod tests {
         assert!(fk_enabled);
     }
 
+    fn table_exists(conn: &Connection, table: &str) -> bool {
+        conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            [table],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap()
+        .is_some()
+    }
 
+    #[test]
+    fn test_code_vectors_absent_on_fresh_db() {
+        let conn = setup_db();
+        assert!(!table_exists(&conn, "code_vectors"));
+    }
+
+    #[test]
+    fn test_migrate_drops_legacy_code_vectors() {
+        // Simulate a pre-v19 database that still has a populated code_vectors table.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE code_vectors (
+                id TEXT PRIMARY KEY,
+                repo_path TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                line_start INTEGER NOT NULL,
+                line_end INTEGER NOT NULL,
+                chunk_text TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                content_fingerprint TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO schema_version (version) VALUES (18);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert!(
+            !table_exists(&conn, "code_vectors"),
+            "code_vectors should be dropped after migrating to v19"
+        );
+    }
+
+    #[test]
+    fn test_migrate_folds_canvas_tags_into_node_tags_json() {
+        // Simulate a pre-v21 database with a canvas_node and some canvas_tags rows.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE canvas_nodes (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                x REAL NOT NULL DEFAULT 0,
+                y REAL NOT NULL DEFAULT 0,
+                width REAL NOT NULL DEFAULT 200,
+                height REAL NOT NULL DEFAULT 100,
+                metadata_json TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE canvas_tags (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                tag TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO canvas_nodes (id, canvas_id, title, created_at, updated_at) VALUES ('node-1', 'canvas-1', 'Node One', 0, 0);
+            INSERT INTO canvas_tags (id, node_id, tag, created_at) VALUES ('tag-1', 'node-1', 'bug', 0);
+            INSERT INTO canvas_tags (id, node_id, tag, created_at) VALUES ('tag-2', 'node-1', 'urgent', 0);
+            INSERT INTO schema_version (version) VALUES (20);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert!(
+            !table_exists(&conn, "canvas_tags"),
+            "canvas_tags should be dropped after migrating to v21"
+        );
+
+        let tags_json: String = conn
+            .query_row("SELECT tags_json FROM canvas_nodes WHERE id = 'node-1'", [], |row| row.get(0))
+            .unwrap();
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap();
+        assert_eq!(tags.len(), 2);
+        assert!(tags.contains(&"bug".to_string()));
+        assert!(tags.contains(&"urgent".to_string()));
+    }
+
+    #[test]
+    fn test_migrate_folds_canvas_node_sources_into_node_sources_json() {
+        // Simulate a pre-v22 database with a canvas_node and some canvas_node_sources rows.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE canvas_nodes (
+                id TEXT PRIMARY KEY,
+                canvas_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                x REAL NOT NULL DEFAULT 0,
+                y REAL NOT NULL DEFAULT 0,
+                width REAL NOT NULL DEFAULT 200,
+                height REAL NOT NULL DEFAULT 100,
+                metadata_json TEXT,
+                tags_json TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE canvas_node_sources (
+                id TEXT PRIMARY KEY,
+                node_id TEXT NOT NULL REFERENCES canvas_nodes(id) ON DELETE CASCADE,
+                url TEXT NOT NULL,
+                source_type TEXT NOT NULL CHECK (source_type IN ('file', 'link')),
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE schema_version (version INTEGER NOT NULL);
+            INSERT INTO canvas_nodes (id, canvas_id, title, created_at, updated_at) VALUES ('node-1', 'canvas-1', 'Node One', 0, 0);
+            INSERT INTO canvas_node_sources (id, node_id, url, source_type, sort_order, created_at) VALUES ('src-2', 'node-1', 'https://second.example', 'link', 1, 0);
+            INSERT INTO canvas_node_sources (id, node_id, url, source_type, sort_order, created_at) VALUES ('src-1', 'node-1', 'https://first.example', 'file', 0, 0);
+            INSERT INTO schema_version (version) VALUES (21);",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        assert!(
+            !table_exists(&conn, "canvas_node_sources"),
+            "canvas_node_sources should be dropped after migrating to v22"
+        );
+
+        let sources_json: String = conn
+            .query_row("SELECT sources_json FROM canvas_nodes WHERE id = 'node-1'", [], |row| row.get(0))
+            .unwrap();
+        let sources: Vec<serde_json::Value> = serde_json::from_str(&sources_json).unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0]["url"], "https://first.example");
+        assert_eq!(sources[0]["sort_order"], 0);
+        assert_eq!(sources[1]["url"], "https://second.example");
+        assert_eq!(sources[1]["sort_order"], 1);
+    }
 }

@@ -1,0 +1,101 @@
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  border: none;
+  border-radius: var(--radius-md, 6px);
+  font-family: inherit;
+  font-weight: var(--font-weight-medium, 500);
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+  transition-property: background-color, color, opacity;
+  transition-duration: var(--duration-fast, 100ms);
+}
+
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sizes */
+.ui-button--sm {
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  font-size: var(--font-size-sm, 12px);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.ui-button--md {
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  font-size: var(--font-size-base, 13px);
+}
+
+/* Variants */
+.ui-button--primary {
+  background: var(--accent, #3b82f6);
+  color: var(--text-on-accent, #fff);
+}
+.ui-button--primary:hover:not(:disabled) {
+  background: var(--accent-hover, #2563eb);
+}
+
+.ui-button--secondary {
+  background: var(--bg-active, rgba(128, 128, 128, 0.15));
+  color: var(--text-primary, #fff);
+}
+.ui-button--secondary:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.2));
+}
+
+.ui-button--danger {
+  background: var(--danger, #ef4444);
+  color: var(--text-on-danger, #fff);
+}
+.ui-button--danger:hover:not(:disabled) {
+  background: var(--danger-hover, #dc2626);
+}
+
+.ui-button--ghost {
+  background: transparent;
+  color: var(--text-primary, #fff);
+}
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+}
+
+/* Loading spinner */
+.ui-button--loading {
+  cursor: wait;
+}
+
+.ui-button__content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+
+.ui-button__spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full, 9999px);
+  animation: ui-button-spin 0.6s linear infinite;
+}
+
+@keyframes ui-button-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Press animation — gated behind motion */
+:root[data-motion="full"] .ui-button:active:not(:disabled) {
+  transform: scale(0.96);
+  transition: transform var(--duration-fast, 100ms);
+}
+
+/* Hover transition smoothing — gated behind motion */
+:root[data-motion="full"] .ui-button:not(:disabled) {
+  transition: background-color var(--duration-fast, 100ms), color var(--duration-fast, 100ms), transform var(--duration-fast, 100ms);
+}

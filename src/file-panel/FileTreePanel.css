@@ -1,0 +1,177 @@
+/* --------------------------------------------------------------------------
+   FileTreePanel
+   -------------------------------------------------------------------------- */
+
+.file-tree-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+/* ---------- Toolbar ------------------------------------------------------- */
+
+.ft-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ft-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: background 0.1s, color 0.1s;
+}
+
+.ft-toggle-btn:hover {
+  background: var(--bg-overlay);
+  color: var(--text-primary);
+}
+
+/* ---------- Scroll area --------------------------------------------------- */
+
+.ft-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0;
+}
+
+/* ---------- Tree nodes ---------------------------------------------------- */
+
+.ft-node {
+  /* no extra styling needed; children are indented via paddingLeft */
+}
+
+.ft-children {
+  /* container for nested nodes */
+}
+
+/* ---------- Row (both dir and file) --------------------------------------- */
+
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px calc(var(--depth, 0) * 16px + 4px);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.08s;
+}
+
+.ft-row:hover {
+  background: var(--bg-overlay);
+}
+
+.ft-row--dir {
+  font-weight: 500;
+}
+
+.ft-row--file {
+  color: var(--text-primary);
+}
+
+.ft-row--active {
+  background: color-mix(in oklch, var(--accent), transparent 85%) !important;
+  color: oklch(0.68 0.13 245);
+}
+
+/* ---------- Chevron ------------------------------------------------------- */
+
+.ft-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ft-chevron--placeholder {
+  visibility: hidden;
+}
+
+.ft-spinner {
+  animation: ft-spin 1s linear infinite;
+}
+
+@keyframes ft-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- Icons --------------------------------------------------------- */
+
+.ft-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.ft-row:hover .ft-icon,
+.ft-row--active .ft-icon {
+  opacity: 1;
+}
+
+.ft-icon--folder {
+  color: oklch(0.75 0.15 90);
+}
+
+.ft-icon--code {
+  color: oklch(0.68 0.13 245);
+}
+
+.ft-icon--text {
+  color: oklch(0.62 0.02 260);
+}
+
+.ft-icon--json {
+  color: oklch(0.68 0.14 60);
+}
+
+.ft-icon--image {
+  color: oklch(0.68 0.13 290);
+}
+
+.ft-icon--archive {
+  color: oklch(0.62 0.02 260);
+}
+
+.ft-icon--default {
+  color: var(--text-muted);
+}
+
+/* ---------- Name ---------------------------------------------------------- */
+
+.ft-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Status states ------------------------------------------------- */
+
+.ft-error {
+  padding: 8px 12px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.ft-empty {
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}

@@ -1,15 +1,33 @@
-import { useRef, useEffect, useState, type ReactNode } from "react";
+import { useRef, useEffect, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { useClickOutside } from "../hooks/useClickOutside";
+import "../Dialog.css";
 
 interface DialogProps {
   open: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
+  header?: ReactNode;
   children: ReactNode;
   className?: string;
+  overlayClassName?: string;
+  width?: number | string;
+  onKeyDown?: (e: ReactKeyboardEvent) => void;
+  autoFocus?: boolean;
 }
 
-export function Dialog({ open, onClose, title, children, className = "" }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  header,
+  children,
+  className = "",
+  overlayClassName = "",
+  width,
+  onKeyDown,
+  autoFocus = true,
+}: DialogProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -19,14 +37,28 @@ export function Dialog({ open, onClose, title, children, className = "" }: Dialo
   useEffect(() => {
     if (open) {
       setMounted(true);
-      const raf = requestAnimationFrame(() => setVisible(true));
+      const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+        setVisible(true);
+      }));
       return () => cancelAnimationFrame(raf);
     } else if (mounted) {
       setVisible(false);
-      const timer = setTimeout(() => setMounted(false), 150);
-      return () => clearTimeout(timer);
+      let unmountTimer: ReturnType<typeof setTimeout>;
+      let raf2: number;
+      const raf = requestAnimationFrame(() => {
+        raf2 = requestAnimationFrame(() => {
+          unmountTimer = setTimeout(() => {
+            setMounted(false);
+          }, 200);
+        });
+      });
+      return () => {
+        cancelAnimationFrame(raf);
+        if (raf2 !== undefined) cancelAnimationFrame(raf2);
+        if (unmountTimer) clearTimeout(unmountTimer);
+      };
     }
-  }, [open]);
+  }, [open, mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -37,17 +69,39 @@ export function Dialog({ open, onClose, title, children, className = "" }: Dialo
     return () => document.removeEventListener("keydown", onKeydown);
   }, [mounted, onClose]);
 
+  useEffect(() => {
+    if (visible && autoFocus) ref.current?.focus();
+  }, [visible, autoFocus]);
+
   if (!mounted) return null;
 
-  const overlayClass = `dialog-overlay${visible ? " open" : " closing"}`;
+  const overlayClass = `dialog-overlay${overlayClassName ? ` ${overlayClassName}` : ""}${visible ? " open" : " closing"}`;
   const dialogClass = `dialog ${className}${visible ? " open" : " closing"}`;
+  const dialogStyle =
+    width !== undefined
+      ? { width: typeof width === "number" ? `${width}px` : width, maxWidth: typeof width === "number" ? `${width}px` : width }
+      : undefined;
 
-  return (
-    <div className={overlayClass}>
-      <div ref={ref} className={dialogClass}>
-        <div className="dialog-title">{title}</div>
+  return createPortal(
+    <div
+      className={overlayClass}
+      style={{ pointerEvents: "auto" }}
+      role="presentation"
+    >
+      <div
+        ref={ref}
+        className={dialogClass}
+        style={dialogStyle}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+      >
+        {header ?? (title && <div className="dialog-title">{title}</div>)}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
