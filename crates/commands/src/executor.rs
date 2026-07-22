@@ -12,6 +12,29 @@ fn to_json_column<T: serde::Serialize>(value: Option<&T>) -> Option<String> {
     value.map(|v| serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string()))
 }
 
+/// The closed set of valid triage labels for issues.
+/// Any label outside this set is rejected at the command layer.
+const VALID_ISSUE_LABELS: &[&str] = &[
+    "needs-triage",
+    "needs-info",
+    "ready-for-agent",
+    "ready-for-human",
+    "wontfix",
+];
+
+/// Validate that every label in `labels` belongs to the closed triage vocabulary.
+/// Returns an `invalid_input` error naming the first offending label if any is invalid.
+fn validate_labels(labels: &[String]) -> Result<(), CommandError> {
+    for label in labels {
+        if !VALID_ISSUE_LABELS.contains(&label.as_str()) {
+            return Err(CommandError::invalid_input(&format!(
+                "Invalid label: '{label}'. Valid labels are: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix",
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, CommandError> {
     let mut conn = state.db.connection().map_err(|e| CommandError::internal(&e.to_string()))?;
 
@@ -332,6 +355,9 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             Ok(ExecutionOutcome::with_event(CommandResult::Workspace(ws), DomainEvent::WorkspaceChanged { session_id, workspace_id, screen }))
         }
         Command::IssueCreate { session_id, title, body, labels } => {
+            if let Some(ref labels) = labels {
+                validate_labels(labels)?;
+            }
             let issues = state.db.issues(&conn);
             let labels_ref = labels.as_deref();
             let issue = issues.create(&session_id, &title, &body, labels_ref)?;
@@ -353,6 +379,9 @@ pub fn execute(command: Command, state: &AppState) -> Result<ExecutionOutcome, C
             Ok(ExecutionOutcome::none(CommandResult::Issue(issue)))
         }
         Command::IssueUpdate { id, session_id, title, body, labels, state: new_state } => {
+            if let Some(ref labels) = labels {
+                validate_labels(labels)?;
+            }
             let issues = state.db.issues(&conn);
             let existing = match &session_id {
                 Some(sid) => issues.resolve(&id, sid)
@@ -2403,5 +2432,147 @@ mod tests {
             _ => panic!("Expected CanvasNodes"),
         };
         assert_eq!(nodes.len(), 2, "Deleting a group should not delete its member nodes");
+    }
+
+    #[test]
+    fn test_issue_create_accepts_all_valid_labels() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let valid_labels = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "wontfix"];
+        for label in &valid_labels {
+            let outcome = execute(
+                Command::IssueCreate {
+                    session_id: sid.clone(),
+                    title: format!("Issue with {label}"),
+                    body: "body".to_string(),
+                    labels: Some(vec![label.to_string()]),
+                },
+                &state,
+            ).unwrap_or_else(|e| panic!("Create with label '{label}' should succeed: {e:?}"));
+            let issue = match outcome.result {
+                CommandResult::Issue(i) => i,
+                _ => panic!("Expected Issue"),
+            };
+            assert_eq!(issue.labels, vec![label.to_string()], "Label should be '{label}'");
+        }
+    }
+
+    #[test]
+    fn test_issue_update_accepts_all_valid_labels() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Test".to_string(),
+                body: "".to_string(),
+                labels: None,
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let valid_labels = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "wontfix"];
+        for label in &valid_labels {
+            let outcome = execute(
+                Command::IssueUpdate {
+                    id: issue_id.clone(),
+                    session_id: None,
+                    title: None,
+                    body: None,
+                    labels: Some(vec![label.to_string()]),
+                    state: None,
+                },
+                &state,
+            ).unwrap_or_else(|e| panic!("Update with label '{label}' should succeed: {e:?}"));
+            let issue = match outcome.result {
+                CommandResult::Issue(i) => i,
+                _ => panic!("Expected Issue"),
+            };
+            assert_eq!(issue.labels, vec![label.to_string()], "Label should be '{label}'");
+        }
+    }
+
+    #[test]
+    fn test_issue_create_rejects_invalid_label() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let err = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Bad".to_string(),
+                body: "".to_string(),
+                labels: Some(vec!["bogus-label".to_string()]),
+            },
+            &state,
+        ).unwrap_err();
+        assert_eq!(err.error, "invalid_input");
+        assert!(err.message.contains("bogus-label"), "Error should name the offending label, got: {}", err.message);
+    }
+
+    #[test]
+    fn test_issue_update_rejects_invalid_label() {
+        let (state, _tmp) = setup();
+
+        let outcome = execute(
+            Command::SessionCreate {
+                working_dir: "/tmp".into(),
+                name: "S1".into(),
+            },
+            &state,
+        ).unwrap();
+        let sid = match outcome.result { CommandResult::Session(s) => s.id, _ => unreachable!() };
+
+        let outcome = execute(
+            Command::IssueCreate {
+                session_id: sid.clone(),
+                title: "Test".to_string(),
+                body: "".to_string(),
+                labels: None,
+            },
+            &state,
+        ).unwrap();
+        let issue_id = match outcome.result { CommandResult::Issue(i) => i.id, _ => unreachable!() };
+
+        let err = execute(
+            Command::IssueUpdate {
+                id: issue_id.clone(),
+                session_id: None,
+                title: None,
+                body: None,
+                labels: Some(vec!["bogus-label".to_string()]),
+                state: None,
+            },
+            &state,
+        ).unwrap_err();
+        assert_eq!(err.error, "invalid_input");
+        assert!(err.message.contains("bogus-label"), "Error should name the offending label, got: {}", err.message);
     }
 }
