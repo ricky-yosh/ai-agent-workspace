@@ -1,0 +1,66 @@
+/* Markdown rendering styles for the shared IssueBody component (used by both
+   the Issue Tracker panel's inline expansion and the Issue Detail Modal). */
+
+.issue-body__content h2 {
+  font-size: 14px;
+  font-weight: normal;
+  margin: 6px 0 var(--space-1);
+}
+
+.issue-body__content h3 {
+  font-size: var(--font-size-base);
+  font-weight: normal;
+  margin: 6px 0 var(--space-1);
+}
+
+.issue-body__content code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+}
+
+.issue-body__content .issue-md-code--block {
+  /* inherits code styles above */
+}
+
+.issue-body__content .issue-md-code--inline {
+  background: var(--bg-overlay);
+  border-radius: var(--radius-xs);
+  padding: 1px var(--space-1);
+}
+
+.issue-body__content pre {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  overflow-x: auto;
+  font-size: var(--font-size-xs);
+  margin: var(--space-1) 0;
+}
+
+.issue-body__content blockquote {
+  border-left: 3px solid var(--border);
+  margin: 0;
+  padding-left: 10px;
+  color: var(--text-muted);
+}
+
+.issue-body__content p {
+  margin: var(--space-1) 0;
+}
+
+.issue-body__content ul,
+.issue-body__content ol {
+  padding-left: 20px;
+  margin: var(--space-1) 0;
+}
+
+.issue-body__content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.issue-body__content input[type="checkbox"] {
+  accent-color: var(--status-running);
+  cursor: default;
+  margin-right: 4px;
+}
