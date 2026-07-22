@@ -49,4 +49,10 @@ describe("Badge", () => {
     const badge = screen.getByText("Medium");
     expect(badge).toHaveClass("ui-badge--md");
   });
+
+  it("applies inline style passthrough for custom colors", () => {
+    render(<Badge style={{ background: "red", color: "white" }}>Custom</Badge>);
+    const badge = screen.getByText("Custom");
+    expect(badge).toHaveStyle({ background: "red", color: "rgb(255, 255, 255)" });
+  });
 });
