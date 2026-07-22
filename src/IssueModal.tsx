@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { Dialog } from "./components/Dialog";
-import { Input as UiInput, Textarea as UiTextarea } from "./components/ui";
-import { Trash2, Type, AlignLeft, Tag, ChevronLeft, CircleDot, Check, Plus } from "lucide-react";
+import {
+  Input as UiInput, Textarea as UiTextarea, Badge, Button, Text, Heading,
+} from "./components/ui";
+import { IssueBody } from "./components/IssueBody";
+import { Trash2, Type, AlignLeft, Tag, ChevronLeft, CircleDot, Check, Pencil, Plus } from "lucide-react";
 import { safeInvoke } from "./safeInvoke";
 import "./IssueModal.css";
 
@@ -20,6 +23,9 @@ interface IssueData {
   body: string;
   labels: string[];
   state: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface IssueModalProps {
@@ -31,11 +37,21 @@ interface IssueModalProps {
 
 type SubPage = null | "title" | "body" | "label";
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 export default function IssueModal({ open, onClose, sessionId, issue }: IssueModalProps) {
   const isEdit = Boolean(issue);
+  const [mode, setMode] = useState<"read" | "edit">("edit");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [label, setLabel] = useState("needs-triage");
+  const [state, setState] = useState("open");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -44,17 +60,32 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
   const [labelPickerIdx, setLabelPickerIdx] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0);
 
+  // Track last-saved values so Esc from edit mode can discard changes
+  const [savedTitle, setSavedTitle] = useState("");
+  const [savedBody, setSavedBody] = useState("");
+  const [savedLabel, setSavedLabel] = useState("needs-triage");
+  const [savedState, setSavedState] = useState("open");
+
   useEffect(() => {
     if (open) {
       if (issue) {
         setTitle(issue.title);
         setBody(issue.body);
         const current = LABELS.find((l) => issue.labels.includes(l.value));
-        setLabel(current?.value ?? "needs-triage");
+        const resolved = current?.value ?? "needs-triage";
+        setLabel(resolved);
+        setState(issue.state);
+        setSavedTitle(issue.title);
+        setSavedBody(issue.body);
+        setSavedLabel(resolved);
+        setSavedState(issue.state);
+        setMode("read");
       } else {
         setTitle("");
         setBody("");
         setLabel("needs-triage");
+        setState("open");
+        setMode("edit");
       }
       setSaving(false);
       setError(null);
@@ -74,19 +105,25 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
         await safeInvoke("update_issue", {
           id: issue.id, session_id: sessionId,
           title: trimmedTitle, body: body.trim(),
-          labels: [label], state: issue.state,
+          labels: [label], state,
         });
+        setSavedTitle(trimmedTitle);
+        setSavedBody(body.trim());
+        setSavedLabel(label);
+        setSavedState(state);
+        setMode("read");
       } else {
         await safeInvoke("create_issue", {
           sessionId, title: trimmedTitle, body: body.trim(), labels: [label],
         });
+        onClose();
       }
-      onClose();
+      setError(null);
     } catch (err) {
       setError(String(err));
-      setSaving(false);
     }
-  }, [title, body, label, sessionId, isEdit, issue, onClose]);
+    setSaving(false);
+  }, [title, body, label, state, sessionId, isEdit, issue, onClose]);
 
   const handleDelete = useCallback(async () => {
     if (!issue || !confirmingDelete) return;
@@ -107,6 +144,7 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
         { id: "title" as const, key: "T", icon: Type, label: "Edit title", value: title },
         { id: "body" as const, key: "B", icon: AlignLeft, label: "Edit body", value: body },
         { id: "label" as const, key: "L", icon: Tag, label: "Set label", value: label },
+        { id: "state" as const, key: "S", icon: CircleDot, label: "State", value: state },
         { id: "delete" as const, key: "⌫", icon: Trash2, label: confirmingDelete ? "Confirm delete" : "Delete", destructive: true },
         { id: "submit" as const, key: "⌘↵", icon: Check, label: "Save changes" },
       ]
@@ -136,21 +174,42 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
       if (!confirmingDelete) setConfirmingDelete(true); else handleDelete();
     } else if (a.id === "submit") {
       handleSubmit();
+    } else if (a.id === "state") {
+      setState(s => s === "open" ? "closed" : "open");
     } else {
       openSubPage(a.id);
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    // ── Read mode ────────────────────────────────────────────
+    if (mode === "read") {
+      if (e.key === "e" || e.key === "E") {
+        e.preventDefault();
+        e.stopPropagation();
+        setMode("edit");
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      return;
+    }
+
+    // ── Edit / Create mode ───────────────────────────────────
     if (saving) return;
+
     if (subPage === "title") {
       if (e.key === "Enter") { e.preventDefault(); commitSubPage(); return; }
-      if (e.key === "Escape") { e.preventDefault(); setSubPage(null); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setSubPage(null); return; }
       return;
     }
     if (subPage === "body") {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); commitSubPage(); return; }
-      if (e.key === "Escape") { e.preventDefault(); setSubPage(null); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setSubPage(null); return; }
       return;
     }
     if (subPage === "label") {
@@ -158,7 +217,7 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
         case "ArrowDown": case "ArrowRight": e.preventDefault(); setLabelPickerIdx(i => Math.min(i + 1, LABELS.length - 1)); return;
         case "ArrowUp": case "ArrowLeft": e.preventDefault(); setLabelPickerIdx(i => Math.max(i - 1, 0)); return;
         case "Enter": e.preventDefault(); setLabel(LABELS[labelPickerIdx].value); setSubPage(null); return;
-        case "Escape": e.preventDefault(); setSubPage(null); return;
+        case "Escape": e.preventDefault(); e.stopPropagation(); setSubPage(null); return;
         default:
           if (!e.metaKey && !e.ctrlKey && !e.altKey) {
             const num = parseInt(e.key);
@@ -167,7 +226,13 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
       }
       return;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); handleSubmit(); return; }
+
+    // Action list (not in a sub-page)
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+      return;
+    }
     switch (e.key) {
       case "ArrowDown": e.preventDefault();
         setActiveIdx(i => Math.min(i + 1, actions.length - 1)); return;
@@ -175,7 +240,20 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
         setActiveIdx(i => Math.max(i - 1, 0)); return;
       case "Enter": e.preventDefault();
         triggerAction(actions[activeIdx]); return;
-      case "Escape": onClose(); return;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        if (mode === "edit" && isEdit) {
+          // Discard unsaved changes and return to read mode
+          setTitle(savedTitle);
+          setBody(savedBody);
+          setLabel(savedLabel);
+          setState(savedState);
+          setMode("read");
+        } else {
+          onClose();
+        }
+        return;
       default:
         if (!e.metaKey && !e.ctrlKey && !e.altKey) {
           const upper = e.key.toUpperCase();
@@ -189,14 +267,89 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
 
   const header = (
     <div className="issue-modal-header">
-      <CircleDot size={15} />
-      {isEdit ? `Issue #${issue!.number}` : "New Issue"}
+      <div className="issue-modal-header__left">
+        {mode === "read" && issue ? (
+          <>
+            <CircleDot size={15} />
+            <span>Issue #{issue.number}</span>
+            <Badge
+              variant={state === "open" ? "success" : "default"}
+              size="sm"
+            >
+              {state}
+            </Badge>
+            {issue.labels.length > 0 && (
+              <Badge size="sm" style={{ background: labelDef.bg, color: labelDef.fg }}>
+                {issue.labels[0]}
+              </Badge>
+            )}
+          </>
+        ) : isEdit && issue ? (
+          <>
+            <CircleDot size={15} />
+            <span>Issue #{issue.number}</span>
+          </>
+        ) : (
+          <span>New Issue</span>
+        )}
+      </div>
+      {mode === "read" && issue && (
+        <Button variant="ghost" size="sm" onClick={() => setMode("edit")}>
+          <Pencil size={12} />
+          Edit
+        </Button>
+      )}
+      {mode === "edit" && isEdit && (
+        <Button variant="primary" size="sm" onClick={handleSubmit} loading={saving}>
+          <Check size={12} />
+          Done
+        </Button>
+      )}
     </div>
   );
 
   return (
-    <Dialog open={open} onClose={onClose} title={isEdit ? `Issue #${issue!.number}` : "New Issue"} header={header} onKeyDown={handleKeyDown} width={440}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={isEdit ? `Issue #${issue!.number}` : "New Issue"}
+      header={header}
+      onKeyDown={handleKeyDown}
+      width={500}
+    >
       {error && <div className="issue-modal-error">{error}</div>}
+
+      {/* ── Read mode ── */}
+      {mode === "read" && issue && (
+        <div className="issue-modal-read">
+          <div className="issue-modal-read__title">
+            <Heading level={3}>{title}</Heading>
+          </div>
+          <div className="issue-modal-read__meta">
+            <Text size="sm" color="muted">
+              Author: {issue.author}
+            </Text>
+            <Text size="sm" color="muted">
+              Created: {formatDate(issue.created_at)}
+            </Text>
+            <Text size="sm" color="muted">
+              Updated: {formatDate(issue.updated_at)}
+            </Text>
+          </div>
+          {body && (
+            <>
+              <div className="issue-modal-read__separator" />
+              <div className="issue-body__content">
+                <IssueBody body={body} />
+              </div>
+            </>
+          )}
+          <div className="issue-modal-hints">
+            <span className="issue-modal-hint"><kbd>e</kbd> edit</span>
+            <span className="issue-modal-hint"><kbd>Esc</kbd> close</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Title sub-page ── */}
       {subPage === "title" && (
@@ -264,8 +417,8 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
         </div>
       )}
 
-      {/* ── Main action list ── */}
-      {!subPage && (
+      {/* ── Main action list (edit/create mode, no sub-page) ── */}
+      {!subPage && mode !== "read" && (
         <div>
           <div className="issue-modal-list">
             {actions.map((a, i) => (
@@ -277,7 +430,9 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
                   ? <span className="issue-modal-spinner" aria-hidden="true" />
                   : <a.icon size={14} />}
                 <span className="issue-modal-item-body">
-                  {a.id === "label" ? (
+                  {a.id === "state" ? (
+                    <span>State: {state} → {state === "open" ? "closed" : "open"}</span>
+                  ) : a.id === "label" ? (
                     <span className="issue-modal-item-label">
                       <span>{a.label}</span>
                       <span className="issue-modal-pill" style={{ background: labelDef.bg, color: labelDef.fg }}>{label}</span>
@@ -298,7 +453,7 @@ export default function IssueModal({ open, onClose, sessionId, issue }: IssueMod
             <span className="issue-modal-hint"><kbd>↑↓</kbd> nav</span>
             <span className="issue-modal-hint"><kbd>↵</kbd> select</span>
             <span className="issue-modal-hint"><kbd>⌘↵</kbd> {isEdit ? "save" : "create"}</span>
-            <span className="issue-modal-hint"><kbd>Esc</kbd> cancel</span>
+            <span className="issue-modal-hint"><kbd>Esc</kbd> {isEdit ? "back to read" : "cancel"}</span>
           </div>
         </div>
       )}

@@ -88,7 +88,7 @@ describe("IssueTrackerPanel keyboard expand/collapse", () => {
     expect(body0.className, "ArrowLeft should collapse").not.toContain("expanded");
   });
 
-  it("keeps focus and toggles via Enter without losing the row", async () => {
+  it("click expands and collapses the row inline (Enter now opens the modal)", async () => {
     const user = userEvent.setup();
     renderPanel();
 
@@ -96,14 +96,11 @@ describe("IssueTrackerPanel keyboard expand/collapse", () => {
     const row0 = firstRow.closest(".issue-row") as HTMLElement;
     const body0 = row0.parentElement!.querySelector(".issue-body") as HTMLElement;
 
-    act(() => row0.focus());
+    await user.click(row0);
+    expect(body0.className, "click should expand the row").toContain("expanded");
 
-    await user.keyboard("{Enter}");
-    expect(body0.className).toContain("expanded");
-    expect(document.activeElement).toBe(row0);
-
-    await user.keyboard("{Enter}");
-    expect(body0.className).not.toContain("expanded");
+    await user.click(row0);
+    expect(body0.className, "second click should collapse").not.toContain("expanded");
   });
 
   it("does not trigger row typeahead while typing in the filter input", async () => {
@@ -160,5 +157,79 @@ describe("IssueTrackerPanel keyboard expand/collapse", () => {
     await user.keyboard("{ArrowUp}");
 
     expect(document.activeElement).toBe(row1);
+  });
+
+  it("does not steal row focus when the mount focus frame fires late", async () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    });
+    try {
+      renderPanel();
+      const firstRow = await screen.findByText("First issue");
+      const row0 = firstRow.closest(".issue-row") as HTMLElement;
+
+      act(() => row0.focus());
+      act(() => {
+        rafCallbacks.forEach((cb) => cb(0));
+      });
+
+      expect(document.activeElement).toBe(row0);
+    } finally {
+      rafSpy.mockRestore();
+    }
+  });
+});
+
+describe("IssueTrackerPanel modal triggers", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("Enter on a focused row opens the Issue Detail Modal in read mode", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const firstRow = await screen.findByText("First issue");
+    const row0 = firstRow.closest(".issue-row") as HTMLElement;
+
+    act(() => row0.focus());
+    await user.keyboard("{Enter}");
+
+    // The modal should open with the issue number in its header
+    expect(screen.getByText("Issue #1")).toBeDefined();
+    // And the modal should be in read mode (Edit button present)
+    expect(screen.getByText("Edit")).toBeDefined();
+  });
+
+  it("right-click on a row opens the Issue Detail Modal in read mode", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const firstRow = await screen.findByText("First issue");
+    const row0 = firstRow.closest(".issue-row") as HTMLElement;
+
+    await user.pointer({ target: row0, keys: "[MouseRight]" });
+
+    // The modal should open in read mode
+    expect(screen.getByText("Issue #1")).toBeDefined();
+    expect(screen.getByText("Edit")).toBeDefined();
+  });
+
+  it("pressing e on a focused row does NOT open the modal (list-level e shortcut removed)", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    const firstRow = await screen.findByText("First issue");
+    const row0 = firstRow.closest(".issue-row") as HTMLElement;
+
+    act(() => row0.focus());
+
+    // Press 'e' — previously this opened the editor; now it does nothing
+    await user.keyboard("e");
+
+    // The modal should NOT be open
+    expect(screen.queryByText("Issue #1")).toBeNull();
+    // The row should still be visible (not replaced by modal)
+    expect(screen.getByText("First issue")).toBeDefined();
   });
 });

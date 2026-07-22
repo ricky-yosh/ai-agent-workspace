@@ -6,9 +6,8 @@ import { registerPanel } from "./panelRegistry";
 import { usePanelContext } from "./PanelContext";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { safeInvoke } from "./safeInvoke";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import IssueModal from "./IssueModal";
+import { IssueBody } from "./components/IssueBody";
 import "./IssueTrackerPanel.css";
 
 function labelStyle(label: string): { background: string; color: string } {
@@ -84,7 +83,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
-  const [issueModalOpen, setIssueModalOpen] = useState<{ mode: "create" } | { mode: "edit"; issue: Issue } | null>(null);
+  const [issueModalOpen, setIssueModalOpen] = useState<{ mode: "create" } | { mode: "read"; issue: Issue } | null>(null);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -276,16 +275,20 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
     issuesRef.current = issues;
   }, [issues]);
 
-  useLayoutEffect(() => {
-    panelRef.current?.focus();
+  const focusPanelUnlessActiveInside = useCallback(() => {
+    if (!panelRef.current?.contains(document.activeElement)) {
+      panelRef.current?.focus();
+    }
   }, []);
 
+  useLayoutEffect(() => {
+    focusPanelUnlessActiveInside();
+  }, [focusPanelUnlessActiveInside]);
+
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      panelRef.current?.focus();
-    });
+    const raf = requestAnimationFrame(focusPanelUnlessActiveInside);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [focusPanelUnlessActiveInside]);
 
   // Only replace the whole panel with the loading state on the very first
   // load. Background refetches keep the list mounted so they don't unmount the
@@ -324,7 +327,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
             open={issueModalOpen !== null}
             onClose={() => setIssueModalOpen(null)}
             sessionId={sessionId}
-            issue={issueModalOpen?.mode === "edit" ? issueModalOpen.issue : undefined}
+            issue={issueModalOpen?.mode !== "create" ? issueModalOpen?.issue : undefined}
           />
         )}
       </div>
@@ -356,16 +359,13 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
         onItemExtraKey={(issue, e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            setExpandedId((prev) => (prev === issue.id ? null : issue.id));
+            setIssueModalOpen({ mode: "read", issue });
           } else if (e.key === "ArrowRight") {
             e.preventDefault();
             setExpandedId(issue.id);
           } else if (e.key === "ArrowLeft") {
             e.preventDefault();
             setExpandedId(null);
-          } else if (e.key === "e" || e.key === "E") {
-            e.preventDefault();
-            setIssueModalOpen({ mode: "edit", issue });
           } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
             const char = e.key.toLowerCase();
             const start = focusedIndex === null ? 0 : focusedIndex + 1;
@@ -410,7 +410,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  setIssueModalOpen({ mode: "edit", issue });
+                  setIssueModalOpen({ mode: "read", issue });
                 }}
               >
                 <div className="issue-row__header">
@@ -449,33 +449,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
                 className={bodyClass}
               >
                 <div className="issue-body__content">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h2: ({ children }) => <h2>{children}</h2>,
-                      h3: ({ children }) => <h3>{children}</h3>,
-                      code: ({ children, className }) => {
-                        const isBlock = Boolean(className);
-                        if (isBlock) {
-                          return <code className="issue-md-code--block">{children}</code>;
-                        }
-                        return <code className="issue-md-code--inline">{children}</code>;
-                      },
-                      pre: ({ children }) => <pre>{children}</pre>,
-                      blockquote: ({ children }) => <blockquote>{children}</blockquote>,
-                      p: ({ children }) => <p>{children}</p>,
-                      ul: ({ children }) => <ul>{children}</ul>,
-                      ol: ({ children }) => <ol>{children}</ol>,
-                      a: ({ children, href }) => (
-                        <a href={href}>{children}</a>
-                      ),
-                      input: ({ checked }: React.InputHTMLAttributes<HTMLInputElement>) => (
-                        <input type="checkbox" disabled checked={checked ?? false} onChange={() => {}} />
-                      ),
-                    }}
-                  >
-                    {issue.body}
-                  </ReactMarkdown>
+                  <IssueBody body={issue.body} />
                 </div>
               </div>
             </AnimatedListRow>
@@ -488,7 +462,7 @@ function IssueTrackerPanel({ panelType: _panelType }: PanelProps) {
           open={issueModalOpen !== null}
           onClose={() => setIssueModalOpen(null)}
           sessionId={sessionId}
-          issue={issueModalOpen?.mode === "edit" ? issueModalOpen.issue : undefined}
+          issue={issueModalOpen?.mode !== "create" ? issueModalOpen?.issue : undefined}
         />
       )}
     </div>

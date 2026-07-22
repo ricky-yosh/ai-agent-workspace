@@ -16,6 +16,8 @@
 | **AppState** | Holds `Database` only. No mutexes. Cloned cheaply (PathBuf). | State |
 | **Issue** | A tracked unit of work or report belonging to a Session, stored in the database; the AI creates them and the user views them. Ephemeral app state, never committed to the repo. | Task, Ticket |
 | **Issue Tracker** | The panel type that displays a session's Issues in a GitHub-style list. | |
+| **Read/Edit Modal** | A Dialog pattern with two modes — a read view of an entity and an edit mode — toggled by an Edit/Done header button. Used by Node Edit Modal, New Workspace Modal, and Issue Detail Modal. | |
+| **Issue Detail Modal** | A Read/Edit Modal showing one Issue's full content. Opens in read mode (rendered markdown body, labels, state) and toggles to edit mode via the header button or `e`. Edit mode uses the same action-list + sub-page idiom as the create-issue modal; read mode composes Component Library Primitives (Badge, Button, Text/Heading). | |
 | **ChangeEvent** | A row in the `change_events` table recording an entity mutation (created, updated, deleted), written by a SQLite trigger. Contains the full entity snapshot as JSON so the frontend can animate changes even after the source row is gone. | Event, Notification |
 | **CDC (Change Data Capture)** | The pattern of using database triggers to write mutation events into a queue table, decoupling data changes from their visual representation. | |
 | **File Viewer Panel** | A panel type that displays file contents (markdown or code) with syntax highlighting. Each instance has its own tab state. | |
@@ -82,9 +84,12 @@
 - Issues attach to a Session via `session_id` FK with `ON DELETE CASCADE`, mirroring workspaces.
 - An Issue has a per-Session sequential `number` (GitHub-style `#N`), a `title`, a markdown `body`, an `author` (`ai`/`user`), and `created_at`/`updated_at`.
 - Issue lifecycle and triage are two independent axes: `state` (`open`/`closed`) and a `labels` JSON array (default `["needs-triage"]`).
-- Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`; the AI may add ad-hoc labels.
+- Label vocabulary is closed: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. The command layer rejects any other label (ad-hoc labels were an oversight, not a feature). An Issue carries exactly one label at a time, stored in the `labels` JSON array.
 - No comment thread in v1; the AI keeps the Issue `body` current as a living description. Comments (a separate `issue_comments` table) are a possible fast-follow.
-- The Issue Tracker panel is read-only for the user; all Issue mutations flow through the AI via MCP. The panel reads via Tauri (`list_issues`, `get_issue`) and refreshes on the `issues-changed` event.
+- Users mutate Issues from the UI (create/edit/delete via modals) through Tauri commands; the AI mutates the same entities via MCP. The panel reads via Tauri (`list_issues`, `get_issue`) and refreshes on the `issues-changed` event.
+- Issue Tracker interactions: clicking a row expands the body inline (quick peek); `Enter` opens the Issue Detail Modal in read mode; `e` inside the modal's read mode switches to edit mode. The list-level `e`-to-edit shortcut is removed.
+- Issue Detail Modal: `state` (open/closed) is editable as a staged action row in edit mode, committed with Save (⌘↵) alongside title/body/label. Read mode shows the state next to the issue number.
+- Issue Detail Modal navigation: Esc pops one level (field sub-page → edit-mode action list → read mode → close). Leaving edit mode via Esc discards unsaved changes; the header Done button and ⌘↵ save and return to read mode. Right-clicking a list row opens the modal in read mode.
 - UI animations for MCP-driven entity mutations (create, update, delete) are driven by a CDC event log rather than state diffing; see [ADR 0014](adr/0014-cdc-event-log-for-mcp-animations.md).
 - Visual Canvas Panel is a new panel type alongside terminal, file-viewer, issue-tracker, etc.
 - Visual Canvas data is independent from Issues; no cross-referencing in v1.
