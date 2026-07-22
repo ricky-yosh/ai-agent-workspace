@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "ai-agent-workspace-commands"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ai-agent-workspace-core",
  "dirs",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "ai-agent-workspace-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "ai-agent-workspace-git-operations"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "ai-agent-workspace-mcp"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ai-agent-workspace-commands",
  "ai-agent-workspace-core",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "aiaw-mcp-server"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "ai-agent-workspace-core",
  "ai-agent-workspace-mcp",
